@@ -1,0 +1,99 @@
+package main
+
+//go:generate buf generate
+
+import (
+	"context"
+	"log"
+	"log/slog"
+	"net"
+	"os"
+	"runtime/debug"
+
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	hellov1 "github.com/skulpturenz/timeboxxing/sidecar/gen/hello/v1"
+	helloserviceone "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_one"
+	helloservicetwo "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_two"
+	"github.com/skulpturenz/timeboxxing/sidecar/queue"
+	"github.com/skulpturenz/timeboxxing/sidecar/workers"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
+)
+
+const (
+	component     = "grpc-example"
+	listenAddress = ":50051"
+)
+
+// interceptorLogger adapts slog logger to interceptor logger.
+// This code is simple enough to be copied and not imported.
+func interceptorLogger(l *slog.Logger) logging.Logger {
+	return logging.LoggerFunc(func(ctx context.Context, lvl logging.Level, msg string, fields ...any) {
+		l.Log(ctx, slog.Level(lvl), msg, fields...)
+	})
+}
+
+func main() {
+	ctx := context.Background()
+	database, err := db.New(ctx, db.Options{
+		Engine:         db.EngineSqlite,
+		DataSourceName: "test.db",
+	})
+	if err != nil {
+		log.Fatalf("create database: %v", err)
+	}
+	defer database.Close()
+
+	// queue
+	persistedQueue := queue.QueueOptions{
+		ConnectionString: "test.db",
+	}
+	queue, err := persistedQueue.New()
+	if err != nil {
+		panic(err)
+	}
+	_, focusEventQueueCleanup := workers.AddFocusEventWorker(*queue)
+	defer focusEventQueueCleanup()
+
+	// grpc
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
+	rpcLogger := logger.With("service", "gRPC/server", "component", component)
+	logTraceID := func(ctx context.Context) logging.Fields {
+		if span := trace.SpanContextFromContext(ctx); span.IsSampled() {
+			return logging.Fields{"traceID", span.TraceID().String()}
+		}
+		return nil
+	}
+
+	listener, err := net.Listen("tcp", listenAddress)
+	if err != nil {
+		log.Fatalf("listen on %s: %v", listenAddress, err)
+	}
+
+	grpcPanicRecoveryHandler := func(p any) (err error) {
+		rpcLogger.Error("recovered from panic", "panic", p, "stack", debug.Stack())
+		return status.Errorf(codes.Internal, "%s", p)
+	}
+	server := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			logging.UnaryServerInterceptor(interceptorLogger(rpcLogger), logging.WithFieldsFromContext(logTraceID)),
+			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandler(grpcPanicRecoveryHandler)),
+		),
+		grpc.ChainStreamInterceptor(
+			logging.StreamServerInterceptor(interceptorLogger(rpcLogger), logging.WithFieldsFromContext(logTraceID)),
+		),
+	)
+	reflection.Register(server)
+	hellov1.RegisterHelloServiceOneServer(server, helloserviceone.HelloServiceOneServer{})
+	hellov1.RegisterHelloServiceTwoServer(server, helloservicetwo.HelloServiceTwoServer{})
+
+	log.Printf("sidecar gRPC server listening on %s", listenAddress)
+	if err := server.Serve(listener); err != nil {
+		log.Fatalf("serve grpc: %v", err)
+	}
+}

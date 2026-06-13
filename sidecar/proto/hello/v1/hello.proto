@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package hello.v1;
+
+option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/hello/v1;hellov1";
+
+service HelloServiceOne {
+  rpc SayHello(HelloRequest) returns (HelloResponse);
+}
+
+service HelloServiceTwo {
+  rpc SayHello(HelloRequest) returns (HelloResponse);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloResponse {
+  string message = 1;
+}
