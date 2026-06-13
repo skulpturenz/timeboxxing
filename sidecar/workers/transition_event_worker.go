@@ -5,7 +5,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 )
 
-func AddFocusEventWorker(q queue.Queue) (varmq.PersistentQueue[any], func()) {
+func AddTransitionEventWorker(q queue.Queue) (varmq.PersistentQueue[any], func()) {
 	queue, _, cleanup := q.NewWorker(func(j varmq.Job[any]) {
 
 	}, 0)

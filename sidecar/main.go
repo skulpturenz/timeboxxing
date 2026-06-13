@@ -17,6 +17,8 @@ import (
 	hellov1 "github.com/skulpturenz/timeboxxing/sidecar/gen/hello/v1"
 	helloserviceone "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_one"
 	helloservicetwo "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_two"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 	"github.com/skulpturenz/timeboxxing/sidecar/workers"
 	"go.opentelemetry.io/otel/trace"
@@ -40,6 +42,8 @@ func interceptorLogger(l *slog.Logger) logging.Logger {
 
 func main() {
 	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
+
 	dsn := envs.DatabaseDSN.Value()
 	database, err := db.New(ctx, db.Options{
 		Engine:         envs.DatabaseEngine.Value(),
@@ -58,11 +62,26 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	_, focusEventQueueCleanup := workers.AddFocusEventWorker(*queue)
-	defer focusEventQueueCleanup()
+	transitionEventQueue, transitionEventQueueCleanup := workers.AddTransitionEventWorker(*queue)
+	defer transitionEventQueueCleanup()
+	transitions, err := monitor.Start(ctx, logger.With("service", "monitor"), monitor.Config{})
+	if err != nil {
+		log.Fatalf("start monitor: %v", err)
+	}
+	databaseReporter := reporter.NewDatabaseReporter(database.Conn)
+	go func() {
+		for transition := range transitions {
+			if ok := transitionEventQueue.Add(transition); !ok {
+				logger.Warn("failed to add transition event to transition event queue", "reason", transition.Reason)
+			}
+
+			if err := databaseReporter.Record(ctx, transition); err != nil {
+				logger.Error("failed to report transition event", "reason", transition.Reason, "error", err)
+			}
+		}
+	}()
 
 	// grpc
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
 	rpcLogger := logger.With("service", "gRPC/server", "component", component)
 	logTraceID := func(ctx context.Context) logging.Fields {
 		if span := trace.SpanContextFromContext(ctx); span.IsSampled() {
