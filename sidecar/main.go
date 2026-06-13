@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"runtime/debug"
+	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
@@ -20,6 +21,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
+	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/workers"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -69,6 +71,22 @@ func main() {
 		log.Fatalf("start monitor: %v", err)
 	}
 	databaseReporter := reporter.NewDatabaseReporter(database.Conn)
+	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
+	if openRouterAPIKey == "" {
+		logger.Info("semantic indexing disabled; SIDECAR_OPENROUTER_API_KEY is not configured")
+	} else {
+		embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
+			APIKey:    openRouterAPIKey,
+			BaseURL:   envs.OpenRouterBaseURL.Value(),
+			Model:     envs.EmbeddingModel.Value(),
+			Dimension: int(envs.EmbeddingDimension.Value()),
+		})
+		if err != nil {
+			log.Fatalf("create semantic embedder: %v", err)
+		}
+		databaseReporter = reporter.NewDatabaseReporterWithIndexer(database.Conn, semantic.NewIndexer(database.Conn, embedder))
+		logger.Info("semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
+	}
 	go func() {
 		for transition := range transitions {
 			if ok := transitionEventQueue.Add(transition); !ok {

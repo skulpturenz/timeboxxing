@@ -18,6 +18,21 @@ var (
 	DatabaseDSN = ferrite.String("SIDECAR_DATABASE_DSN", "the database data source name").
 			WithDefault("test.db").
 			Required()
+	OpenRouterAPIKey = ferrite.String("SIDECAR_OPENROUTER_API_KEY", "the OpenRouter API key used for semantic search and RAG").
+				WithDefault("").
+				Required()
+	OpenRouterBaseURL = ferrite.String("SIDECAR_OPENROUTER_BASE_URL", "the OpenRouter API base URL").
+				WithDefault("https://openrouter.ai/api/v1").
+				Required()
+	EmbeddingModel = ferrite.String("SIDECAR_EMBEDDING_MODEL", "the OpenRouter embedding model used for semantic search").
+			WithDefault("qwen/qwen3-embedding-0.6b:free").
+			Required()
+	EmbeddingDimension = ferrite.Unsigned[uint]("SIDECAR_EMBEDDING_DIMENSION", "the embedding vector dimension").
+				WithDefault(1024).
+				Required()
+	RAGModel = ferrite.String("SIDECAR_RAG_MODEL", "the OpenRouter generation model used for RAG answers").
+			WithDefault("google/gemma-3-27b-it:free").
+			Required()
 )
 
 func init() {

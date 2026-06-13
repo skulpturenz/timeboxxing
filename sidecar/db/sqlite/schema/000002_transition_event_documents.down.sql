@@ -1,0 +1,2 @@
+DROP TABLE transition_event_document_float32_embeddings;
+DROP TABLE transition_event_documents;

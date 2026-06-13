@@ -3,7 +3,9 @@ package reporter
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,6 +171,82 @@ func TestDatabaseRecordSkipsOpenAndStartTransitions(t *testing.T) {
 	if eventCount != 0 {
 		t.Fatalf("expected no transition events, got %d", eventCount)
 	}
+}
+
+func TestDatabaseRecordIndexesPersistedTransitionEvent(t *testing.T) {
+	ctx := context.Background()
+	database := newTestDatabase(t, ctx)
+	indexer := &recordingTransitionEventIndexer{}
+	reporter := NewDatabaseReporterWithIndexer(database.Conn, indexer)
+
+	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
+	ended := started.Add(5 * time.Minute)
+
+	if err := reporter.Record(ctx, session.Transition{
+		From: &session.Session{
+			Key:       session.AppKey{AppName: "VSCode"},
+			StartedAt: started,
+			EndedAt:   ended,
+			Duration:  ended.Sub(started),
+		},
+		Reason: session.ReasonFocusChange,
+	}); err != nil {
+		t.Fatalf("record transition: %v", err)
+	}
+
+	var eventID int64
+	if err := database.Conn.QueryRowContext(ctx, `SELECT id FROM transition_events`).Scan(&eventID); err != nil {
+		t.Fatalf("query transition event: %v", err)
+	}
+	if len(indexer.transitionEventIDs) != 1 || indexer.transitionEventIDs[0] != eventID {
+		t.Fatalf("expected indexed event id %d, got %#v", eventID, indexer.transitionEventIDs)
+	}
+}
+
+func TestDatabaseRecordReturnsIndexingErrors(t *testing.T) {
+	ctx := context.Background()
+	database := newTestDatabase(t, ctx)
+	reporter := NewDatabaseReporterWithIndexer(database.Conn, &recordingTransitionEventIndexer{err: fmt.Errorf("embed failed")})
+
+	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
+	ended := started.Add(5 * time.Minute)
+
+	err := reporter.Record(ctx, session.Transition{
+		From: &session.Session{
+			Key:       session.AppKey{AppName: "VSCode"},
+			StartedAt: started,
+			EndedAt:   ended,
+			Duration:  ended.Sub(started),
+		},
+		Reason: session.ReasonFocusChange,
+	})
+	if err == nil {
+		t.Fatal("expected indexing error")
+	}
+	if !strings.Contains(err.Error(), "index transition event") || !strings.Contains(err.Error(), "embed failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var eventCount int
+	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM transition_events`).Scan(&eventCount); err != nil {
+		t.Fatalf("query transition events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected persisted transition event despite indexing failure, got %d", eventCount)
+	}
+}
+
+type recordingTransitionEventIndexer struct {
+	transitionEventIDs []int64
+	err                error
+}
+
+func (r *recordingTransitionEventIndexer) IndexTransitionEvent(_ context.Context, transitionEventID int64) (int64, error) {
+	r.transitionEventIDs = append(r.transitionEventIDs, transitionEventID)
+	if r.err != nil {
+		return 0, r.err
+	}
+	return transitionEventID, nil
 }
 
 func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {

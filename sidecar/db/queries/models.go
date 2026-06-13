@@ -22,6 +22,22 @@ type TransitionEvent struct {
 	EndedAt            time.Time
 }
 
+type TransitionEventDocument struct {
+	ID                 int64
+	TransitionEventID  int64
+	Content            string
+	EmbeddingModel     string
+	EmbeddingDimension int64
+	EmbeddedAt         sql.NullTime
+}
+
+type TransitionEventDocumentFloat32Embedding struct {
+	TransitionEventDocumentID int64
+	Embedding                 string
+	K                         sql.NullInt64
+	Distance                  sql.NullFloat64
+}
+
 type TransitionEventMetadatum struct {
 	ID                int64
 	TransitionEventID int64

@@ -16,6 +16,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 
 	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite/vec"
 )
 
 //go:embed */schema/*.sql */seeds/*/*.sql

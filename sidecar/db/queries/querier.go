@@ -10,8 +10,13 @@ import (
 
 type Querier interface {
 	CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error)
+	CreateTransitionEventDocumentEmbedding(ctx context.Context, arg CreateTransitionEventDocumentEmbeddingParams) error
 	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
+	DeleteTransitionEventDocumentEmbedding(ctx context.Context, transitionEventDocumentID int64) error
+	GetTransitionEventDocumentSource(ctx context.Context, id int64) (GetTransitionEventDocumentSourceRow, error)
+	SearchTransitionEventDocuments(ctx context.Context, arg SearchTransitionEventDocumentsParams) ([]SearchTransitionEventDocumentsRow, error)
 	UpsertApplication(ctx context.Context, name string) (int64, error)
+	UpsertTransitionEventDocument(ctx context.Context, arg UpsertTransitionEventDocumentParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

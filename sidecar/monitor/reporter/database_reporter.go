@@ -13,12 +13,22 @@ import (
 
 // DatabaseReporter reads closed sessions from transitions and persists them.
 type DatabaseReporter struct {
-	conn *sql.DB
+	conn    *sql.DB
+	indexer TransitionEventIndexer
+}
+
+type TransitionEventIndexer interface {
+	IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error)
 }
 
 // NewDatabaseReporter creates a database reporter using conn.
 func NewDatabaseReporter(conn *sql.DB) *DatabaseReporter {
 	return &DatabaseReporter{conn: conn}
+}
+
+// NewDatabaseReporterWithIndexer creates a database reporter that also indexes persisted events.
+func NewDatabaseReporterWithIndexer(conn *sql.DB, indexer TransitionEventIndexer) *DatabaseReporter {
+	return &DatabaseReporter{conn: conn, indexer: indexer}
 }
 
 // Run drains transitions until the channel closes or ctx is cancelled.
@@ -85,6 +95,11 @@ func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) err
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transition event transaction: %w", err)
+	}
+	if d.indexer != nil {
+		if _, err := d.indexer.IndexTransitionEvent(ctx, eventID); err != nil {
+			return fmt.Errorf("index transition event: %w", err)
+		}
 	}
 
 	return nil
