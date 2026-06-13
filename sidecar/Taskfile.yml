@@ -28,6 +28,16 @@ tasks:
     cmds:
       - go tool migrate create -ext sql -dir db/sqlite/schema -seq {{.CLI_ARGS}}
 
+  create-seeder:
+    desc: Create a new seed script for a table
+    requires:
+      vars:
+        - TABLE
+        - NAME
+    cmds:
+      - mkdir -p db/sqlite/seeds/{{.TABLE}}
+      - go tool migrate create -ext sql -dir db/sqlite/seeds/{{.TABLE}} -seq {{.NAME}}
+
   create-query:
     desc: Create a new query
     cmds:

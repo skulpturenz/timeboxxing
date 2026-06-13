@@ -3,9 +3,15 @@ CREATE TABLE applications (
   name TEXT NOT NULL UNIQUE
 );
 
+CREATE TABLE transition_event_reasons (
+  id INTEGER PRIMARY KEY NOT NULL,
+  reason TEXT NOT NULL UNIQUE
+);
+
 CREATE TABLE transition_events (
   id INTEGER PRIMARY KEY,
   application_id INTEGER REFERENCES applications(id),
+  transition_reason_id INTEGER NOT NULL REFERENCES transition_event_reasons(id),
   started_at TIMESTAMP NOT NULL,
   ended_at TIMESTAMP NOT NULL
 );

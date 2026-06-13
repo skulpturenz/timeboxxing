@@ -15,6 +15,7 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
 	reporter := NewDatabaseReporter(database.Conn)
+	assertSeededTransitionReasons(t, ctx, database.Conn)
 
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(5 * time.Minute)
@@ -54,11 +55,18 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 
 	var eventCount int
 	var eventsWithApplication int
-	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(application_id) FROM transition_events`).Scan(&eventCount, &eventsWithApplication); err != nil {
+	var reasonID int64
+	if err := database.Conn.QueryRowContext(ctx, `
+		SELECT COUNT(*), COUNT(application_id), MAX(transition_reason_id)
+		FROM transition_events
+	`).Scan(&eventCount, &eventsWithApplication, &reasonID); err != nil {
 		t.Fatalf("query transition events: %v", err)
 	}
 	if eventCount != 2 || eventsWithApplication != 2 {
 		t.Fatalf("expected two transition events with applications, got count=%d application_count=%d", eventCount, eventsWithApplication)
+	}
+	if reasonID != 4 {
+		t.Fatalf("expected tab_change reason id 4, got %d", reasonID)
 	}
 
 	var browser bool
@@ -116,11 +124,15 @@ func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
 	}
 
 	var applicationID sql.NullInt64
-	if err := database.Conn.QueryRowContext(ctx, `SELECT application_id FROM transition_events`).Scan(&applicationID); err != nil {
+	var reasonID int64
+	if err := database.Conn.QueryRowContext(ctx, `SELECT application_id, transition_reason_id FROM transition_events`).Scan(&applicationID, &reasonID); err != nil {
 		t.Fatalf("query idle transition event: %v", err)
 	}
 	if applicationID.Valid {
 		t.Fatalf("expected null application_id for idle event, got %d", applicationID.Int64)
+	}
+	if reasonID != 5 {
+		t.Fatalf("expected shutdown reason id 5, got %d", reasonID)
 	}
 
 	var idle bool
@@ -176,4 +188,45 @@ func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 	})
 
 	return database
+}
+
+func assertSeededTransitionReasons(t *testing.T, ctx context.Context, conn *sql.DB) {
+	t.Helper()
+
+	expected := map[int64]string{
+		1: "focus_change",
+		2: "idle",
+		3: "return_from_idle",
+		4: "tab_change",
+		5: "shutdown",
+		6: "start",
+	}
+
+	rows, err := conn.QueryContext(ctx, `SELECT id, reason FROM transition_event_reasons ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query seeded transition reasons: %v", err)
+	}
+	defer rows.Close()
+
+	actual := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var reason string
+		if err := rows.Scan(&id, &reason); err != nil {
+			t.Fatalf("scan seeded transition reason: %v", err)
+		}
+		actual[id] = reason
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate seeded transition reasons: %v", err)
+	}
+
+	if len(actual) != len(expected) {
+		t.Fatalf("expected %d seeded transition reasons, got %d", len(expected), len(actual))
+	}
+	for id, reason := range expected {
+		if actual[id] != reason {
+			t.Fatalf("expected transition reason %d to be %q, got %q", id, reason, actual[id])
+		}
+	}
 }

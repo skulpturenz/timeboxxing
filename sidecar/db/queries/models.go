@@ -15,10 +15,11 @@ type Application struct {
 }
 
 type TransitionEvent struct {
-	ID            int64
-	ApplicationID sql.NullInt64
-	StartedAt     time.Time
-	EndedAt       time.Time
+	ID                 int64
+	ApplicationID      sql.NullInt64
+	TransitionReasonID int64
+	StartedAt          time.Time
+	EndedAt            time.Time
 }
 
 type TransitionEventMetadatum struct {
@@ -28,4 +29,9 @@ type TransitionEventMetadatum struct {
 	Tab               *string
 	Idle              bool
 	CdpUrl            *string
+}
+
+type TransitionEventReason struct {
+	ID     int64
+	Reason string
 }

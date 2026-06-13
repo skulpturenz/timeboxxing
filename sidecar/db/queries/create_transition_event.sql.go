@@ -12,19 +12,25 @@ import (
 )
 
 const createTransitionEvent = `-- name: CreateTransitionEvent :one
-INSERT INTO transition_events (application_id, started_at, ended_at)
-VALUES (?, ?, ?)
+INSERT INTO transition_events (application_id, transition_reason_id, started_at, ended_at)
+VALUES (?, (SELECT id FROM transition_event_reasons WHERE reason = ?), ?, ?)
 RETURNING id
 `
 
 type CreateTransitionEventParams struct {
 	ApplicationID sql.NullInt64
+	Reason        string
 	StartedAt     time.Time
 	EndedAt       time.Time
 }
 
 func (q *Queries) CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, createTransitionEvent, arg.ApplicationID, arg.StartedAt, arg.EndedAt)
+	row := q.db.QueryRowContext(ctx, createTransitionEvent,
+		arg.ApplicationID,
+		arg.Reason,
+		arg.StartedAt,
+		arg.EndedAt,
+	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err

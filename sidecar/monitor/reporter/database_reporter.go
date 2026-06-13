@@ -65,6 +65,7 @@ func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) err
 
 	eventID, err := q.CreateTransitionEvent(ctx, queries.CreateTransitionEventParams{
 		ApplicationID: applicationID,
+		Reason:        string(t.Reason),
 		StartedAt:     t.From.StartedAt,
 		EndedAt:       t.From.EndedAt,
 	})
