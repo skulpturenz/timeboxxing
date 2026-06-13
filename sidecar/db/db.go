@@ -7,13 +7,16 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"path"
+	"slices"
+	"strings"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 	_ "modernc.org/sqlite"
 )
 
-//go:embed sql/schema.sql
-var schemaFiles embed.FS
+//go:embed */schema/*.sql
+var migrationFiles embed.FS
 
 type Engine string
 
@@ -61,7 +64,7 @@ func newSqlite(ctx context.Context, dataSourceName string) (*Database, error) {
 		return nil, fmt.Errorf("ping sqlite database: %w", err)
 	}
 
-	if err := initializeSchema(ctx, conn); err != nil {
+	if err := runMigrations(ctx, conn, EngineSqlite); err != nil {
 		conn.Close()
 		return nil, err
 	}
@@ -72,14 +75,32 @@ func newSqlite(ctx context.Context, dataSourceName string) (*Database, error) {
 	}, nil
 }
 
-func initializeSchema(ctx context.Context, conn *sql.DB) error {
-	schema, err := schemaFiles.ReadFile("sql/schema.sql")
+func runMigrations(ctx context.Context, conn *sql.DB, engine Engine) error {
+	dir := path.Join(string(engine), "schema")
+	entries, err := migrationFiles.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("read database schema: %w", err)
+		return fmt.Errorf("read %s migrations: %w", engine, err)
 	}
 
-	if _, err := conn.ExecContext(ctx, string(schema)); err != nil {
-		return fmt.Errorf("initialize database schema: %w", err)
+	migrations := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".up.sql") {
+			continue
+		}
+
+		migrations = append(migrations, path.Join(dir, entry.Name()))
+	}
+	slices.Sort(migrations)
+
+	for _, migration := range migrations {
+		contents, err := migrationFiles.ReadFile(migration)
+		if err != nil {
+			return fmt.Errorf("read %s migration %s: %w", engine, migration, err)
+		}
+
+		if _, err := conn.ExecContext(ctx, string(contents)); err != nil {
+			return fmt.Errorf("run %s migration %s: %w", engine, migration, err)
+		}
 	}
 
 	return nil

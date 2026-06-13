@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+tasks:
+  start:
+    desc: Run API
+    cmds:
+      - go run -tags assert .
+
+  dev:
+    desc: Run development API
+    cmds:
+      - go tool gow run -tags assert .
+
+  grpcui:
+    desc: Open gRPC UI
+    cmds:
+      - go tool grpcui -plaintext localhost:50051
+
+  build:
+    desc: Build API
+    cmds:
+      - go build .
+
+  create-migration:
+    desc: Create a new migration
+    cmds:
+      - go tool migrate create -ext sql -dir db/sqlite/schema -seq {{.CLI_ARGS}}
+
+  create-query:
+    desc: Create a new query
+    cmds:
+      - touch db/sqlite/queries/{{.CLI_ARGS}}.sql
+
+  generate-models:
+    desc: Generate DB models
+    cmds:
+      - go tool sqlc generate -f db/sqlc.yaml
+
+  generate-env-docs:
+    desc: Generate docs for env configuration
+    cmds:
+      - FERRITE_MODE="usage/markdown" go run . > CONFIG.md
+
+  generate-all:
+    desc: Run all generators
+    deps:
+      - generate-models
+      - generate-env-docs

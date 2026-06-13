@@ -1,6 +1,6 @@
 package main
 
-//go:generate buf generate
+//go:generate go tool buf generate
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	"github.com/skulpturenz/timeboxxing/sidecar/envs"
 	hellov1 "github.com/skulpturenz/timeboxxing/sidecar/gen/hello/v1"
 	helloserviceone "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_one"
 	helloservicetwo "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_two"
@@ -26,8 +27,7 @@ import (
 )
 
 const (
-	component     = "grpc-example"
-	listenAddress = ":50051"
+	component = "grpc-example"
 )
 
 // interceptorLogger adapts slog logger to interceptor logger.
@@ -40,9 +40,10 @@ func interceptorLogger(l *slog.Logger) logging.Logger {
 
 func main() {
 	ctx := context.Background()
+	dsn := envs.DatabaseDSN.Value()
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: "test.db",
+		Engine:         envs.DatabaseEngine.Value(),
+		DataSourceName: dsn,
 	})
 	if err != nil {
 		log.Fatalf("create database: %v", err)
@@ -51,7 +52,7 @@ func main() {
 
 	// queue
 	persistedQueue := queue.QueueOptions{
-		ConnectionString: "test.db",
+		ConnectionString: dsn,
 	}
 	queue, err := persistedQueue.New()
 	if err != nil {
@@ -70,6 +71,7 @@ func main() {
 		return nil
 	}
 
+	listenAddress := envs.GrpcListenAddress.Value().String()
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		log.Fatalf("listen on %s: %v", listenAddress, err)
