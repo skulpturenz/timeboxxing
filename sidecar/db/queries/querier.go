@@ -9,10 +9,9 @@ import (
 )
 
 type Querier interface {
-	DeleteMetadata(ctx context.Context, key string) error
-	GetMetadata(ctx context.Context, key string) (AppMetadatum, error)
-	ListMetadata(ctx context.Context) ([]AppMetadatum, error)
-	SetMetadata(ctx context.Context, arg SetMetadataParams) error
+	CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error)
+	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
+	UpsertApplication(ctx context.Context, name string) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

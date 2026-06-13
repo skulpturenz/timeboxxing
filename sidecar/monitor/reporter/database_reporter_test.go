@@ -1,0 +1,179 @@
+package reporter
+
+import (
+	"context"
+	"database/sql"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
+)
+
+func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
+	ctx := context.Background()
+	database := newTestDatabase(t, ctx)
+	reporter := NewDatabaseReporter(database.Conn)
+
+	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
+	ended := started.Add(5 * time.Minute)
+
+	transition := session.Transition{
+		From: &session.Session{
+			Key: session.AppKey{
+				AppName:  "  Google Chrome  ",
+				TabTitle: "GitHub",
+				CDPURL:   "https://github.com/",
+			},
+			StartedAt: started,
+			EndedAt:   ended,
+			Duration:  ended.Sub(started),
+		},
+		Reason: session.ReasonTabChange,
+	}
+
+	if err := reporter.Record(ctx, transition); err != nil {
+		t.Fatalf("record first transition: %v", err)
+	}
+	if err := reporter.Record(ctx, transition); err != nil {
+		t.Fatalf("record second transition: %v", err)
+	}
+
+	var appCount int
+	var appName string
+	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*), MAX(name) FROM applications`).Scan(&appCount, &appName); err != nil {
+		t.Fatalf("query applications: %v", err)
+	}
+	if appCount != 1 {
+		t.Fatalf("expected one normalized application, got %d", appCount)
+	}
+	if appName != "Google Chrome" {
+		t.Fatalf("expected trimmed application name, got %q", appName)
+	}
+
+	var eventCount int
+	var eventsWithApplication int
+	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(application_id) FROM transition_events`).Scan(&eventCount, &eventsWithApplication); err != nil {
+		t.Fatalf("query transition events: %v", err)
+	}
+	if eventCount != 2 || eventsWithApplication != 2 {
+		t.Fatalf("expected two transition events with applications, got count=%d application_count=%d", eventCount, eventsWithApplication)
+	}
+
+	var browser bool
+	var tab sql.NullString
+	var idle bool
+	var cdpURL sql.NullString
+	if err := database.Conn.QueryRowContext(ctx, `
+		SELECT browser, tab, idle, cdp_url
+		FROM transition_event_metadata
+		ORDER BY id
+		LIMIT 1
+	`).Scan(&browser, &tab, &idle, &cdpURL); err != nil {
+		t.Fatalf("query transition event metadata: %v", err)
+	}
+	if !browser {
+		t.Fatal("expected browser metadata to be true")
+	}
+	if !tab.Valid || tab.String != "GitHub" {
+		t.Fatalf("expected tab metadata, got valid=%t value=%q", tab.Valid, tab.String)
+	}
+	if idle {
+		t.Fatal("expected idle metadata to be false")
+	}
+	if !cdpURL.Valid || cdpURL.String != "https://github.com/" {
+		t.Fatalf("expected cdp_url metadata, got valid=%t value=%q", cdpURL.Valid, cdpURL.String)
+	}
+}
+
+func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
+	ctx := context.Background()
+	database := newTestDatabase(t, ctx)
+	reporter := NewDatabaseReporter(database.Conn)
+
+	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
+	ended := started.Add(10 * time.Minute)
+
+	if err := reporter.Record(ctx, session.Transition{
+		From: &session.Session{
+			Key:       session.AppKey{IsIdle: true},
+			StartedAt: started,
+			EndedAt:   ended,
+			Duration:  ended.Sub(started),
+		},
+		Reason: session.ReasonShutdown,
+	}); err != nil {
+		t.Fatalf("record idle transition: %v", err)
+	}
+
+	var appCount int
+	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM applications`).Scan(&appCount); err != nil {
+		t.Fatalf("query applications: %v", err)
+	}
+	if appCount != 0 {
+		t.Fatalf("expected no application for idle event, got %d", appCount)
+	}
+
+	var applicationID sql.NullInt64
+	if err := database.Conn.QueryRowContext(ctx, `SELECT application_id FROM transition_events`).Scan(&applicationID); err != nil {
+		t.Fatalf("query idle transition event: %v", err)
+	}
+	if applicationID.Valid {
+		t.Fatalf("expected null application_id for idle event, got %d", applicationID.Int64)
+	}
+
+	var idle bool
+	if err := database.Conn.QueryRowContext(ctx, `SELECT idle FROM transition_event_metadata`).Scan(&idle); err != nil {
+		t.Fatalf("query idle metadata: %v", err)
+	}
+	if !idle {
+		t.Fatal("expected idle metadata to be true")
+	}
+}
+
+func TestDatabaseRecordSkipsOpenAndStartTransitions(t *testing.T) {
+	ctx := context.Background()
+	database := newTestDatabase(t, ctx)
+	reporter := NewDatabaseReporter(database.Conn)
+
+	if err := reporter.Record(ctx, session.Transition{
+		To:     &session.Session{Key: session.AppKey{AppName: "VSCode"}, StartedAt: time.Now()},
+		Reason: session.ReasonStart,
+	}); err != nil {
+		t.Fatalf("record start transition: %v", err)
+	}
+	if err := reporter.Record(ctx, session.Transition{
+		From:   &session.Session{Key: session.AppKey{AppName: "VSCode"}, StartedAt: time.Now()},
+		Reason: session.ReasonFocusChange,
+	}); err != nil {
+		t.Fatalf("record open transition: %v", err)
+	}
+
+	var eventCount int
+	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM transition_events`).Scan(&eventCount); err != nil {
+		t.Fatalf("query transition events: %v", err)
+	}
+	if eventCount != 0 {
+		t.Fatalf("expected no transition events, got %d", eventCount)
+	}
+}
+
+func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
+	t.Helper()
+
+	database, err := db.New(ctx, db.Options{
+		Engine:         db.EngineSqlite,
+		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+	})
+	if err != nil {
+		t.Fatalf("create test database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close test database: %v", err)
+		}
+	})
+
+	return database
+}

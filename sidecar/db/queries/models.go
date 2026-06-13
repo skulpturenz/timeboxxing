@@ -4,7 +4,28 @@
 
 package queries
 
-type AppMetadatum struct {
-	Key   string
-	Value string
+import (
+	"database/sql"
+	"time"
+)
+
+type Application struct {
+	ID   int64
+	Name string
+}
+
+type TransitionEvent struct {
+	ID            int64
+	ApplicationID sql.NullInt64
+	StartedAt     time.Time
+	EndedAt       time.Time
+}
+
+type TransitionEventMetadatum struct {
+	ID                int64
+	TransitionEventID int64
+	Browser           bool
+	Tab               *string
+	Idle              bool
+	CdpUrl            *string
 }

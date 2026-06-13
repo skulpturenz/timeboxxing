@@ -8,3 +8,12 @@ sql:
         package: queries
         out: queries
         emit_interface: true
+        overrides:
+          - column: transition_event_metadata.tab
+            go_type:
+              type: string
+              pointer: true
+          - column: transition_event_metadata.cdp_url
+            go_type:
+              type: string
+              pointer: true

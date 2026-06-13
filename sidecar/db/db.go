@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -29,11 +30,9 @@ type Options struct {
 	DataSourceName string
 }
 
-type Querier = queries.Querier
-
 type Database struct {
-	Conn    *sql.DB
-	Queries Querier
+	queries.Querier
+	Conn *sql.DB
 }
 
 func New(ctx context.Context, opts Options) (*Database, error) {
@@ -70,8 +69,8 @@ func newSqlite(ctx context.Context, dataSourceName string) (*Database, error) {
 	}
 
 	return &Database{
+		Querier: queries.New(conn),
 		Conn:    conn,
-		Queries: queries.New(conn),
 	}, nil
 }
 
