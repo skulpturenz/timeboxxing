@@ -14,11 +14,14 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/lmittmann/tint"
+	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	"github.com/skulpturenz/timeboxxing/sidecar/envs"
 	hellov1 "github.com/skulpturenz/timeboxxing/sidecar/gen/hello/v1"
+	transitionsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/transitions/v1"
 	helloserviceone "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_one"
 	helloservicetwo "github.com/skulpturenz/timeboxxing/sidecar/grpc/hello_service_two"
+	grpcTransitions "github.com/skulpturenz/timeboxxing/sidecar/grpc/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
@@ -38,6 +41,7 @@ const (
 type appServices struct {
 	databaseReporter *reporter.DatabaseReporter
 	answerer         *semantic.Answerer
+	transitions      *componentTransitions.Service
 }
 
 // interceptorLogger adapts slog logger to interceptor logger.
@@ -79,6 +83,9 @@ func main() {
 	}
 	services := appServices{
 		databaseReporter: reporter.NewDatabaseReporter(database.Conn),
+		transitions: componentTransitions.NewService(componentTransitions.NewServiceParams{
+			Querier: database.Querier,
+		}),
 	}
 	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
 	if openRouterAPIKey == "" {
@@ -114,8 +121,15 @@ func main() {
 				logger.Warn("failed to add transition event to transition event queue", "reason", transition.Reason)
 			}
 
-			if err := services.databaseReporter.Record(ctx, transition); err != nil {
+			eventID, err := services.databaseReporter.Record(ctx, transition)
+			if err != nil {
 				logger.Error("failed to report transition event", "reason", transition.Reason, "error", err)
+				continue
+			}
+			if eventID != 0 {
+				if err := services.transitions.PublishTransitionEvent(ctx, componentTransitions.PublishTransitionEventParams{ID: eventID}); err != nil {
+					logger.Error("failed to publish transition event", "transition_event_id", eventID, "error", err)
+				}
 			}
 		}
 	}()
@@ -151,6 +165,9 @@ func main() {
 	reflection.Register(server)
 	hellov1.RegisterHelloServiceOneServer(server, helloserviceone.HelloServiceOneServer{})
 	hellov1.RegisterHelloServiceTwoServer(server, helloservicetwo.HelloServiceTwoServer{})
+	transitionsv1.RegisterTransitionsServiceServer(server, grpcTransitions.NewServer(grpcTransitions.NewServerParams{
+		Transitions: services.transitions,
+	}))
 
 	logger.Info("sidecar gRPC server listening", "address", listenAddress)
 	if err := server.Serve(listener); err != nil {

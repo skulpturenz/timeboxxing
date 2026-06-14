@@ -13,7 +13,9 @@ type Querier interface {
 	CreateTransitionEventDocumentEmbedding(ctx context.Context, arg CreateTransitionEventDocumentEmbeddingParams) error
 	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
 	DeleteTransitionEventDocumentEmbedding(ctx context.Context, transitionEventDocumentID int64) error
+	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
 	GetTransitionEventDocumentSource(ctx context.Context, id int64) (GetTransitionEventDocumentSourceRow, error)
+	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
 	SearchTransitionEventDocuments(ctx context.Context, arg SearchTransitionEventDocumentsParams) ([]SearchTransitionEventDocumentsRow, error)
 	UpsertApplication(ctx context.Context, name string) (int64, error)
 	UpsertTransitionEventDocument(ctx context.Context, arg UpsertTransitionEventDocumentParams) (int64, error)

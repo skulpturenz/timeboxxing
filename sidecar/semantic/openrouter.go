@@ -35,7 +35,7 @@ func NewOpenRouterEmbedder(cfg OpenRouterConfig) (*OpenRouterEmbedder, error) {
 		cfg.BaseURL = "https://openrouter.ai/api/v1"
 	}
 	if cfg.Model == "" {
-		cfg.Model = "qwen/qwen3-embedding-0.6b:free"
+		cfg.Model = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 	}
 	if cfg.Dimension <= 0 {
 		return nil, fmt.Errorf("embedding dimension must be positive")

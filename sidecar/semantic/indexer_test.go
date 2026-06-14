@@ -16,10 +16,10 @@ type fakeEmbedder struct{}
 
 func (fakeEmbedder) Model() string { return "fake-embedding" }
 
-func (fakeEmbedder) Dimension() int { return 1024 }
+func (fakeEmbedder) Dimension() int { return 2048 }
 
 func (fakeEmbedder) Embed(_ context.Context, input string) ([]float32, error) {
-	values := make([]float32, 1024)
+	values := make([]float32, 2048)
 	if strings.Contains(input, "Google Chrome") || strings.Contains(input, "browser") {
 		values[0] = 1
 	} else {

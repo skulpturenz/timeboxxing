@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package transitions.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/transitions/v1;transitionsv1";
+
+service TransitionsService {
+  rpc GetTransitionEvents(GetTransitionEventsRequest) returns (GetTransitionEventsResponse);
+  rpc GetTransitionEventStream(GetTransitionEventsRequest) returns (stream TransitionEvent);
+}
+
+message GetTransitionEventsRequest {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
+}
+
+message GetTransitionEventsResponse {
+  repeated TransitionEvent transition_events = 1;
+}
+
+message TransitionEvent {
+  int64 id = 1;
+  string application_name = 2;
+  string reason = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp ended_at = 5;
+  bool browser = 6;
+  string tab = 7;
+  bool idle = 8;
+  string cdp_url = 9;
+}

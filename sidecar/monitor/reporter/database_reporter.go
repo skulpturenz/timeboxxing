@@ -41,7 +41,7 @@ func (d *DatabaseReporter) Run(ctx context.Context, transitions <-chan session.T
 			if !ok {
 				return nil
 			}
-			if err := d.Record(ctx, t); err != nil {
+			if _, err := d.Record(ctx, t); err != nil {
 				return err
 			}
 		}
@@ -49,14 +49,14 @@ func (d *DatabaseReporter) Run(ctx context.Context, transitions <-chan session.T
 }
 
 // Record persists the closed source session from a transition.
-func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) error {
+func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) (int64, error) {
 	if t.From == nil || t.From.IsOpen() {
-		return nil
+		return 0, nil
 	}
 
 	tx, err := d.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin transition event transaction: %w", err)
+		return 0, fmt.Errorf("begin transition event transaction: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -68,7 +68,7 @@ func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) err
 	if !key.IsIdle && appName != "" {
 		id, err := q.UpsertApplication(ctx, appName)
 		if err != nil {
-			return fmt.Errorf("upsert application %q: %w", appName, err)
+			return 0, fmt.Errorf("upsert application %q: %w", appName, err)
 		}
 		applicationID = sql.NullInt64{Int64: id, Valid: true}
 	}
@@ -80,7 +80,7 @@ func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) err
 		EndedAt:       t.From.EndedAt,
 	})
 	if err != nil {
-		return fmt.Errorf("create transition event: %w", err)
+		return 0, fmt.Errorf("create transition event: %w", err)
 	}
 
 	if err := q.CreateTransitionEventMetadata(ctx, queries.CreateTransitionEventMetadataParams{
@@ -90,19 +90,19 @@ func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) err
 		Idle:              key.IsIdle,
 		CdpUrl:            stringPtr(key.CDPURL),
 	}); err != nil {
-		return fmt.Errorf("create transition event metadata: %w", err)
+		return 0, fmt.Errorf("create transition event metadata: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit transition event transaction: %w", err)
+		return 0, fmt.Errorf("commit transition event transaction: %w", err)
 	}
 	if d.indexer != nil {
 		if _, err := d.indexer.IndexTransitionEvent(ctx, eventID); err != nil {
-			return fmt.Errorf("index transition event: %w", err)
+			return 0, fmt.Errorf("index transition event: %w", err)
 		}
 	}
 
-	return nil
+	return eventID, nil
 }
 
 func stringPtr(value string) *string {

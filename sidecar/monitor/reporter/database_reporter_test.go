@@ -36,10 +36,10 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 		Reason: session.ReasonTabChange,
 	}
 
-	if err := reporter.Record(ctx, transition); err != nil {
+	if _, err := reporter.Record(ctx, transition); err != nil {
 		t.Fatalf("record first transition: %v", err)
 	}
-	if err := reporter.Record(ctx, transition); err != nil {
+	if _, err := reporter.Record(ctx, transition); err != nil {
 		t.Fatalf("record second transition: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(10 * time.Minute)
 
-	if err := reporter.Record(ctx, session.Transition{
+	if _, err := reporter.Record(ctx, session.Transition{
 		From: &session.Session{
 			Key:       session.AppKey{IsIdle: true},
 			StartedAt: started,
@@ -151,13 +151,13 @@ func TestDatabaseRecordSkipsOpenAndStartTransitions(t *testing.T) {
 	database := newTestDatabase(t, ctx)
 	reporter := NewDatabaseReporter(database.Conn)
 
-	if err := reporter.Record(ctx, session.Transition{
+	if _, err := reporter.Record(ctx, session.Transition{
 		To:     &session.Session{Key: session.AppKey{AppName: "VSCode"}, StartedAt: time.Now()},
 		Reason: session.ReasonStart,
 	}); err != nil {
 		t.Fatalf("record start transition: %v", err)
 	}
-	if err := reporter.Record(ctx, session.Transition{
+	if _, err := reporter.Record(ctx, session.Transition{
 		From:   &session.Session{Key: session.AppKey{AppName: "VSCode"}, StartedAt: time.Now()},
 		Reason: session.ReasonFocusChange,
 	}); err != nil {
@@ -182,7 +182,7 @@ func TestDatabaseRecordIndexesPersistedTransitionEvent(t *testing.T) {
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(5 * time.Minute)
 
-	if err := reporter.Record(ctx, session.Transition{
+	recordedEventID, err := reporter.Record(ctx, session.Transition{
 		From: &session.Session{
 			Key:       session.AppKey{AppName: "VSCode"},
 			StartedAt: started,
@@ -190,7 +190,8 @@ func TestDatabaseRecordIndexesPersistedTransitionEvent(t *testing.T) {
 			Duration:  ended.Sub(started),
 		},
 		Reason: session.ReasonFocusChange,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("record transition: %v", err)
 	}
 
@@ -200,6 +201,9 @@ func TestDatabaseRecordIndexesPersistedTransitionEvent(t *testing.T) {
 	}
 	if len(indexer.transitionEventIDs) != 1 || indexer.transitionEventIDs[0] != eventID {
 		t.Fatalf("expected indexed event id %d, got %#v", eventID, indexer.transitionEventIDs)
+	}
+	if recordedEventID != eventID {
+		t.Fatalf("expected returned event id %d, got %d", eventID, recordedEventID)
 	}
 }
 
@@ -211,7 +215,7 @@ func TestDatabaseRecordReturnsIndexingErrors(t *testing.T) {
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(5 * time.Minute)
 
-	err := reporter.Record(ctx, session.Transition{
+	_, err := reporter.Record(ctx, session.Transition{
 		From: &session.Session{
 			Key:       session.AppKey{AppName: "VSCode"},
 			StartedAt: started,

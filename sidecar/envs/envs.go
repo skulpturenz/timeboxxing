@@ -25,10 +25,10 @@ var (
 				WithDefault("https://openrouter.ai/api/v1").
 				Required()
 	EmbeddingModel = ferrite.String("SIDECAR_EMBEDDING_MODEL", "the OpenRouter embedding model used for semantic search").
-			WithDefault("qwen/qwen3-embedding-0.6b:free").
+			WithDefault("nvidia/llama-nemotron-embed-vl-1b-v2:free").
 			Required()
 	EmbeddingDimension = ferrite.Unsigned[uint]("SIDECAR_EMBEDDING_DIMENSION", "the embedding vector dimension").
-				WithDefault(1024).
+				WithDefault(2048).
 				Required()
 	RAGModel = ferrite.String("SIDECAR_RAG_MODEL", "the OpenRouter generation model used for RAG answers").
 			WithDefault("google/gemma-3-27b-it:free").

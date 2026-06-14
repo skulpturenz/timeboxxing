@@ -5,11 +5,17 @@ version: '3'
 tasks:
   start:
     desc: Run API
+    dir: '{{.TASKFILE_DIR}}'
+    dotenv:
+      - .env
     cmds:
       - go run -tags assert .
 
   dev:
     desc: Run development API
+    dir: '{{.TASKFILE_DIR}}'
+    dotenv:
+      - .env
     cmds:
       - go tool gow run -tags assert .
 
