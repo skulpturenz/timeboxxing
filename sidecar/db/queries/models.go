@@ -32,6 +32,7 @@ type TransitionEventDocument struct {
 }
 
 type TransitionEventDocumentFloat32Embedding struct {
+	ID                        int64
 	TransitionEventDocumentID int64
 	Embedding                 string
 	K                         sql.NullInt64

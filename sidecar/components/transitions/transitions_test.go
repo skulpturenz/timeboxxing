@@ -14,7 +14,7 @@ import (
 func TestGetTransitionEventsFiltersByTime(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	service := NewService(NewServiceParams{Querier: database.Querier})
+	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
 
 	firstStarted := time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC)
 	secondStarted := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
@@ -48,7 +48,7 @@ func TestGetTransitionEventsFiltersByTime(t *testing.T) {
 func TestSubscribeStreamsNewEventsOnly(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	service := NewService(NewServiceParams{Querier: database.Querier})
+	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
 
 	oldID := createTransitionEvent(t, ctx, database, "VSCode", "Editor", time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
 	subscription := service.Subscribe(SubscribeParams{})
@@ -75,7 +75,7 @@ func TestSubscribeStreamsNewEventsOnly(t *testing.T) {
 func TestSubscribeAppliesFilters(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	service := NewService(NewServiceParams{Querier: database.Querier})
+	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
 	threshold := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	subscription := service.Subscribe(SubscribeParams{Filters: Filters{StartedAt: &threshold}})
 	defer subscription.Close()
@@ -120,7 +120,7 @@ func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 
 func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Database, appName string, tab string, startedAt time.Time) int64 {
 	t.Helper()
-	reporter := reporter.NewDatabaseReporter(database.Conn)
+	reporter := reporter.NewDatabaseReporter(database.WriteConn)
 	id, err := reporter.Record(ctx, session.Transition{
 		From: &session.Session{
 			Key: session.AppKey{

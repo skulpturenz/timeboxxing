@@ -18,7 +18,7 @@ import (
 func TestGetTransitionEventsMapsComponentEvents(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	service := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.Querier})
+	service := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
 	server := NewServer(NewServerParams{Transitions: service})
 	startedAt := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	id := createTransitionEvent(t, ctx, database, "Google Chrome", "Docs", startedAt)
@@ -39,7 +39,7 @@ func TestGetTransitionEventsMapsComponentEvents(t *testing.T) {
 func TestGetTransitionEventStreamSendsComponentEvents(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	service := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.Querier})
+	service := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
 	server := NewServer(NewServerParams{Transitions: service})
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -99,7 +99,7 @@ func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 
 func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Database, appName string, tab string, startedAt time.Time) int64 {
 	t.Helper()
-	reporter := reporter.NewDatabaseReporter(database.Conn)
+	reporter := reporter.NewDatabaseReporter(database.WriteConn)
 	id, err := reporter.Record(ctx, session.Transition{
 		From: &session.Session{
 			Key: session.AppKey{

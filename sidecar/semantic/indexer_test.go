@@ -31,9 +31,9 @@ func (fakeEmbedder) Embed(_ context.Context, input string) ([]float32, error) {
 func TestIndexerAndSearcher(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	eventID := createSemanticTestTransitionEvent(t, ctx, database.Conn)
+	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteConn)
 
-	indexer := NewIndexer(database.Conn, fakeEmbedder{})
+	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{})
 	documentID, err := indexer.IndexTransitionEvent(ctx, eventID)
 	if err != nil {
 		t.Fatalf("index transition event: %v", err)
@@ -42,7 +42,7 @@ func TestIndexerAndSearcher(t *testing.T) {
 		t.Fatal("expected document id")
 	}
 
-	searcher := NewSearcher(database.Conn, fakeEmbedder{})
+	searcher := NewSearcher(database.ReadConn, fakeEmbedder{})
 	results, err := searcher.Search(ctx, "browser work", 1)
 	if err != nil {
 		t.Fatalf("search transition event documents: %v", err)

@@ -6,9 +6,12 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"slices"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -34,8 +37,10 @@ type Options struct {
 }
 
 type Database struct {
-	queries.Querier
-	Conn *sql.DB
+	WriteQuerier queries.Querier
+	ReadQuerier  queries.Querier
+	WriteConn    *sql.DB
+	ReadConn     *sql.DB
 }
 
 func New(ctx context.Context, opts Options) (*Database, error) {
@@ -48,33 +53,74 @@ func New(ctx context.Context, opts Options) (*Database, error) {
 }
 
 func (d *Database) Close() error {
-	if d == nil || d.Conn == nil {
+	if d == nil {
 		return nil
 	}
 
-	return d.Conn.Close()
+	var errs []error
+	if d.WriteConn != nil {
+		errs = append(errs, d.WriteConn.Close())
+	}
+	if d.ReadConn != nil {
+		errs = append(errs, d.ReadConn.Close())
+	}
+
+	return errors.Join(errs...)
 }
 
 func newSqlite(ctx context.Context, dataSourceName string) (*Database, error) {
-	conn, err := sql.Open(string(EngineSqlite), dataSourceName)
+	dataSourceName = SqliteDataSourceName(dataSourceName)
+
+	writerConn, err := sql.Open(string(EngineSqlite), dataSourceName)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite database: %w", err)
+		return nil, fmt.Errorf("open sqlite writer database: %w", err)
+	}
+	writerConn.SetMaxOpenConns(1)
+	writerConn.SetMaxIdleConns(1)
+
+	if err := writerConn.PingContext(ctx); err != nil {
+		writerConn.Close()
+		return nil, fmt.Errorf("ping sqlite writer database: %w", err)
 	}
 
-	if err := conn.PingContext(ctx); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("ping sqlite database: %w", err)
-	}
-
-	if err := runMigrations(ctx, conn, EngineSqlite); err != nil {
-		conn.Close()
+	if err := runMigrations(ctx, writerConn, EngineSqlite); err != nil {
+		writerConn.Close()
 		return nil, err
 	}
 
+	readerConn, err := sql.Open(string(EngineSqlite), dataSourceName)
+	if err != nil {
+		writerConn.Close()
+		return nil, fmt.Errorf("open sqlite reader database: %w", err)
+	}
+	if err := readerConn.PingContext(ctx); err != nil {
+		writerConn.Close()
+		readerConn.Close()
+		return nil, fmt.Errorf("ping sqlite reader database: %w", err)
+	}
+
 	return &Database{
-		Querier: queries.New(conn),
-		Conn:    conn,
+		WriteQuerier: queries.New(writerConn),
+		ReadQuerier:  queries.New(readerConn),
+		WriteConn:    writerConn,
+		ReadConn:     readerConn,
 	}, nil
+}
+
+func SqliteDataSourceName(dataSourceName string) string {
+	base, rawQuery, hasQuery := strings.Cut(dataSourceName, "?")
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		values = url.Values{}
+	}
+	values.Set("_journal_mode", "WAL")
+	values.Add("_pragma", "journal_mode(WAL)")
+	values.Add("_pragma", "busy_timeout(5000)")
+
+	if !hasQuery && values.Encode() == "" {
+		return dataSourceName
+	}
+	return base + "?" + values.Encode()
 }
 
 func runMigrations(ctx context.Context, conn *sql.DB, engine Engine) error {

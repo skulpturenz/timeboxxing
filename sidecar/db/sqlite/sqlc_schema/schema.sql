@@ -35,7 +35,8 @@ CREATE TABLE transition_event_documents (
 );
 
 CREATE TABLE transition_event_document_float32_embeddings (
-  transition_event_document_id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY,
+  transition_event_document_id INTEGER NOT NULL,
   embedding TEXT NOT NULL,
   k INTEGER,
   distance REAL

@@ -57,9 +57,10 @@ func main() {
 	logger := slog.New(tint.NewHandler(os.Stderr, &tint.Options{}))
 	slog.SetDefault(logger)
 
+	databaseEngine := envs.DatabaseEngine.Value()
 	dsn := envs.DatabaseDSN.Value()
 	database, err := db.New(ctx, db.Options{
-		Engine:         envs.DatabaseEngine.Value(),
+		Engine:         databaseEngine,
 		DataSourceName: dsn,
 	})
 	if err != nil {
@@ -68,23 +69,32 @@ func main() {
 	defer database.Close()
 
 	// queue
+	queueDSN := dsn
+	if databaseEngine == db.EngineSqlite {
+		queueDSN = db.SqliteDataSourceName(queueDSN)
+	}
 	persistedQueue := queue.QueueOptions{
-		ConnectionString: dsn,
+		ConnectionString: queueDSN,
 	}
 	queue, err := persistedQueue.New()
 	if err != nil {
 		panic(err)
 	}
-	transitionEventQueue, transitionEventQueueCleanup := workers.AddTransitionEventWorker(*queue)
+	workerServices := workers.NewWorkerServices(workers.WorkerServicesParams{
+		ReadQueries:  database.ReadQuerier,
+		WriteQueries: database.WriteQuerier,
+		Logger:       logger.With("service", "workers"),
+	})
+	transitionEventQueue, transitionEventQueueCleanup := workerServices.AddTransitionEventWorker(*queue)
 	defer transitionEventQueueCleanup()
 	transitions, err := monitor.Start(ctx, logger.With("service", "monitor"), monitor.Config{})
 	if err != nil {
 		log.Fatalf("start monitor: %v", err)
 	}
 	services := appServices{
-		databaseReporter: reporter.NewDatabaseReporter(database.Conn),
+		databaseReporter: reporter.NewDatabaseReporter(database.WriteConn),
 		transitions: componentTransitions.NewService(componentTransitions.NewServiceParams{
-			Querier: database.Querier,
+			Querier: database.ReadQuerier,
 		}),
 	}
 	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
@@ -109,8 +119,8 @@ func main() {
 			log.Fatalf("create semantic generator: %v", err)
 		}
 
-		searcher := semantic.NewSearcher(database.Conn, embedder)
-		services.databaseReporter = reporter.NewDatabaseReporterWithIndexer(database.Conn, semantic.NewIndexer(database.Conn, embedder))
+		searcher := semantic.NewSearcher(database.ReadConn, embedder)
+		services.databaseReporter = reporter.NewDatabaseReporterWithIndexer(database.WriteConn, semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder))
 		services.answerer = semantic.NewAnswerer(searcher, generator)
 		logger.Info("semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
 		logger.Info("RAG answering enabled", "rag_model", generator.Model())

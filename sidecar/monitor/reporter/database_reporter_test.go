@@ -16,8 +16,8 @@ import (
 func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	reporter := NewDatabaseReporter(database.Conn)
-	assertSeededTransitionReasons(t, ctx, database.Conn)
+	reporter := NewDatabaseReporter(database.WriteConn)
+	assertSeededTransitionReasons(t, ctx, database.WriteConn)
 
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(5 * time.Minute)
@@ -45,7 +45,7 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 
 	var appCount int
 	var appName string
-	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*), MAX(name) FROM applications`).Scan(&appCount, &appName); err != nil {
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT COUNT(*), MAX(name) FROM applications`).Scan(&appCount, &appName); err != nil {
 		t.Fatalf("query applications: %v", err)
 	}
 	if appCount != 1 {
@@ -58,7 +58,7 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 	var eventCount int
 	var eventsWithApplication int
 	var reasonID int64
-	if err := database.Conn.QueryRowContext(ctx, `
+	if err := database.WriteConn.QueryRowContext(ctx, `
 		SELECT COUNT(*), COUNT(application_id), MAX(transition_reason_id)
 		FROM transition_events
 	`).Scan(&eventCount, &eventsWithApplication, &reasonID); err != nil {
@@ -75,7 +75,7 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 	var tab sql.NullString
 	var idle bool
 	var cdpURL sql.NullString
-	if err := database.Conn.QueryRowContext(ctx, `
+	if err := database.WriteConn.QueryRowContext(ctx, `
 		SELECT browser, tab, idle, cdp_url
 		FROM transition_event_metadata
 		ORDER BY id
@@ -100,7 +100,7 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	reporter := NewDatabaseReporter(database.Conn)
+	reporter := NewDatabaseReporter(database.WriteConn)
 
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(10 * time.Minute)
@@ -118,7 +118,7 @@ func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
 	}
 
 	var appCount int
-	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM applications`).Scan(&appCount); err != nil {
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT COUNT(*) FROM applications`).Scan(&appCount); err != nil {
 		t.Fatalf("query applications: %v", err)
 	}
 	if appCount != 0 {
@@ -127,7 +127,7 @@ func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
 
 	var applicationID sql.NullInt64
 	var reasonID int64
-	if err := database.Conn.QueryRowContext(ctx, `SELECT application_id, transition_reason_id FROM transition_events`).Scan(&applicationID, &reasonID); err != nil {
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT application_id, transition_reason_id FROM transition_events`).Scan(&applicationID, &reasonID); err != nil {
 		t.Fatalf("query idle transition event: %v", err)
 	}
 	if applicationID.Valid {
@@ -138,7 +138,7 @@ func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
 	}
 
 	var idle bool
-	if err := database.Conn.QueryRowContext(ctx, `SELECT idle FROM transition_event_metadata`).Scan(&idle); err != nil {
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT idle FROM transition_event_metadata`).Scan(&idle); err != nil {
 		t.Fatalf("query idle metadata: %v", err)
 	}
 	if !idle {
@@ -149,7 +149,7 @@ func TestDatabaseRecordIdleEventHasNullApplication(t *testing.T) {
 func TestDatabaseRecordSkipsOpenAndStartTransitions(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	reporter := NewDatabaseReporter(database.Conn)
+	reporter := NewDatabaseReporter(database.WriteConn)
 
 	if _, err := reporter.Record(ctx, session.Transition{
 		To:     &session.Session{Key: session.AppKey{AppName: "VSCode"}, StartedAt: time.Now()},
@@ -165,7 +165,7 @@ func TestDatabaseRecordSkipsOpenAndStartTransitions(t *testing.T) {
 	}
 
 	var eventCount int
-	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM transition_events`).Scan(&eventCount); err != nil {
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT COUNT(*) FROM transition_events`).Scan(&eventCount); err != nil {
 		t.Fatalf("query transition events: %v", err)
 	}
 	if eventCount != 0 {
@@ -177,7 +177,7 @@ func TestDatabaseRecordIndexesPersistedTransitionEvent(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
 	indexer := &recordingTransitionEventIndexer{}
-	reporter := NewDatabaseReporterWithIndexer(database.Conn, indexer)
+	reporter := NewDatabaseReporterWithIndexer(database.WriteConn, indexer)
 
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(5 * time.Minute)
@@ -196,7 +196,7 @@ func TestDatabaseRecordIndexesPersistedTransitionEvent(t *testing.T) {
 	}
 
 	var eventID int64
-	if err := database.Conn.QueryRowContext(ctx, `SELECT id FROM transition_events`).Scan(&eventID); err != nil {
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT id FROM transition_events`).Scan(&eventID); err != nil {
 		t.Fatalf("query transition event: %v", err)
 	}
 	if len(indexer.transitionEventIDs) != 1 || indexer.transitionEventIDs[0] != eventID {
@@ -210,7 +210,7 @@ func TestDatabaseRecordIndexesPersistedTransitionEvent(t *testing.T) {
 func TestDatabaseRecordReturnsIndexingErrors(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	reporter := NewDatabaseReporterWithIndexer(database.Conn, &recordingTransitionEventIndexer{err: fmt.Errorf("embed failed")})
+	reporter := NewDatabaseReporterWithIndexer(database.WriteConn, &recordingTransitionEventIndexer{err: fmt.Errorf("embed failed")})
 
 	started := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	ended := started.Add(5 * time.Minute)
@@ -232,7 +232,7 @@ func TestDatabaseRecordReturnsIndexingErrors(t *testing.T) {
 	}
 
 	var eventCount int
-	if err := database.Conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM transition_events`).Scan(&eventCount); err != nil {
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT COUNT(*) FROM transition_events`).Scan(&eventCount); err != nil {
 		t.Fatalf("query transition events: %v", err)
 	}
 	if eventCount != 1 {

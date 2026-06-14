@@ -10,12 +10,13 @@ import (
 )
 
 type Indexer struct {
-	conn     *sql.DB
-	embedder Embedder
+	writeConn   *sql.DB
+	readQuerier queries.Querier
+	embedder    Embedder
 }
 
-func NewIndexer(conn *sql.DB, embedder Embedder) *Indexer {
-	return &Indexer{conn: conn, embedder: embedder}
+func NewIndexer(writeConn *sql.DB, readQuerier queries.Querier, embedder Embedder) *Indexer {
+	return &Indexer{writeConn: writeConn, readQuerier: readQuerier, embedder: embedder}
 }
 
 func (i *Indexer) IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error) {
@@ -23,14 +24,7 @@ func (i *Indexer) IndexTransitionEvent(ctx context.Context, transitionEventID in
 		return 0, fmt.Errorf("embedder is required")
 	}
 
-	tx, err := i.conn.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin semantic index transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	q := queries.New(tx)
-	src, err := q.GetTransitionEventDocumentSource(ctx, transitionEventID)
+	src, err := i.readQuerier.GetTransitionEventDocumentSource(ctx, transitionEventID)
 	if err != nil {
 		return 0, fmt.Errorf("get transition event document source: %w", err)
 	}
@@ -48,7 +42,15 @@ func (i *Indexer) IndexTransitionEvent(ctx context.Context, transitionEventID in
 		return 0, err
 	}
 
-	documentID, err := q.UpsertTransitionEventDocument(ctx, queries.UpsertTransitionEventDocumentParams{
+	tx, err := i.writeConn.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin semantic index transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	q := queries.New(tx)
+
+	documentID, err := q.CreateTransitionEventDocument(ctx, queries.CreateTransitionEventDocumentParams{
 		TransitionEventID:  transitionEventID,
 		Content:            content,
 		EmbeddingModel:     i.embedder.Model(),
@@ -56,12 +58,9 @@ func (i *Indexer) IndexTransitionEvent(ctx context.Context, transitionEventID in
 		EmbeddedAt:         sql.NullTime{Time: time.Now().UTC(), Valid: true},
 	})
 	if err != nil {
-		return 0, fmt.Errorf("upsert transition event document: %w", err)
+		return 0, fmt.Errorf("create transition event document: %w", err)
 	}
 
-	if err := q.DeleteTransitionEventDocumentEmbedding(ctx, documentID); err != nil {
-		return 0, fmt.Errorf("delete existing transition event document embedding: %w", err)
-	}
 	if err := q.CreateTransitionEventDocumentEmbedding(ctx, queries.CreateTransitionEventDocumentEmbeddingParams{
 		TransitionEventDocumentID: documentID,
 		Embedding:                 encoded,
