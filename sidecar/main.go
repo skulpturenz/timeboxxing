@@ -13,6 +13,7 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/lmittmann/tint"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	"github.com/skulpturenz/timeboxxing/sidecar/envs"
 	hellov1 "github.com/skulpturenz/timeboxxing/sidecar/gen/hello/v1"
@@ -49,7 +50,8 @@ func interceptorLogger(l *slog.Logger) logging.Logger {
 
 func main() {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
+	logger := slog.New(tint.NewHandler(os.Stderr, &tint.Options{}))
+	slog.SetDefault(logger)
 
 	dsn := envs.DatabaseDSN.Value()
 	database, err := db.New(ctx, db.Options{
@@ -150,7 +152,7 @@ func main() {
 	hellov1.RegisterHelloServiceOneServer(server, helloserviceone.HelloServiceOneServer{})
 	hellov1.RegisterHelloServiceTwoServer(server, helloservicetwo.HelloServiceTwoServer{})
 
-	log.Printf("sidecar gRPC server listening on %s", listenAddress)
+	logger.Info("sidecar gRPC server listening", "address", listenAddress)
 	if err := server.Serve(listener); err != nil {
 		log.Fatalf("serve grpc: %v", err)
 	}

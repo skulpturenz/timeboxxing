@@ -6,13 +6,13 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"errors"
 	"fmt"
-	"io/fs"
 	"path"
 	"slices"
-	"strings"
 
+	"github.com/golang-migrate/migrate/v4"
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 
 	_ "modernc.org/sqlite"
@@ -78,90 +78,69 @@ func newSqlite(ctx context.Context, dataSourceName string) (*Database, error) {
 }
 
 func runMigrations(ctx context.Context, conn *sql.DB, engine Engine) error {
-	if err := runSchemaMigrations(ctx, conn, engine); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	return runSeedScripts(ctx, conn, engine)
-}
-
-func runSchemaMigrations(ctx context.Context, conn *sql.DB, engine Engine) error {
-	migrations, err := listFlatSQLFiles(path.Join(string(engine), "schema"))
-	if err != nil {
-		return fmt.Errorf("read %s migrations: %w", engine, err)
+	if err := runMigrationDir(conn, path.Join(string(engine), "schema"), migratesqlite.DefaultMigrationsTable); err != nil {
+		return fmt.Errorf("run %s schema migrations: %w", engine, err)
 	}
 
-	for _, migration := range migrations {
-		if err := runSQLFile(ctx, conn, migration); err != nil {
-			return fmt.Errorf("run %s migration %s: %w", engine, migration, err)
+	seedDirs, err := listSeedDirs(engine)
+	if err != nil {
+		return fmt.Errorf("read %s seed migration directories: %w", engine, err)
+	}
+
+	for _, seedDir := range seedDirs {
+		migrationTable := fmt.Sprintf("seed_migrations_%s", path.Base(seedDir))
+		if err := runMigrationDir(conn, seedDir, migrationTable); err != nil {
+			return fmt.Errorf("run %s seed migrations %s: %w", engine, seedDir, err)
 		}
 	}
 
 	return nil
 }
 
-func runSeedScripts(ctx context.Context, conn *sql.DB, engine Engine) error {
-	seeds, err := listRecursiveSQLFiles(path.Join(string(engine), "seeds"))
+func runMigrationDir(conn *sql.DB, dir string, migrationsTable string) error {
+	sourceDriver, err := iofs.New(migrationFiles, dir)
 	if err != nil {
-		return fmt.Errorf("read %s seed scripts: %w", engine, err)
+		return fmt.Errorf("create migration source: %w", err)
 	}
 
-	for _, seed := range seeds {
-		if err := runSQLFile(ctx, conn, seed); err != nil {
-			return fmt.Errorf("run %s seed script %s: %w", engine, seed, err)
-		}
+	databaseDriver, err := migratesqlite.WithInstance(conn, &migratesqlite.Config{
+		MigrationsTable: migrationsTable,
+	})
+	if err != nil {
+		return fmt.Errorf("create migration database driver: %w", err)
+	}
+
+	migrator, err := migrate.NewWithInstance(dir, sourceDriver, string(EngineSqlite), databaseDriver)
+	if err != nil {
+		return fmt.Errorf("create migrator: %w", err)
+	}
+
+	if err := migrator.Up(); err != nil && err != migrate.ErrNoChange {
+		return err
 	}
 
 	return nil
 }
 
-func listFlatSQLFiles(dir string) ([]string, error) {
+func listSeedDirs(engine Engine) ([]string, error) {
+	dir := path.Join(string(engine), "seeds")
 	entries, err := migrationFiles.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	files := make([]string, 0, len(entries))
+	dirs := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".up.sql") {
+		if !entry.IsDir() {
 			continue
 		}
-		files = append(files, path.Join(dir, entry.Name()))
+		dirs = append(dirs, path.Join(dir, entry.Name()))
 	}
-	slices.Sort(files)
+	slices.Sort(dirs)
 
-	return files, nil
-}
-
-func listRecursiveSQLFiles(dir string) ([]string, error) {
-	files := []string{}
-	err := fs.WalkDir(migrationFiles, dir, func(filePath string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".up.sql") {
-			return nil
-		}
-		files = append(files, filePath)
-		return nil
-	})
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	slices.Sort(files)
-
-	return files, nil
-}
-
-func runSQLFile(ctx context.Context, conn *sql.DB, filePath string) error {
-	contents, err := migrationFiles.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("read SQL file: %w", err)
-	}
-
-	_, err = conn.ExecContext(ctx, string(contents))
-	return err
+	return dirs, nil
 }

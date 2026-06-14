@@ -8,6 +8,8 @@ require (
 	github.com/goptics/sqliteq v0.2.3
 	github.com/goptics/varmq v1.7.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
+	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/lmittmann/tint v1.1.3
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/sys v0.45.0
 	google.golang.org/grpc v1.81.1
@@ -153,7 +155,6 @@ require (
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
-	github.com/golang-migrate/migrate/v4 v4.19.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
