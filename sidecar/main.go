@@ -34,6 +34,11 @@ const (
 	component = "grpc-example"
 )
 
+type appServices struct {
+	databaseReporter *reporter.DatabaseReporter
+	answerer         *semantic.Answerer
+}
+
 // interceptorLogger adapts slog logger to interceptor logger.
 // This code is simple enough to be copied and not imported.
 func interceptorLogger(l *slog.Logger) logging.Logger {
@@ -70,10 +75,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("start monitor: %v", err)
 	}
-	databaseReporter := reporter.NewDatabaseReporter(database.Conn)
+	services := appServices{
+		databaseReporter: reporter.NewDatabaseReporter(database.Conn),
+	}
 	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
 	if openRouterAPIKey == "" {
-		logger.Info("semantic indexing disabled; SIDECAR_OPENROUTER_API_KEY is not configured")
+		logger.Info("semantic indexing and RAG answering disabled; SIDECAR_OPENROUTER_API_KEY is not configured")
 	} else {
 		embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
 			APIKey:    openRouterAPIKey,
@@ -84,8 +91,20 @@ func main() {
 		if err != nil {
 			log.Fatalf("create semantic embedder: %v", err)
 		}
-		databaseReporter = reporter.NewDatabaseReporterWithIndexer(database.Conn, semantic.NewIndexer(database.Conn, embedder))
+		generator, err := semantic.NewOpenRouterGenerator(semantic.OpenRouterConfig{
+			APIKey:  openRouterAPIKey,
+			BaseURL: envs.OpenRouterBaseURL.Value(),
+			Model:   envs.RAGModel.Value(),
+		})
+		if err != nil {
+			log.Fatalf("create semantic generator: %v", err)
+		}
+
+		searcher := semantic.NewSearcher(database.Conn, embedder)
+		services.databaseReporter = reporter.NewDatabaseReporterWithIndexer(database.Conn, semantic.NewIndexer(database.Conn, embedder))
+		services.answerer = semantic.NewAnswerer(searcher, generator)
 		logger.Info("semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
+		logger.Info("RAG answering enabled", "rag_model", generator.Model())
 	}
 	go func() {
 		for transition := range transitions {
@@ -93,7 +112,7 @@ func main() {
 				logger.Warn("failed to add transition event to transition event queue", "reason", transition.Reason)
 			}
 
-			if err := databaseReporter.Record(ctx, transition); err != nil {
+			if err := services.databaseReporter.Record(ctx, transition); err != nil {
 				logger.Error("failed to report transition event", "reason", transition.Reason, "error", err)
 			}
 		}
