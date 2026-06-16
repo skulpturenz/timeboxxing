@@ -5,11 +5,12 @@ go 1.26.4
 require (
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
 	github.com/dogmatiq/ferrite v1.7.0
+	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/goptics/sqliteq v0.2.3
 	github.com/goptics/varmq v1.7.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
-	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/lmittmann/tint v1.1.3
+	github.com/negrel/assert v0.5.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/sys v0.45.0
 	google.golang.org/grpc v1.81.1

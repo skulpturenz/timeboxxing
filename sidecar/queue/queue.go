@@ -13,14 +13,19 @@ type Queue struct {
 
 type QueueOptions struct {
 	ConnectionString string
+	QueueName        string
 }
 
 func (opts *QueueOptions) New(ctx context.Context) (*Queue, error) {
 	q := Queue{}
 
 	db := sqliteq.New(opts.ConnectionString)
+	queueName := opts.QueueName
+	if queueName == "" {
+		queueName = "test"
+	}
 
-	queue, err := db.NewQueue("test")
+	queue, err := db.NewQueue(queueName)
 	if err != nil {
 		return nil, err
 	}

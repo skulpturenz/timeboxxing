@@ -38,9 +38,8 @@ const (
 )
 
 type appServices struct {
-	databaseReporter *reporter.DatabaseReporter
-	answerer         *semantic.Answerer
-	transitions      *componentTransitions.Service
+	answerer    *semantic.Answerer
+	transitions *componentTransitions.Service
 }
 
 // interceptorLogger adapts slog logger to interceptor logger.
@@ -73,78 +72,80 @@ func main() {
 	if databaseEngine == db.EngineSqlite {
 		queueDSN = db.SqliteDataSourceName(queueDSN)
 	}
-	persistedQueue := queue.QueueOptions{
+	transitionEventQueueBackend, err := (&queue.QueueOptions{
 		ConnectionString: queueDSN,
-	}
-	queue, err := persistedQueue.New(ctx)
+		QueueName:        "queue_transition_events",
+	}).New(ctx)
 	if err != nil {
-		logger.ErrorContext(ctx, "create queue", "error", err)
+		logger.ErrorContext(ctx, "create transition event queue", "error", err)
 		panic(err)
 	}
-	workerServices := workers.NewWorkerServices(workers.WorkerServicesParams{
-		ReadQueries:  database.ReadQuerier,
-		WriteQueries: database.WriteQuerier,
-		Logger:       logger.With("service", "workers"),
+	transitionEventReportedQueueBackend, err := (&queue.QueueOptions{
+		ConnectionString: queueDSN,
+		QueueName:        "queue_transition_event_reported",
+	}).New(ctx)
+	if err != nil {
+		logger.ErrorContext(ctx, "create transition event reported queue", "error", err)
+		panic(err)
+	}
+
+	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
+	embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
+		APIKey:    openRouterAPIKey,
+		BaseURL:   envs.OpenRouterBaseURL.Value(),
+		Model:     envs.EmbeddingModel.Value(),
+		Dimension: int(envs.EmbeddingDimension.Value()),
 	})
-	transitionEventQueue, transitionEventQueueCleanup := workerServices.AddTransitionEventWorker(ctx, *queue)
-	defer transitionEventQueueCleanup()
+	if err != nil {
+		logger.ErrorContext(ctx, "create semantic embedder", "error", err)
+		panic(err)
+	}
+	generator, err := semantic.NewOpenRouterGenerator(semantic.OpenRouterConfig{
+		APIKey:  openRouterAPIKey,
+		BaseURL: envs.OpenRouterBaseURL.Value(),
+		Model:   envs.RAGModel.Value(),
+	})
+	if err != nil {
+		logger.ErrorContext(ctx, "create semantic generator", "error", err)
+		panic(err)
+	}
+	transitionEventIndexer := semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder)
+	searcher := semantic.NewSearcher(database.ReadConn, embedder)
+
+	services := appServices{
+		answerer: semantic.NewAnswerer(searcher, generator),
+		transitions: componentTransitions.NewService(componentTransitions.NewServiceParams{
+			Querier: database.ReadQuerier,
+		}),
+	}
+	logger.InfoContext(ctx, "semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
+	logger.InfoContext(ctx, "RAG answering enabled", "rag_model", generator.Model())
+
+	workerServices := workers.WorkerServices{
+		ReadQueries:            database.ReadQuerier,
+		WriteQueries:           database.WriteQuerier,
+		ReadConn:               database.ReadConn,
+		WriteConn:              database.WriteConn,
+		Logger:                 logger.With("service", "workers"),
+		TransitionEventIndexer: transitionEventIndexer,
+	}
+	transitionEventReportedQueue, transitionEventReportedCleanup := workerServices.TransitionEventIndexerWorker(ctx, *transitionEventReportedQueueBackend)
+	defer transitionEventReportedCleanup()
+	workerServices.Queues.TransitionEventReportedQueue = transitionEventReportedQueue
+
+	transitionEventQueue, transitionEventCleanup := workerServices.TransitionEventReporterWorker(ctx, *transitionEventQueueBackend)
+	defer transitionEventCleanup()
+	workerServices.Queues.TransitionEventQueue = transitionEventQueue
+
 	transitions, err := monitor.Start(ctx, logger.With("service", "monitor"), monitor.Config{})
 	if err != nil {
 		logger.ErrorContext(ctx, "start monitor", "error", err)
 		panic(err)
 	}
-	services := appServices{
-		databaseReporter: reporter.NewDatabaseReporter(database.WriteConn),
-		transitions: componentTransitions.NewService(componentTransitions.NewServiceParams{
-			Querier: database.ReadQuerier,
-		}),
-	}
-	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
-	if openRouterAPIKey == "" {
-		logger.InfoContext(ctx, "semantic indexing and RAG answering disabled; SIDECAR_OPENROUTER_API_KEY is not configured")
-	} else {
-		embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
-			APIKey:    openRouterAPIKey,
-			BaseURL:   envs.OpenRouterBaseURL.Value(),
-			Model:     envs.EmbeddingModel.Value(),
-			Dimension: int(envs.EmbeddingDimension.Value()),
-		})
-		if err != nil {
-			logger.ErrorContext(ctx, "create semantic embedder", "error", err)
-			panic(err)
-		}
-		generator, err := semantic.NewOpenRouterGenerator(semantic.OpenRouterConfig{
-			APIKey:  openRouterAPIKey,
-			BaseURL: envs.OpenRouterBaseURL.Value(),
-			Model:   envs.RAGModel.Value(),
-		})
-		if err != nil {
-			logger.ErrorContext(ctx, "create semantic generator", "error", err)
-			panic(err)
-		}
-
-		searcher := semantic.NewSearcher(database.ReadConn, embedder)
-		services.databaseReporter = reporter.NewDatabaseReporterWithIndexer(database.WriteConn, semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder))
-		services.answerer = semantic.NewAnswerer(searcher, generator)
-		logger.InfoContext(ctx, "semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
-		logger.InfoContext(ctx, "RAG answering enabled", "rag_model", generator.Model())
-	}
+	transitionQueueReporter := reporter.NewQueueReporter(transitionEventQueue)
 	go func() {
-		for transition := range transitions {
-			if ok := transitionEventQueue.Add(transition); !ok {
-				logger.WarnContext(ctx, "failed to add transition event to transition event queue", "reason", transition.Reason)
-			}
-
-			eventID, err := services.databaseReporter.Record(ctx, transition)
-			if err != nil {
-				logger.ErrorContext(ctx, "failed to report transition event", "reason", transition.Reason, "error", err)
-				continue
-			}
-			if eventID != 0 {
-				if err := services.transitions.PublishTransitionEvent(ctx, componentTransitions.PublishTransitionEventParams{ID: eventID}); err != nil {
-					logger.ErrorContext(ctx, "failed to publish transition event", "transition_event_id", eventID, "error", err)
-				}
-			}
+		if err := transitionQueueReporter.Run(ctx, transitions); err != nil {
+			logger.ErrorContext(ctx, "transition queue reporter stopped", "error", err)
 		}
 	}()
 
