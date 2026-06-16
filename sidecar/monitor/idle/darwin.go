@@ -16,13 +16,21 @@ double secondsSinceLastInput(void) {
 */
 import "C"
 
+import "context"
+
 type darwinIdleDetector struct{}
 
 // New returns the macOS IdleDetector.
-func New() (IdleDetector, error) {
+func New(ctx context.Context) (IdleDetector, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return darwinIdleDetector{}, nil
 }
 
-func (darwinIdleDetector) SecondsSinceLastInput() (float64, error) {
+func (darwinIdleDetector) SecondsSinceLastInput(ctx context.Context) (float64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	return float64(C.secondsSinceLastInput()), nil
 }

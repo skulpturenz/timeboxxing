@@ -1,15 +1,18 @@
 package platform
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // TitleSource documents which OS API produced the WindowTitle.
 type TitleSource string
 
 const (
-	TitleSourceAX        TitleSource = "ax"          // macOS Accessibility API
-	TitleSourceOsascript TitleSource = "osascript"   // macOS AppleScript fallback
-	TitleSourceWindowAPI TitleSource = "window_api"  // Windows GetWindowText / Linux _NET_WM_NAME
-	TitleSourceNone      TitleSource = "none"        // permission denied or unavailable
+	TitleSourceAX        TitleSource = "ax"         // macOS Accessibility API
+	TitleSourceOsascript TitleSource = "osascript"  // macOS AppleScript fallback
+	TitleSourceWindowAPI TitleSource = "window_api" // Windows GetWindowText / Linux _NET_WM_NAME
+	TitleSourceNone      TitleSource = "none"       // permission denied or unavailable
 )
 
 // WindowInfo is a single observation from one poll tick.
@@ -51,7 +54,7 @@ type Config struct {
 // Each platform file implements New() returning a Tracker.
 type Tracker interface {
 	// Poll returns the current foreground window state.
-	Poll() (WindowInfo, error)
+	Poll(ctx context.Context) (WindowInfo, error)
 	// Permissions returns the list of permissions this implementation requires
 	// and whether each is currently granted.
 	Permissions() []PermissionStatus

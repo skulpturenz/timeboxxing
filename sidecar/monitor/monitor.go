@@ -31,14 +31,14 @@ func Start(ctx context.Context, logger *slog.Logger, cfg Config) (<-chan session
 		cfg.IdleThreshold = 5 * time.Minute
 	}
 
-	tracker, err := platform.New(platform.Config{})
+	tracker, err := platform.New(ctx, platform.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("create platform tracker: %w", err)
 	}
 
-	idleDetector, err := idle.New()
+	idleDetector, err := idle.New(ctx)
 	if err != nil {
-		logger.Warn("idle detection unavailable, continuing without idle tracking", "error", err)
+		logger.WarnContext(ctx, "idle detection unavailable, continuing without idle tracking", "error", err)
 		idleDetector = idle.Nop()
 	}
 

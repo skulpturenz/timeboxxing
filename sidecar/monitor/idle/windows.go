@@ -3,6 +3,7 @@
 package idle
 
 import (
+	"context"
 	"fmt"
 	"time"
 	"unsafe"
@@ -26,11 +27,17 @@ type lastInputInfo struct {
 type windowsIdleDetector struct{}
 
 // New returns the Windows IdleDetector.
-func New() (IdleDetector, error) {
+func New(ctx context.Context) (IdleDetector, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return windowsIdleDetector{}, nil
 }
 
-func (windowsIdleDetector) SecondsSinceLastInput() (float64, error) {
+func (windowsIdleDetector) SecondsSinceLastInput(ctx context.Context) (float64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	var lii lastInputInfo
 	lii.cbSize = uint32(unsafe.Sizeof(lii))
 	ret, _, err := procGetLastInput.Call(uintptr(unsafe.Pointer(&lii)))

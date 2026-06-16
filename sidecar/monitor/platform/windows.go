@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,32 +29,32 @@ const processQueryLimitedInformation = 0x1000
 
 // windowsExeToAppName normalises Windows executable names to human-readable app names.
 var windowsExeToAppName = map[string]string{
-	"chrome":              "Google Chrome",
-	"chromium":            "Chromium",
-	"msedge":              "Microsoft Edge",
-	"firefox":             "Firefox",
-	"code":                "Visual Studio Code",
-	"devenv":              "Visual Studio",
-	"windowsterminal":     "Windows Terminal",
-	"cmd":                 "Command Prompt",
-	"powershell":          "PowerShell",
-	"pwsh":                "PowerShell",
-	"notepad":             "Notepad",
-	"notepad++":           "Notepad++",
-	"explorer":            "File Explorer",
-	"slack":               "Slack",
-	"discord":             "Discord",
-	"teams":               "Microsoft Teams",
-	"outlook":             "Microsoft Outlook",
-	"excel":               "Microsoft Excel",
-	"winword":             "Microsoft Word",
-	"powerpnt":            "Microsoft PowerPoint",
-	"spotify":             "Spotify",
-	"obsidian":            "Obsidian",
-	"notion":              "Notion",
-	"gitkraken":           "GitKraken",
-	"sourcetree":          "Sourcetree",
-	"sublime_text":        "Sublime Text",
+	"chrome":          "Google Chrome",
+	"chromium":        "Chromium",
+	"msedge":          "Microsoft Edge",
+	"firefox":         "Firefox",
+	"code":            "Visual Studio Code",
+	"devenv":          "Visual Studio",
+	"windowsterminal": "Windows Terminal",
+	"cmd":             "Command Prompt",
+	"powershell":      "PowerShell",
+	"pwsh":            "PowerShell",
+	"notepad":         "Notepad",
+	"notepad++":       "Notepad++",
+	"explorer":        "File Explorer",
+	"slack":           "Slack",
+	"discord":         "Discord",
+	"teams":           "Microsoft Teams",
+	"outlook":         "Microsoft Outlook",
+	"excel":           "Microsoft Excel",
+	"winword":         "Microsoft Word",
+	"powerpnt":        "Microsoft PowerPoint",
+	"spotify":         "Spotify",
+	"obsidian":        "Obsidian",
+	"notion":          "Notion",
+	"gitkraken":       "GitKraken",
+	"sourcetree":      "Sourcetree",
+	"sublime_text":    "Sublime Text",
 }
 
 type windowsTracker struct {
@@ -61,11 +62,17 @@ type windowsTracker struct {
 }
 
 // New returns the Windows Tracker implementation.
-func New(cfg Config) (Tracker, error) {
+func New(ctx context.Context, cfg Config) (Tracker, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return &windowsTracker{cfg: cfg}, nil
 }
 
-func (t *windowsTracker) Poll() (WindowInfo, error) {
+func (t *windowsTracker) Poll(ctx context.Context) (WindowInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return WindowInfo{}, err
+	}
 	now := time.Now()
 
 	hwnd, _, _ := procGetForegroundWindow.Call()

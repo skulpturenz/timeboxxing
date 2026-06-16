@@ -1,6 +1,8 @@
 package queue
 
 import (
+	"context"
+
 	"github.com/goptics/sqliteq"
 	"github.com/goptics/varmq"
 )
@@ -13,7 +15,7 @@ type QueueOptions struct {
 	ConnectionString string
 }
 
-func (opts *QueueOptions) New() (*Queue, error) {
+func (opts *QueueOptions) New(ctx context.Context) (*Queue, error) {
 	q := Queue{}
 
 	db := sqliteq.New(opts.ConnectionString)
@@ -28,7 +30,7 @@ func (opts *QueueOptions) New() (*Queue, error) {
 	return &q, nil
 }
 
-func (q Queue) NewWorker(wf func(j varmq.Job[any]), config ...any) (varmq.PersistentQueue[any], varmq.IWorkerBinder[any], func()) {
+func (q Queue) NewWorker(_ context.Context, wf func(j varmq.Job[any]), config ...any) (varmq.PersistentQueue[any], varmq.IWorkerBinder[any], func()) {
 	w := varmq.NewWorker(wf, config...)
 	queue := w.WithPersistentQueue(q.queue)
 

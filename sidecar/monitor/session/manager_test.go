@@ -15,7 +15,7 @@ type fakeTracker struct {
 	pos   int
 }
 
-func (f *fakeTracker) Poll() (platform.WindowInfo, error) {
+func (f *fakeTracker) Poll(context.Context) (platform.WindowInfo, error) {
 	if f.pos >= len(f.infos) {
 		return f.infos[len(f.infos)-1], nil
 	}
@@ -221,4 +221,4 @@ func TestManagerIdleSession(t *testing.T) {
 // idleFunc is a function that implements idle.IdleDetector.
 type idleFunc func() (float64, error)
 
-func (f idleFunc) SecondsSinceLastInput() (float64, error) { return f() }
+func (f idleFunc) SecondsSinceLastInput(context.Context) (float64, error) { return f() }

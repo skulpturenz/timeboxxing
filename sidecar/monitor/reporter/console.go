@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sort"
@@ -29,9 +30,17 @@ func New(out io.Writer, verbose bool) *Console {
 
 // Run drains the transitions channel, printing each transition.
 // Returns when the channel is closed (manager shutdown).
-func (c *Console) Run(transitions <-chan session.Transition) {
-	for t := range transitions {
-		c.printTransition(t)
+func (c *Console) Run(ctx context.Context, transitions <-chan session.Transition) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case t, ok := <-transitions:
+			if !ok {
+				return
+			}
+			c.printTransition(t)
+		}
 	}
 }
 

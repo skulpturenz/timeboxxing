@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -64,7 +63,8 @@ func main() {
 		DataSourceName: dsn,
 	})
 	if err != nil {
-		log.Fatalf("create database: %v", err)
+		logger.ErrorContext(ctx, "create database", "error", err)
+		panic(err)
 	}
 	defer database.Close()
 
@@ -76,8 +76,9 @@ func main() {
 	persistedQueue := queue.QueueOptions{
 		ConnectionString: queueDSN,
 	}
-	queue, err := persistedQueue.New()
+	queue, err := persistedQueue.New(ctx)
 	if err != nil {
+		logger.ErrorContext(ctx, "create queue", "error", err)
 		panic(err)
 	}
 	workerServices := workers.NewWorkerServices(workers.WorkerServicesParams{
@@ -85,11 +86,12 @@ func main() {
 		WriteQueries: database.WriteQuerier,
 		Logger:       logger.With("service", "workers"),
 	})
-	transitionEventQueue, transitionEventQueueCleanup := workerServices.AddTransitionEventWorker(*queue)
+	transitionEventQueue, transitionEventQueueCleanup := workerServices.AddTransitionEventWorker(ctx, *queue)
 	defer transitionEventQueueCleanup()
 	transitions, err := monitor.Start(ctx, logger.With("service", "monitor"), monitor.Config{})
 	if err != nil {
-		log.Fatalf("start monitor: %v", err)
+		logger.ErrorContext(ctx, "start monitor", "error", err)
+		panic(err)
 	}
 	services := appServices{
 		databaseReporter: reporter.NewDatabaseReporter(database.WriteConn),
@@ -99,7 +101,7 @@ func main() {
 	}
 	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
 	if openRouterAPIKey == "" {
-		logger.Info("semantic indexing and RAG answering disabled; SIDECAR_OPENROUTER_API_KEY is not configured")
+		logger.InfoContext(ctx, "semantic indexing and RAG answering disabled; SIDECAR_OPENROUTER_API_KEY is not configured")
 	} else {
 		embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
 			APIKey:    openRouterAPIKey,
@@ -108,7 +110,8 @@ func main() {
 			Dimension: int(envs.EmbeddingDimension.Value()),
 		})
 		if err != nil {
-			log.Fatalf("create semantic embedder: %v", err)
+			logger.ErrorContext(ctx, "create semantic embedder", "error", err)
+			panic(err)
 		}
 		generator, err := semantic.NewOpenRouterGenerator(semantic.OpenRouterConfig{
 			APIKey:  openRouterAPIKey,
@@ -116,29 +119,30 @@ func main() {
 			Model:   envs.RAGModel.Value(),
 		})
 		if err != nil {
-			log.Fatalf("create semantic generator: %v", err)
+			logger.ErrorContext(ctx, "create semantic generator", "error", err)
+			panic(err)
 		}
 
 		searcher := semantic.NewSearcher(database.ReadConn, embedder)
 		services.databaseReporter = reporter.NewDatabaseReporterWithIndexer(database.WriteConn, semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder))
 		services.answerer = semantic.NewAnswerer(searcher, generator)
-		logger.Info("semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
-		logger.Info("RAG answering enabled", "rag_model", generator.Model())
+		logger.InfoContext(ctx, "semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
+		logger.InfoContext(ctx, "RAG answering enabled", "rag_model", generator.Model())
 	}
 	go func() {
 		for transition := range transitions {
 			if ok := transitionEventQueue.Add(transition); !ok {
-				logger.Warn("failed to add transition event to transition event queue", "reason", transition.Reason)
+				logger.WarnContext(ctx, "failed to add transition event to transition event queue", "reason", transition.Reason)
 			}
 
 			eventID, err := services.databaseReporter.Record(ctx, transition)
 			if err != nil {
-				logger.Error("failed to report transition event", "reason", transition.Reason, "error", err)
+				logger.ErrorContext(ctx, "failed to report transition event", "reason", transition.Reason, "error", err)
 				continue
 			}
 			if eventID != 0 {
 				if err := services.transitions.PublishTransitionEvent(ctx, componentTransitions.PublishTransitionEventParams{ID: eventID}); err != nil {
-					logger.Error("failed to publish transition event", "transition_event_id", eventID, "error", err)
+					logger.ErrorContext(ctx, "failed to publish transition event", "transition_event_id", eventID, "error", err)
 				}
 			}
 		}
@@ -156,17 +160,18 @@ func main() {
 	listenAddress := envs.GrpcListenAddress.Value().String()
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		log.Fatalf("listen on %s: %v", listenAddress, err)
+		logger.ErrorContext(ctx, "listen on address", "address", listenAddress, "error", err)
+		panic(err)
 	}
 
-	grpcPanicRecoveryHandler := func(p any) (err error) {
-		rpcLogger.Error("recovered from panic", "panic", p, "stack", debug.Stack())
+	grpcPanicRecoveryHandler := func(ctx context.Context, p any) (err error) {
+		rpcLogger.ErrorContext(ctx, "recovered from panic", "panic", p, "stack", debug.Stack())
 		return status.Errorf(codes.Internal, "%s", p)
 	}
 	server := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			logging.UnaryServerInterceptor(interceptorLogger(rpcLogger), logging.WithFieldsFromContext(logTraceID)),
-			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandler(grpcPanicRecoveryHandler)),
+			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandlerContext(grpcPanicRecoveryHandler)),
 		),
 		grpc.ChainStreamInterceptor(
 			logging.StreamServerInterceptor(interceptorLogger(rpcLogger), logging.WithFieldsFromContext(logTraceID)),
@@ -179,8 +184,9 @@ func main() {
 		Transitions: services.transitions,
 	}))
 
-	logger.Info("sidecar gRPC server listening", "address", listenAddress)
+	logger.InfoContext(ctx, "sidecar gRPC server listening", "address", listenAddress)
 	if err := server.Serve(listener); err != nil {
-		log.Fatalf("serve grpc: %v", err)
+		logger.ErrorContext(ctx, "serve grpc", "error", err)
+		panic(err)
 	}
 }

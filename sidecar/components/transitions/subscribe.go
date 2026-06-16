@@ -1,6 +1,8 @@
 package transitions
 
-func (s *Service) Subscribe(params SubscribeParams) Subscription {
+import "context"
+
+func (s *Service) Subscribe(ctx context.Context, params SubscribeParams) Subscription {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -12,10 +14,17 @@ func (s *Service) Subscribe(params SubscribeParams) Subscription {
 		events:  events,
 	}
 
-	return Subscription{
+	subscription := Subscription{
 		Events: events,
 		Close: func() {
 			s.unsubscribe(id)
 		},
 	}
+
+	go func() {
+		<-ctx.Done()
+		subscription.Close()
+	}()
+
+	return subscription
 }

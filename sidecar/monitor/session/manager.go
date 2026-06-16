@@ -74,7 +74,7 @@ func (m *SessionManager) Run(ctx context.Context, tracker platform.Tracker, poll
 			m.shutdown()
 			return
 		case <-ticker.C:
-			m.tick(tracker)
+			m.tick(ctx, tracker)
 		}
 	}
 }
@@ -111,20 +111,20 @@ func (m *SessionManager) CurrentSession() *Session {
 }
 
 // tick polls for the active window and drives session transitions.
-func (m *SessionManager) tick(tracker platform.Tracker) {
-	info, err := tracker.Poll()
+func (m *SessionManager) tick(ctx context.Context, tracker platform.Tracker) {
+	info, err := tracker.Poll(ctx)
 	if err != nil || info.AppName == "" {
 		return
 	}
 
-	idleSecs, _ := m.cfg.IdleDetector.SecondsSinceLastInput()
+	idleSecs, _ := m.cfg.IdleDetector.SecondsSinceLastInput(ctx)
 	isIdle := idleSecs >= m.cfg.IdleThreshold.Seconds()
 
 	var newKey AppKey
 	if isIdle {
 		newKey = AppKey{IsIdle: true}
 	} else {
-		newKey = m.buildKey(info)
+		newKey = m.buildKey(ctx, info)
 	}
 
 	m.mu.Lock()
@@ -202,7 +202,7 @@ func (m *SessionManager) emit(t Transition) {
 }
 
 // buildKey converts a WindowInfo into an AppKey, handling browser tab extraction.
-func (m *SessionManager) buildKey(info platform.WindowInfo) AppKey {
+func (m *SessionManager) buildKey(ctx context.Context, info platform.WindowInfo) AppKey {
 	if m.cfg.NoBrowserTabs {
 		return AppKey{AppName: info.AppName}
 	}
@@ -212,7 +212,7 @@ func (m *SessionManager) buildKey(info platform.WindowInfo) AppKey {
 		if ok {
 			url := ""
 			if m.cfg.CDPPoller != nil {
-				url = m.cfg.CDPPoller.URLForTitle(tab.TabTitle)
+				url = m.cfg.CDPPoller.URLForTitle(ctx, tab.TabTitle)
 			}
 			return AppKey{AppName: info.AppName, TabTitle: tab.TabTitle, CDPURL: url}
 		}

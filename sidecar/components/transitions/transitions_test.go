@@ -51,7 +51,7 @@ func TestSubscribeStreamsNewEventsOnly(t *testing.T) {
 	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
 
 	oldID := createTransitionEvent(t, ctx, database, "VSCode", "Editor", time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
-	subscription := service.Subscribe(SubscribeParams{})
+	subscription := service.Subscribe(ctx, SubscribeParams{})
 	defer subscription.Close()
 
 	newID := createTransitionEvent(t, ctx, database, "Google Chrome", "Docs", time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
@@ -77,7 +77,7 @@ func TestSubscribeAppliesFilters(t *testing.T) {
 	database := newTestDatabase(t, ctx)
 	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
 	threshold := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
-	subscription := service.Subscribe(SubscribeParams{Filters: Filters{StartedAt: &threshold}})
+	subscription := service.Subscribe(ctx, SubscribeParams{Filters: Filters{StartedAt: &threshold}})
 	defer subscription.Close()
 
 	filteredID := createTransitionEvent(t, ctx, database, "VSCode", "Editor", threshold.Add(-time.Hour))

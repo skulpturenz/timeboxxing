@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -32,14 +33,20 @@ type linuxTracker struct {
 }
 
 // New returns the Linux Tracker implementation.
-func New(cfg Config) (Tracker, error) {
+func New(ctx context.Context, cfg Config) (Tracker, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	t := &linuxTracker{cfg: cfg}
 	// Attempt an initial connection; non-fatal if it fails (will retry on first Poll).
 	_ = t.ensureConn()
 	return t, nil
 }
 
-func (t *linuxTracker) Poll() (WindowInfo, error) {
+func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return WindowInfo{}, err
+	}
 	now := time.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()

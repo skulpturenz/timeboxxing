@@ -3,8 +3,8 @@
 package idle
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -21,16 +21,17 @@ type linuxIdleDetector struct {
 
 // New returns the Linux IdleDetector using the X11 MIT-SCREEN-SAVER extension.
 // Falls back to a no-op detector when X11 is unavailable (e.g. pure Wayland).
-func New() (IdleDetector, error) {
+func New(ctx context.Context) (IdleDetector, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	conn, err := xgb.NewConn()
 	if err != nil {
 		// No X11 display — return a no-op so the rest of the app still works.
-		fmt.Fprintf(os.Stderr, "wintrack: idle detection unavailable (no X11 display): %v\n", err)
 		return Nop(), nil
 	}
 	if err := screensaver.Init(conn); err != nil {
 		conn.Close()
-		fmt.Fprintf(os.Stderr, "wintrack: idle detection unavailable (MIT-SCREEN-SAVER extension not present): %v\n", err)
 		return Nop(), nil
 	}
 	setup := xproto.Setup(conn)
@@ -38,7 +39,10 @@ func New() (IdleDetector, error) {
 	return &linuxIdleDetector{conn: conn, root: root}, nil
 }
 
-func (d *linuxIdleDetector) SecondsSinceLastInput() (float64, error) {
+func (d *linuxIdleDetector) SecondsSinceLastInput(ctx context.Context) (float64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

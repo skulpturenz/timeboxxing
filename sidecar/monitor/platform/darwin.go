@@ -96,6 +96,7 @@ int isAXTrustedWithPrompt(void) {
 import "C"
 
 import (
+	"context"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -112,7 +113,10 @@ type darwinTracker struct {
 }
 
 // New returns the macOS Tracker implementation.
-func New(cfg Config) (Tracker, error) {
+func New(ctx context.Context, cfg Config) (Tracker, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	t := &darwinTracker{cfg: cfg}
 	if cfg.PromptPermissions {
 		C.isAXTrustedWithPrompt()
@@ -122,7 +126,10 @@ func New(cfg Config) (Tracker, error) {
 	return t, nil
 }
 
-func (t *darwinTracker) Poll() (WindowInfo, error) {
+func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return WindowInfo{}, err
+	}
 	now := time.Now()
 
 	// Re-check AX permission every 60 s so permission grants take effect without restart.
@@ -171,7 +178,7 @@ func (t *darwinTracker) Poll() (WindowInfo, error) {
 
 	// Fallback: osascript. Runs in its own process so it always sees the true
 	// frontmost application regardless of how this CLI binary was launched.
-	appName, pid, title := osascriptActiveWindow()
+	appName, pid, title := osascriptActiveWindow(ctx)
 	if appName == "" {
 		return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, nil
 	}
@@ -199,7 +206,7 @@ func (t *darwinTracker) Permissions() []PermissionStatus {
 // its PID, and the title of its frontmost window — all in one subprocess call.
 // This is the reliable fallback when the AX API is not available; osascript
 // runs in its own process with a proper window-server connection.
-func osascriptActiveWindow() (appName string, pid int32, windowTitle string) {
+func osascriptActiveWindow(ctx context.Context) (appName string, pid int32, windowTitle string) {
 	const script = `tell application "System Events"
 		set p to first application process whose frontmost is true
 		set appName to name of p
@@ -211,7 +218,7 @@ func osascriptActiveWindow() (appName string, pid int32, windowTitle string) {
 		return (appPID as text) & "|||" & appName & "|||" & winTitle
 	end tell`
 
-	out, err := exec.Command("osascript", "-e", script).Output()
+	out, err := exec.CommandContext(ctx, "osascript", "-e", script).Output()
 	if err != nil {
 		return "", 0, ""
 	}

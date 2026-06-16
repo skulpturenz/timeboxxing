@@ -12,7 +12,7 @@ func (s *Server) GetTransitionEventStream(req *transitionsv1.GetTransitionEvents
 		return err
 	}
 
-	subscription := s.transitions.Subscribe(componentTransitions.SubscribeParams{Filters: filters})
+	subscription := s.transitions.Subscribe(stream.Context(), componentTransitions.SubscribeParams{Filters: filters})
 	defer subscription.Close()
 
 	for {
