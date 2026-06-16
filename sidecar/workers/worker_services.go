@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"log/slog"
 
-	"github.com/goptics/varmq"
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
+	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 )
 
 type WorkerServices struct {
@@ -20,7 +20,7 @@ type WorkerServices struct {
 }
 
 type WorkerQueues struct {
-	TransitionEventQueue         varmq.PersistentQueue[any]
-	TransitionEventReportedQueue varmq.PersistentQueue[any]
-	TransitionEventIndexedQueue  varmq.PersistentQueue[any]
+	TransitionEventQueue         *queue.Queue[reporter.TransitionEvent]
+	TransitionEventReportedQueue *queue.Queue[TransitionEventReported]
+	TransitionEventIndexedQueue  *queue.Queue[TransitionEventIndexed]
 }

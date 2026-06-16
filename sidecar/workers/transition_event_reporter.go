@@ -3,8 +3,6 @@ package workers
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/goptics/varmq"
@@ -18,17 +16,11 @@ type TransitionEventReported struct {
 	TransitionEventId int64
 }
 
-func (s WorkerServices) TransitionEventReporterWorker(ctx context.Context, q queue.Queue) (varmq.PersistentQueue[any], func()) {
+func (s WorkerServices) TransitionEventReporterWorker(ctx context.Context, q *queue.Queue[reporter.TransitionEvent]) func() {
 	logger := s.Logger.With("worker", "transition_event")
 
-	queue, _, cleanup := q.NewWorker(ctx, func(j varmq.Job[any]) {
-		event, err := transitionEventFromJobData(j.Data())
-		assert.Nil(err)
-		if err != nil {
-			logger.ErrorContext(ctx, "invalid transition event job type", "type", fmt.Sprintf("%T", j.Data()), "error", err)
-			return
-		}
-
+	cleanup := q.AddWorker(ctx, func(j varmq.Job[reporter.TransitionEvent]) {
+		event := j.Data()
 		assert.NotNil(s.WriteConn)
 
 		tx, err := s.WriteConn.BeginTx(ctx, nil)
@@ -81,30 +73,15 @@ func (s WorkerServices) TransitionEventReporterWorker(ctx context.Context, q que
 			return
 		}
 
-		s.Queues.TransitionEventReportedQueue.Add(TransitionEventReported{
+		if err := s.Queues.TransitionEventReportedQueue.Add(TransitionEventReported{
 			TransitionEventId: eventID,
-		})
+		}); err != nil {
+			logger.ErrorContext(ctx, "add transition event reported job", "transition_event_id", eventID, "error", err)
+			return
+		}
 
 		logger.InfoContext(ctx, "recorded transition event", "transition_event_id", eventID)
 	}, 0)
 
-	return queue, cleanup
-}
-
-func transitionEventFromJobData(data any) (reporter.TransitionEvent, error) {
-	if event, ok := data.(reporter.TransitionEvent); ok {
-		return event, nil
-	}
-
-	encoded, err := json.Marshal(data)
-	if err != nil {
-		return reporter.TransitionEvent{}, err
-	}
-
-	var event reporter.TransitionEvent
-	if err := json.Unmarshal(encoded, &event); err != nil {
-		return reporter.TransitionEvent{}, err
-	}
-
-	return event, nil
+	return cleanup
 }

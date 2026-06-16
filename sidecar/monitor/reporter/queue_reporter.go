@@ -2,11 +2,9 @@ package reporter
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
-	"github.com/goptics/varmq"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/browser"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
 )
@@ -22,11 +20,15 @@ type TransitionEvent struct {
 	CdpUrl          *string
 }
 
-type QueueReporter struct {
-	queue varmq.PersistentQueue[any]
+type TransitionEventQueue interface {
+	Add(TransitionEvent) error
 }
 
-func NewQueueReporter(queue varmq.PersistentQueue[any]) *QueueReporter {
+type QueueReporter struct {
+	queue TransitionEventQueue
+}
+
+func NewQueueReporter(queue TransitionEventQueue) *QueueReporter {
 	return &QueueReporter{queue: queue}
 }
 
@@ -64,9 +66,5 @@ func (q *QueueReporter) Record(_ context.Context, t session.Transition) error {
 		CdpUrl:          stringPtr(key.CDPURL),
 	}
 
-	if ok := q.queue.Add(event); !ok {
-		return fmt.Errorf("add transition event to queue")
-	}
-
-	return nil
+	return q.queue.Add(event)
 }

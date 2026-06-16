@@ -72,18 +72,18 @@ func main() {
 	if databaseEngine == db.EngineSqlite {
 		queueDSN = db.SqliteDataSourceName(queueDSN)
 	}
-	transitionEventQueueBackend, err := (&queue.QueueOptions{
+	transitionEventQueue, err := queue.New[reporter.TransitionEvent](ctx, queue.QueueOptions{
 		ConnectionString: queueDSN,
-		QueueName:        "queue_transition_events",
-	}).New(ctx)
+		QueueName:        workers.TransitionEventQueueName.String(),
+	})
 	if err != nil {
 		logger.ErrorContext(ctx, "create transition event queue", "error", err)
 		panic(err)
 	}
-	transitionEventReportedQueueBackend, err := (&queue.QueueOptions{
+	transitionEventReportedQueue, err := queue.New[workers.TransitionEventReported](ctx, queue.QueueOptions{
 		ConnectionString: queueDSN,
-		QueueName:        "queue_transition_event_reported",
-	}).New(ctx)
+		QueueName:        workers.TransitionEventReportedQueueName.String(),
+	})
 	if err != nil {
 		logger.ErrorContext(ctx, "create transition event reported queue", "error", err)
 		panic(err)
@@ -128,14 +128,18 @@ func main() {
 		WriteConn:              database.WriteConn,
 		Logger:                 logger.With("service", "workers"),
 		TransitionEventIndexer: transitionEventIndexer,
+		Queues: workers.WorkerQueues{
+			TransitionEventReportedQueue: transitionEventReportedQueue,
+			TransitionEventQueue:         transitionEventQueue,
+		},
 	}
-	transitionEventReportedQueue, transitionEventReportedCleanup := workerServices.TransitionEventIndexerWorker(ctx, *transitionEventReportedQueueBackend)
-	defer transitionEventReportedCleanup()
-	workerServices.Queues.TransitionEventReportedQueue = transitionEventReportedQueue
 
-	transitionEventQueue, transitionEventCleanup := workerServices.TransitionEventReporterWorker(ctx, *transitionEventQueueBackend)
+	// workers
+	transitionEventReportedCleanup := workerServices.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
+	defer transitionEventReportedCleanup()
+
+	transitionEventCleanup := workerServices.TransitionEventReporterWorker(ctx, transitionEventQueue)
 	defer transitionEventCleanup()
-	workerServices.Queues.TransitionEventQueue = transitionEventQueue
 
 	transitions, err := monitor.Start(ctx, logger.With("service", "monitor"), monitor.Config{})
 	if err != nil {
