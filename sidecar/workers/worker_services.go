@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log/slog"
 
+	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
@@ -17,6 +18,7 @@ type WorkerServices struct {
 	Logger                 *slog.Logger
 	Queues                 WorkerQueues
 	TransitionEventIndexer reporter.TransitionEventIndexer
+	Transitions            *componentTransitions.Service
 }
 
 type WorkerQueues struct {

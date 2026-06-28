@@ -46,8 +46,10 @@ func (q *Queue[T]) Add(item T) error {
 }
 
 func (q *Queue[T]) AddWorker(_ context.Context, wf func(j varmq.Job[T]), config ...any) func() {
+	config = append(config, varmq.WithAutoRun(false))
 	w := varmq.NewWorker(wf, config...)
 	q.queue = w.WithPersistentQueue(q.backend)
+	_ = q.queue.Worker().Start()
 
 	cleanup := func() {
 		w.WaitUntilIdle()

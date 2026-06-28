@@ -8,19 +8,28 @@ package platform
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
+#include <libproc.h>
 #include <stdlib.h>
+
+char *copyProcessPath(int pid) {
+    char path[PROC_PIDPATHINFO_MAXSIZE];
+    int length = proc_pidpath(pid, path, sizeof(path));
+    if (length <= 0) return NULL;
+    return strdup(path);
+}
 
 // getActiveWindowAX queries the system-wide AX element for the truly focused
 // application and its focused window. Works reliably from CLI processes.
 //
 // Return values: 0=success, 1=permission denied (AX not granted), 2=other error.
-// On success, outAppName, outAppPath, outWinTitle are heap-allocated (caller must free).
+// On success, outAppName, outAppIdentifier, outAppPath, outWinTitle are heap-allocated (caller must free).
 // outPid is set to the focused process PID.
-int getActiveWindowAX(char **outAppName, char **outAppPath, int *outPid, char **outWinTitle) {
-    *outAppName  = NULL;
-    *outAppPath  = NULL;
-    *outPid      = -1;
-    *outWinTitle = NULL;
+int getActiveWindowAX(char **outAppName, char **outAppIdentifier, char **outAppPath, int *outPid, char **outWinTitle) {
+    *outAppName       = NULL;
+    *outAppIdentifier = NULL;
+    *outAppPath       = NULL;
+    *outPid           = -1;
+    *outWinTitle      = NULL;
 
     // kAXFocusedApplicationAttribute on the system-wide element gives the truly
     // focused app, unlike NSWorkspace.frontmostApplication which is unreliable
@@ -51,10 +60,17 @@ int getActiveWindowAX(char **outAppName, char **outAppPath, int *outPid, char **
                     const char *s = [app.localizedName UTF8String];
                     if (s) *outAppName = strdup(s);
                 }
+                if (app.bundleIdentifier) {
+                    const char *s = [app.bundleIdentifier UTF8String];
+                    if (s) *outAppIdentifier = strdup(s);
+                }
                 NSURL *url = app.bundleURL;
                 if (url) {
                     const char *s = [[url path] UTF8String];
                     if (s) *outAppPath = strdup(s);
+                }
+                if (!*outAppPath) {
+                    *outAppPath = copyProcessPath((int)pid);
                 }
             }
         }
@@ -142,9 +158,9 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	t.mu.Unlock()
 
 	if axGranted {
-		var nameC, pathC, titleC *C.char
+		var nameC, identifierC, pathC, titleC *C.char
 		var pid C.int
-		rc := C.getActiveWindowAX(&nameC, &pathC, &pid, &titleC)
+		rc := C.getActiveWindowAX(&nameC, &identifierC, &pathC, &pid, &titleC)
 
 		if rc == 0 {
 			info := WindowInfo{
@@ -155,6 +171,10 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 			if nameC != nil {
 				info.AppName = C.GoString(nameC)
 				C.free(unsafe.Pointer(nameC))
+			}
+			if identifierC != nil {
+				info.AppIdentifier = C.GoString(identifierC)
+				C.free(unsafe.Pointer(identifierC))
 			}
 			if pathC != nil {
 				info.AppPath = C.GoString(pathC)
@@ -178,16 +198,18 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 
 	// Fallback: osascript. Runs in its own process so it always sees the true
 	// frontmost application regardless of how this CLI binary was launched.
-	appName, pid, title := osascriptActiveWindow(ctx)
+	appName, identifier, pid, title := osascriptActiveWindow(ctx)
 	if appName == "" {
 		return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, nil
 	}
 	return WindowInfo{
-		AppName:     appName,
-		PID:         pid,
-		WindowTitle: title,
-		TitleSource: TitleSourceOsascript,
-		Timestamp:   now,
+		AppName:       appName,
+		AppIdentifier: identifier,
+		AppPath:       pathFromBundleOrProcess("", pid),
+		PID:           pid,
+		WindowTitle:   title,
+		TitleSource:   TitleSourceOsascript,
+		Timestamp:     now,
 	}, nil
 }
 
@@ -206,32 +228,58 @@ func (t *darwinTracker) Permissions() []PermissionStatus {
 // its PID, and the title of its frontmost window — all in one subprocess call.
 // This is the reliable fallback when the AX API is not available; osascript
 // runs in its own process with a proper window-server connection.
-func osascriptActiveWindow(ctx context.Context) (appName string, pid int32, windowTitle string) {
+func osascriptActiveWindow(ctx context.Context) (appName string, identifier string, pid int32, windowTitle string) {
 	const script = `tell application "System Events"
 		set p to first application process whose frontmost is true
 		set appName to name of p
 		set appPID to unix id of p
+		set bundleID to ""
+		try
+			set bundleID to bundle identifier of p
+		end try
 		set winTitle to ""
 		try
 			set winTitle to name of front window of p
 		end try
-		return (appPID as text) & "|||" & appName & "|||" & winTitle
+		return (appPID as text) & "|||" & appName & "|||" & bundleID & "|||" & winTitle
 	end tell`
 
 	out, err := exec.CommandContext(ctx, "osascript", "-e", script).Output()
 	if err != nil {
-		return "", 0, ""
+		return "", "", 0, ""
 	}
-	parts := strings.SplitN(strings.TrimSpace(string(out)), "|||", 3)
+	parts := strings.SplitN(strings.TrimSpace(string(out)), "|||", 4)
 	if len(parts) < 2 {
-		return "", 0, ""
+		return "", "", 0, ""
 	}
 	if p, err := strconv.Atoi(parts[0]); err == nil {
 		pid = int32(p)
 	}
 	appName = parts[1]
-	if len(parts) == 3 {
-		windowTitle = parts[2]
+	if len(parts) >= 3 {
+		identifier = parts[2]
+	}
+	if len(parts) == 4 {
+		windowTitle = parts[3]
 	}
 	return
+}
+
+func pathFromBundleOrProcess(bundlePath string, pid int32) string {
+	if strings.TrimSpace(bundlePath) != "" {
+		return bundlePath
+	}
+	return processPath(pid)
+}
+
+func processPath(pid int32) string {
+	if pid <= 0 {
+		return ""
+	}
+	pathC := C.copyProcessPath(C.int(pid))
+	if pathC == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(pathC))
+	return C.GoString(pathC)
 }

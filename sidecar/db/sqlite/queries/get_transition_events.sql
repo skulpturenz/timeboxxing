@@ -2,6 +2,8 @@
 SELECT
   transition_events.id AS transition_event_id,
   applications.name AS application_name,
+  applications.platform_identifier AS application_platform_identifier,
+  applications.path AS application_path,
   transition_event_reasons.reason AS reason,
   transition_events.started_at,
   transition_events.ended_at,
@@ -21,6 +23,8 @@ ORDER BY transition_events.started_at ASC, transition_events.id ASC;
 SELECT
   transition_events.id AS transition_event_id,
   applications.name AS application_name,
+  applications.platform_identifier AS application_platform_identifier,
+  applications.path AS application_path,
   transition_event_reasons.reason AS reason,
   transition_events.started_at,
   transition_events.ended_at,

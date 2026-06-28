@@ -35,6 +35,13 @@ func win(app, title string) platform.WindowInfo {
 	}
 }
 
+func winWithIdentity(app, title string, identifier string, path string) platform.WindowInfo {
+	info := win(app, title)
+	info.AppIdentifier = identifier
+	info.AppPath = path
+	return info
+}
+
 func drain(ch <-chan Transition) []Transition {
 	var out []Transition
 	for t := range ch {
@@ -99,6 +106,34 @@ func TestManagerFocusChange(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected a focus_change transition, none found")
+	}
+}
+
+func TestManagerApplicationIdentityChangeDoesNotCreateTransition(t *testing.T) {
+	tracker := &fakeTracker{infos: []platform.WindowInfo{
+		winWithIdentity("VSCode", "main.go", "com.microsoft.VSCode", "/Applications/Visual Studio Code.app"),
+		winWithIdentity("VSCode", "main.go", "", ""),
+		winWithIdentity("VSCode", "main.go", "com.microsoft.VSCode", "/Applications/Visual Studio Code.app"),
+	}}
+	mgr := NewManager(ManagerConfig{
+		MinDuration:  0,
+		IdleDetector: idle.Nop(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	go mgr.Run(ctx, tracker, 50*time.Millisecond)
+	transitions := drain(mgr.Transitions)
+
+	for _, tr := range transitions {
+		if tr.Reason == ReasonFocusChange || tr.Reason == ReasonTabChange {
+			t.Fatalf("expected identity changes to be ignored as session keys, got %#v", tr)
+		}
+	}
+	if len(transitions) == 0 || transitions[0].To == nil {
+		t.Fatal("expected initial session transition")
+	}
+	if transitions[0].To.ApplicationIdentity.Path != "/Applications/Visual Studio Code.app" {
+		t.Fatalf("expected first session identity to be preserved, got %#v", transitions[0].To.ApplicationIdentity)
 	}
 }
 

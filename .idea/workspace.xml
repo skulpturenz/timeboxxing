@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="7971a029-d02f-48d2-83bb-c5306a096ba4" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/sidecar/grpc/transitions/get_transition_event_stream.go" beforeDir="false" afterPath="$PROJECT_DIR$/sidecar/grpc/transitions/get_transition_event_stream.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sidecar/grpc/transitions/transitions_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/sidecar/grpc/transitions/transitions_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sidecar/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/sidecar/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sidecar/workers/transition_event_reporter.go" beforeDir="false" afterPath="$PROJECT_DIR$/sidecar/workers/transition_event_reporter.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sidecar/workers/worker_services.go" beforeDir="false" afterPath="$PROJECT_DIR$/sidecar/workers/worker_services.go" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 7,
+  "fromUser": false
+}]]></component>
+  <component name="ProjectId" id="3FhurZrpTImwjziRdEmE7n07dbo" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "dev",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/naveenmathew/Developer/skulpture/timeboxxing"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-30f59d01ecdd-37e91769500f-intellij.indexing.shared.core-IU-261.25134.95" />
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-IU-261.25134.95" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="7971a029-d02f-48d2-83bb-c5306a096ba4" name="Changes" comment="" />
+      <created>1782539822369</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1782539822369</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>

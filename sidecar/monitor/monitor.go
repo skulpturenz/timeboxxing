@@ -17,7 +17,19 @@ type Config struct {
 	IdleThreshold time.Duration
 }
 
-func Start(ctx context.Context, logger *slog.Logger, cfg Config) (<-chan session.Transition, error) {
+type Handle struct {
+	Transitions <-chan session.Transition
+	manager     *session.SessionManager
+}
+
+func (h *Handle) CurrentSession() *session.Session {
+	if h == nil || h.manager == nil {
+		return nil
+	}
+	return h.manager.CurrentSession()
+}
+
+func Start(ctx context.Context, logger *slog.Logger, cfg Config) (*Handle, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -50,5 +62,8 @@ func Start(ctx context.Context, logger *slog.Logger, cfg Config) (<-chan session
 
 	go manager.Run(ctx, tracker, cfg.PollInterval)
 
-	return manager.Transitions, nil
+	return &Handle{
+		Transitions: manager.Transitions,
+		manager:     manager,
+	}, nil
 }

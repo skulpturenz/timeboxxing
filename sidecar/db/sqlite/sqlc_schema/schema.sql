@@ -1,6 +1,8 @@
 CREATE TABLE applications (
   id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE
+  name TEXT NOT NULL UNIQUE,
+  platform_identifier TEXT,
+  path TEXT
 );
 
 CREATE TABLE transition_event_reasons (
@@ -25,18 +27,28 @@ CREATE TABLE transition_event_metadata (
   cdp_url TEXT
 );
 
-CREATE TABLE transition_event_documents (
+CREATE TABLE semantic_documents (
   id INTEGER PRIMARY KEY,
-  transition_event_id INTEGER NOT NULL UNIQUE REFERENCES transition_events(id),
+  document_key TEXT NOT NULL UNIQUE,
+  document_type TEXT NOT NULL,
+  transition_event_id INTEGER REFERENCES transition_events(id),
+  started_at TIMESTAMP,
+  ended_at TIMESTAMP,
   content TEXT NOT NULL,
   embedding_model TEXT NOT NULL,
   embedding_dimension INTEGER NOT NULL,
   embedded_at TIMESTAMP
 );
 
-CREATE TABLE transition_event_document_float32_embeddings (
+CREATE INDEX semantic_documents_type_started_idx
+  ON semantic_documents(document_type, started_at);
+
+CREATE INDEX semantic_documents_transition_event_idx
+  ON semantic_documents(transition_event_id);
+
+CREATE TABLE semantic_document_float32_embeddings (
   id INTEGER PRIMARY KEY,
-  transition_event_document_id INTEGER NOT NULL,
+  semantic_document_id INTEGER NOT NULL,
   embedding TEXT NOT NULL,
   k INTEGER,
   distance REAL

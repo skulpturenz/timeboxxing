@@ -9,16 +9,19 @@ import (
 )
 
 type Querier interface {
+	CreateSemanticDocumentEmbedding(ctx context.Context, arg CreateSemanticDocumentEmbeddingParams) error
 	CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error)
-	CreateTransitionEventDocument(ctx context.Context, arg CreateTransitionEventDocumentParams) (int64, error)
-	CreateTransitionEventDocumentEmbedding(ctx context.Context, arg CreateTransitionEventDocumentEmbeddingParams) error
 	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
-	DeleteTransitionEventDocumentEmbedding(ctx context.Context, transitionEventDocumentID int64) error
+	DeleteSemanticDocumentEmbedding(ctx context.Context, semanticDocumentID int64) error
+	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
+	GetSemanticIndexCounts(ctx context.Context) (GetSemanticIndexCountsRow, error)
 	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
-	GetTransitionEventDocumentSource(ctx context.Context, id int64) (GetTransitionEventDocumentSourceRow, error)
 	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
-	SearchTransitionEventDocuments(ctx context.Context, arg SearchTransitionEventDocumentsParams) ([]SearchTransitionEventDocumentsRow, error)
-	UpsertApplication(ctx context.Context, name string) (int64, error)
+	ListMissingSemanticEventDocumentIDs(ctx context.Context, limit int64) ([]int64, error)
+	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
+	SearchSemanticDocuments(ctx context.Context, arg SearchSemanticDocumentsParams) ([]SearchSemanticDocumentsRow, error)
+	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
+	UpsertSemanticDocument(ctx context.Context, arg UpsertSemanticDocumentParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package ama.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/ama/v1;amav1";
+option java_multiple_files = true;
+option java_package = "com.timeboxxing.sidecar.ama.v1";
+
+service AmaService {
+  rpc Ask(AskRequest) returns (AskResponse);
+  rpc GetSemanticIndexStatus(GetSemanticIndexStatusRequest) returns (SemanticIndexStatus);
+}
+
+message AskRequest {
+  string question = 1;
+  int32 max_sources = 2;
+}
+
+message AskResponse {
+  string answer = 1;
+  string model = 2;
+  repeated Source sources = 3;
+  SemanticIndexStatus semantic_index_status = 4;
+}
+
+message Source {
+  int64 transition_event_id = 1;
+  string content = 2;
+  double distance = 3;
+  string document_key = 4;
+  string document_type = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp ended_at = 7;
+}
+
+message GetSemanticIndexStatusRequest {}
+
+message SemanticIndexStatus {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    READY = 1;
+    INDEXING = 2;
+    EMPTY = 3;
+    UNAVAILABLE = 4;
+  }
+
+  State state = 1;
+  int64 completed_event_count = 2;
+  int64 indexed_event_count = 3;
+  int64 pending_event_count = 4;
+  bool backfill_running = 5;
+  string message = 6;
+}

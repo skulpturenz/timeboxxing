@@ -17,12 +17,13 @@ const (
 
 // WindowInfo is a single observation from one poll tick.
 type WindowInfo struct {
-	AppName     string
-	AppPath     string
-	PID         int32
-	WindowTitle string
-	TitleSource TitleSource
-	Timestamp   time.Time
+	AppName       string
+	AppIdentifier string
+	AppPath       string
+	PID           int32
+	WindowTitle   string
+	TitleSource   TitleSource
+	Timestamp     time.Time
 }
 
 // PermissionStatus describes one OS permission required by this platform tracker.

@@ -25,7 +25,10 @@ var (
 	procGetLastError              = kernel32.NewProc("GetLastError")
 )
 
-const processQueryLimitedInformation = 0x1000
+const (
+	processQueryLimitedInformation = 0x1000
+	maxProcessPathBufferSize       = 32768
+)
 
 // windowsExeToAppName normalises Windows executable names to human-readable app names.
 var windowsExeToAppName = map[string]string{
@@ -94,34 +97,56 @@ func (t *windowsTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	if pid != 0 {
 		hProc, _, _ := procOpenProcess.Call(processQueryLimitedInformation, 0, uintptr(pid))
 		if hProc != 0 {
-			pathBuf := make([]uint16, windows.MAX_PATH)
-			size := uint32(len(pathBuf))
-			procQueryFullProcessImageName.Call(hProc, 0,
-				uintptr(unsafe.Pointer(&pathBuf[0])),
-				uintptr(unsafe.Pointer(&size)))
+			appPath = queryFullProcessImageName(hProc)
 			procCloseHandle.Call(hProc)
-			appPath = windows.UTF16ToString(pathBuf[:size])
 		}
 	}
 
+	appIdentifier := ""
 	if appPath != "" {
-		exe := strings.TrimSuffix(strings.ToLower(filepath.Base(appPath)), ".exe")
-		if human, ok := windowsExeToAppName[exe]; ok {
-			appName = human
-		} else {
-			// Capitalise the first letter as a best-effort display name.
-			appName = strings.ToUpper(exe[:1]) + exe[1:]
-		}
+		appIdentifier, appName = windowsAppIdentity(appPath)
 	}
 
 	return WindowInfo{
-		AppName:     appName,
-		AppPath:     appPath,
-		PID:         int32(pid),
-		WindowTitle: title,
-		TitleSource: TitleSourceWindowAPI,
-		Timestamp:   now,
+		AppName:       appName,
+		AppIdentifier: appIdentifier,
+		AppPath:       appPath,
+		PID:           int32(pid),
+		WindowTitle:   title,
+		TitleSource:   TitleSourceWindowAPI,
+		Timestamp:     now,
 	}, nil
+}
+
+func queryFullProcessImageName(processHandle uintptr) string {
+	for bufferSize := uint32(windows.MAX_PATH); bufferSize <= maxProcessPathBufferSize; bufferSize *= 2 {
+		pathBuf := make([]uint16, bufferSize)
+		size := bufferSize
+		ok, _, errno := procQueryFullProcessImageName.Call(
+			processHandle,
+			0,
+			uintptr(unsafe.Pointer(&pathBuf[0])),
+			uintptr(unsafe.Pointer(&size)),
+		)
+		if ok != 0 && size > 0 && size <= uint32(len(pathBuf)) {
+			return windows.UTF16ToString(pathBuf[:size])
+		}
+		if errno != windows.ERROR_INSUFFICIENT_BUFFER {
+			return ""
+		}
+	}
+	return ""
+}
+
+func windowsAppIdentity(appPath string) (identifier string, appName string) {
+	exe := strings.TrimSuffix(strings.ToLower(filepath.Base(appPath)), ".exe")
+	if exe == "" {
+		return "", ""
+	}
+	if human, ok := windowsExeToAppName[exe]; ok {
+		return exe, human
+	}
+	return exe, strings.ToUpper(exe[:1]) + exe[1:]
 }
 
 func (t *windowsTracker) Permissions() []PermissionStatus {

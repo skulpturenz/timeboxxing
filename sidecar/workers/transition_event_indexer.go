@@ -2,11 +2,14 @@ package workers
 
 import (
 	"context"
+	"time"
 
 	"github.com/goptics/varmq"
 	"github.com/negrel/assert"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 )
+
+const transitionEventIndexAttempts = 3
 
 type TransitionEventIndexed struct {
 	TransitionEventId int64
@@ -23,7 +26,19 @@ func (s WorkerServices) TransitionEventIndexerWorker(ctx context.Context, q *que
 			return
 		}
 
-		documentID, err := s.TransitionEventIndexer.IndexTransitionEvent(ctx, event.TransitionEventId)
+		var (
+			documentID int64
+			err        error
+		)
+		for attempt := 1; attempt <= transitionEventIndexAttempts; attempt++ {
+			documentID, err = s.TransitionEventIndexer.IndexTransitionEvent(ctx, event.TransitionEventId)
+			if err == nil {
+				break
+			}
+			if attempt < transitionEventIndexAttempts {
+				time.Sleep(time.Duration(attempt) * 50 * time.Millisecond)
+			}
+		}
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to index transition event", "transition_event_id", event.TransitionEventId, "error", err)
 			return

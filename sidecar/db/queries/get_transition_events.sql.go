@@ -15,6 +15,8 @@ const getTransitionEvent = `-- name: GetTransitionEvent :one
 SELECT
   transition_events.id AS transition_event_id,
   applications.name AS application_name,
+  applications.platform_identifier AS application_platform_identifier,
+  applications.path AS application_path,
   transition_event_reasons.reason AS reason,
   transition_events.started_at,
   transition_events.ended_at,
@@ -30,15 +32,17 @@ WHERE transition_events.id = ?
 `
 
 type GetTransitionEventRow struct {
-	TransitionEventID int64
-	ApplicationName   sql.NullString
-	Reason            string
-	StartedAt         time.Time
-	EndedAt           time.Time
-	Browser           sql.NullBool
-	Tab               *string
-	Idle              sql.NullBool
-	CdpUrl            *string
+	TransitionEventID             int64
+	ApplicationName               sql.NullString
+	ApplicationPlatformIdentifier sql.NullString
+	ApplicationPath               sql.NullString
+	Reason                        string
+	StartedAt                     time.Time
+	EndedAt                       time.Time
+	Browser                       sql.NullBool
+	Tab                           *string
+	Idle                          sql.NullBool
+	CdpUrl                        *string
 }
 
 func (q *Queries) GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error) {
@@ -47,6 +51,8 @@ func (q *Queries) GetTransitionEvent(ctx context.Context, id int64) (GetTransiti
 	err := row.Scan(
 		&i.TransitionEventID,
 		&i.ApplicationName,
+		&i.ApplicationPlatformIdentifier,
+		&i.ApplicationPath,
 		&i.Reason,
 		&i.StartedAt,
 		&i.EndedAt,
@@ -62,6 +68,8 @@ const getTransitionEvents = `-- name: GetTransitionEvents :many
 SELECT
   transition_events.id AS transition_event_id,
   applications.name AS application_name,
+  applications.platform_identifier AS application_platform_identifier,
+  applications.path AS application_path,
   transition_event_reasons.reason AS reason,
   transition_events.started_at,
   transition_events.ended_at,
@@ -84,15 +92,17 @@ type GetTransitionEventsParams struct {
 }
 
 type GetTransitionEventsRow struct {
-	TransitionEventID int64
-	ApplicationName   sql.NullString
-	Reason            string
-	StartedAt         time.Time
-	EndedAt           time.Time
-	Browser           sql.NullBool
-	Tab               *string
-	Idle              sql.NullBool
-	CdpUrl            *string
+	TransitionEventID             int64
+	ApplicationName               sql.NullString
+	ApplicationPlatformIdentifier sql.NullString
+	ApplicationPath               sql.NullString
+	Reason                        string
+	StartedAt                     time.Time
+	EndedAt                       time.Time
+	Browser                       sql.NullBool
+	Tab                           *string
+	Idle                          sql.NullBool
+	CdpUrl                        *string
 }
 
 func (q *Queries) GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error) {
@@ -107,6 +117,8 @@ func (q *Queries) GetTransitionEvents(ctx context.Context, arg GetTransitionEven
 		if err := rows.Scan(
 			&i.TransitionEventID,
 			&i.ApplicationName,
+			&i.ApplicationPlatformIdentifier,
+			&i.ApplicationPath,
 			&i.Reason,
 			&i.StartedAt,
 			&i.EndedAt,

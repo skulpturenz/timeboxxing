@@ -13,11 +13,15 @@ func TestAnswererSearchesAndGeneratesGroundedAnswer(t *testing.T) {
 		results: []SearchResult{
 			{
 				TransitionEventID: 42,
+				DocumentKey:       "event:42",
+				DocumentType:      DocumentTypeEvent,
 				Content:           "Reason: tab_change\nApplication: Google Chrome\nTab: Pull request review\nURL: https://github.com/skulpturenz/timeboxxing/pull/1",
 				Distance:          0.125,
 			},
 			{
 				TransitionEventID: 43,
+				DocumentKey:       "event:43",
+				DocumentType:      DocumentTypeEvent,
 				Content:           "Reason: focus_change\nApplication: VSCode",
 				Distance:          0.25,
 			},
@@ -37,7 +41,7 @@ func TestAnswererSearchesAndGeneratesGroundedAnswer(t *testing.T) {
 	if answer.Question != "What was I doing?" {
 		t.Fatalf("unexpected question %q", answer.Question)
 	}
-	if answer.Model != "google/gemma-3-27b-it:free" {
+	if answer.Model != "google/gemma-4-31b-it:free" {
 		t.Fatalf("unexpected model %q", answer.Model)
 	}
 	if answer.Answer != generator.response {
@@ -49,11 +53,14 @@ func TestAnswererSearchesAndGeneratesGroundedAnswer(t *testing.T) {
 
 	assertContains(t, generator.prompt, "Use only the context below")
 	assertContains(t, generator.prompt, "If the context is insufficient")
+	assertContains(t, generator.prompt, "Prefer summary documents for totals")
 	assertContains(t, generator.prompt, "Do not invent applications")
 	assertContains(t, generator.prompt, "Question:\nWhat was I doing?")
+	assertContains(t, generator.prompt, "document_key=event:42")
 	assertContains(t, generator.prompt, "transition_event_id=42")
 	assertContains(t, generator.prompt, "distance=0.125000")
 	assertContains(t, generator.prompt, "Application: Google Chrome")
+	assertContains(t, generator.prompt, "document_key=event:43")
 	assertContains(t, generator.prompt, "transition_event_id=43")
 	assertContains(t, generator.prompt, "Application: VSCode")
 }
@@ -115,12 +122,13 @@ func TestAnswererPropagatesSearchAndGenerationErrors(t *testing.T) {
 
 func TestBuildAnswerPrompt(t *testing.T) {
 	prompt := BuildAnswerPrompt("Where was I browsing?", []SearchResult{
-		{TransitionEventID: 7, Content: "Application: Google Chrome\nTab: Docs", Distance: 0.5},
+		{TransitionEventID: 7, DocumentKey: "event:7", DocumentType: DocumentTypeEvent, Content: "Application: Google Chrome\nTab: Docs", Distance: 0.5},
 	})
 
-	assertContains(t, prompt, "You answer questions about user activity transition events.")
+	assertContains(t, prompt, "You answer questions about indexed user activity history.")
+	assertContains(t, prompt, "The context can contain event documents")
 	assertContains(t, prompt, "Question:\nWhere was I browsing?")
-	assertContains(t, prompt, "[1] transition_event_id=7 distance=0.500000")
+	assertContains(t, prompt, "[1] document_key=event:7 document_type=event transition_event_id=7 distance=0.500000")
 	assertContains(t, prompt, "Application: Google Chrome")
 	assertContains(t, prompt, "Answer:")
 }
@@ -144,7 +152,7 @@ type fakeGenerator struct {
 	err      error
 }
 
-func (f *fakeGenerator) Model() string { return "google/gemma-3-27b-it:free" }
+func (f *fakeGenerator) Model() string { return "google/gemma-4-31b-it:free" }
 
 func (f *fakeGenerator) Generate(_ context.Context, prompt string) (string, error) {
 	f.prompt = prompt

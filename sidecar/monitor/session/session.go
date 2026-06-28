@@ -15,6 +15,11 @@ type AppKey struct {
 	CDPURL   string // URL from Chrome DevTools Protocol, if available
 }
 
+type AppIdentity struct {
+	Identifier string
+	Path       string
+}
+
 func (k AppKey) DisplayName() string {
 	if k.IsIdle {
 		return "[Idle]"
@@ -27,10 +32,11 @@ func (k AppKey) DisplayName() string {
 
 // Session is a closed (or open) time interval of continuous focus on one AppKey.
 type Session struct {
-	Key       AppKey
-	StartedAt time.Time
-	EndedAt   time.Time     // zero while the session is still open
-	Duration  time.Duration // computed when the session is closed
+	Key                 AppKey
+	ApplicationIdentity AppIdentity
+	StartedAt           time.Time
+	EndedAt             time.Time     // zero while the session is still open
+	Duration            time.Duration // computed when the session is closed
 }
 
 func (s *Session) IsOpen() bool   { return s.EndedAt.IsZero() }

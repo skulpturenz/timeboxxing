@@ -100,7 +100,7 @@ func NewOpenRouterGenerator(cfg OpenRouterConfig) (*OpenRouterGenerator, error) 
 		cfg.BaseURL = "https://openrouter.ai/api/v1"
 	}
 	if cfg.Model == "" {
-		cfg.Model = "google/gemma-3-27b-it:free"
+		cfg.Model = "google/gemma-4-31b-it:free"
 	}
 	if cfg.Client == nil {
 		cfg.Client = &http.Client{Timeout: 60 * time.Second}

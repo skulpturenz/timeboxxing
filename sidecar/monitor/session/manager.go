@@ -121,10 +121,11 @@ func (m *SessionManager) tick(ctx context.Context, tracker platform.Tracker) {
 	isIdle := idleSecs >= m.cfg.IdleThreshold.Seconds()
 
 	var newKey AppKey
+	var newIdentity AppIdentity
 	if isIdle {
 		newKey = AppKey{IsIdle: true}
 	} else {
-		newKey = m.buildKey(ctx, info)
+		newKey, newIdentity = m.buildKey(ctx, info)
 	}
 
 	m.mu.Lock()
@@ -132,7 +133,7 @@ func (m *SessionManager) tick(ctx context.Context, tracker platform.Tracker) {
 
 	if m.current == nil {
 		// Very first observation.
-		s := &Session{Key: newKey, StartedAt: info.Timestamp}
+		s := &Session{Key: newKey, ApplicationIdentity: newIdentity, StartedAt: info.Timestamp}
 		m.current = s
 		m.emit(Transition{From: nil, To: s, Reason: ReasonStart})
 		return
@@ -152,12 +153,12 @@ func (m *SessionManager) tick(ctx context.Context, tracker platform.Tracker) {
 		return
 	}
 
-	m.transition(newKey, info.Timestamp)
+	m.transition(newKey, newIdentity, info.Timestamp)
 }
 
 // transition closes the current session and opens a new one.
 // Must be called with m.mu held.
-func (m *SessionManager) transition(newKey AppKey, at time.Time) {
+func (m *SessionManager) transition(newKey AppKey, newIdentity AppIdentity, at time.Time) {
 	old := m.current
 	elapsed := at.Sub(old.StartedAt)
 
@@ -167,14 +168,14 @@ func (m *SessionManager) transition(newKey AppKey, at time.Time) {
 		old.Close(at)
 		m.history = append(m.history, old)
 		m.stats[old.Key] += old.Duration
-		newSess := &Session{Key: newKey, StartedAt: at}
+		newSess := &Session{Key: newKey, ApplicationIdentity: newIdentity, StartedAt: at}
 		m.current = newSess
 		m.emit(Transition{From: old, To: newSess, Reason: reason})
 	} else {
 		// Sub-threshold: discard the flash session silently.
 		// Preserve the original StartedAt so accumulated time is correct.
 		origStart := old.StartedAt
-		newSess := &Session{Key: newKey, StartedAt: origStart}
+		newSess := &Session{Key: newKey, ApplicationIdentity: newIdentity, StartedAt: origStart}
 		m.current = newSess
 	}
 }
@@ -202,9 +203,13 @@ func (m *SessionManager) emit(t Transition) {
 }
 
 // buildKey converts a WindowInfo into an AppKey, handling browser tab extraction.
-func (m *SessionManager) buildKey(ctx context.Context, info platform.WindowInfo) AppKey {
+func (m *SessionManager) buildKey(ctx context.Context, info platform.WindowInfo) (AppKey, AppIdentity) {
+	identity := AppIdentity{
+		Identifier: info.AppIdentifier,
+		Path:       info.AppPath,
+	}
 	if m.cfg.NoBrowserTabs {
-		return AppKey{AppName: info.AppName}
+		return AppKey{AppName: info.AppName}, identity
 	}
 	kind := browser.IsBrowser(info.AppName)
 	if kind != browser.BrowserNone && info.WindowTitle != "" {
@@ -214,10 +219,10 @@ func (m *SessionManager) buildKey(ctx context.Context, info platform.WindowInfo)
 			if m.cfg.CDPPoller != nil {
 				url = m.cfg.CDPPoller.URLForTitle(ctx, tab.TabTitle)
 			}
-			return AppKey{AppName: info.AppName, TabTitle: tab.TabTitle, CDPURL: url}
+			return AppKey{AppName: info.AppName, TabTitle: tab.TabTitle, CDPURL: url}, identity
 		}
 	}
-	return AppKey{AppName: info.AppName}
+	return AppKey{AppName: info.AppName}, identity
 }
 
 func transitionReason(from, to AppKey) TransitionReason {

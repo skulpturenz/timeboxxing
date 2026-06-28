@@ -27,6 +27,7 @@ type linuxTracker struct {
 	atomActive  xproto.Atom // _NET_ACTIVE_WINDOW
 	atomWMName  xproto.Atom // _NET_WM_NAME (UTF-8)
 	atomWMNameL xproto.Atom // WM_NAME (legacy Latin-1)
+	atomWMClass xproto.Atom // WM_CLASS
 	atomWMPID   xproto.Atom // _NET_WM_PID
 	atomUTF8    xproto.Atom // UTF8_STRING
 	atomsReady  bool
@@ -63,6 +64,7 @@ func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	}
 
 	title := t.getWindowTitle(winID)
+	windowClass := t.getWindowClass(winID)
 	pid := t.getWindowPID(winID)
 
 	appName, appPath := "", ""
@@ -76,12 +78,13 @@ func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	}
 
 	return WindowInfo{
-		AppName:     appName,
-		AppPath:     appPath,
-		PID:         int32(pid),
-		WindowTitle: title,
-		TitleSource: TitleSourceWindowAPI,
-		Timestamp:   now,
+		AppName:       appName,
+		AppIdentifier: linuxAppIdentifier(appName, appPath, windowClass),
+		AppPath:       appPath,
+		PID:           int32(pid),
+		WindowTitle:   title,
+		TitleSource:   TitleSourceWindowAPI,
+		Timestamp:     now,
 	}, nil
 }
 
@@ -118,6 +121,7 @@ func (t *linuxTracker) internAtoms() error {
 		{"_NET_ACTIVE_WINDOW", &t.atomActive},
 		{"_NET_WM_NAME", &t.atomWMName},
 		{"WM_NAME", &t.atomWMNameL},
+		{"WM_CLASS", &t.atomWMClass},
 		{"_NET_WM_PID", &t.atomWMPID},
 		{"UTF8_STRING", &t.atomUTF8},
 	}
@@ -172,6 +176,17 @@ func (t *linuxTracker) getWindowTitle(win xproto.Window) string {
 	return ""
 }
 
+func (t *linuxTracker) getWindowClass(win xproto.Window) string {
+	reply, err := xproto.GetProperty(
+		t.conn, false, win, t.atomWMClass,
+		xproto.GetPropertyTypeAny, 0, (1<<32)-1,
+	).Reply()
+	if err != nil || len(reply.Value) == 0 {
+		return ""
+	}
+	return parseWMClass(reply.Value)
+}
+
 func (t *linuxTracker) getWindowPID(win xproto.Window) uint32 {
 	reply, err := xproto.GetProperty(
 		t.conn, false, win, t.atomWMPID,
@@ -193,8 +208,30 @@ func (t *linuxTracker) waylandFallback(now time.Time) WindowInfo {
 	title := strings.TrimSpace(string(out))
 	info.WindowTitle = title
 	info.AppName = title
+	info.AppIdentifier = title
 	info.TitleSource = TitleSourceWindowAPI
 	return info
+}
+
+func linuxAppIdentifier(appName string, appPath string, windowClass string) string {
+	if class := strings.TrimSpace(windowClass); class != "" {
+		return class
+	}
+	if appPath != "" {
+		return filepath.Base(appPath)
+	}
+	return appName
+}
+
+func parseWMClass(value []byte) string {
+	raw := strings.TrimRight(string(value), "\x00")
+	parts := strings.Split(raw, "\x00")
+	for i := len(parts) - 1; i >= 0; i-- {
+		if part := strings.TrimSpace(parts[i]); part != "" {
+			return part
+		}
+	}
+	return ""
 }
 
 // procComm reads the process name from /proc/<pid>/comm.

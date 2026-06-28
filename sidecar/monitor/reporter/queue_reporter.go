@@ -10,14 +10,16 @@ import (
 )
 
 type TransitionEvent struct {
-	ApplicationName string
-	Reason          string
-	StartedAt       time.Time
-	EndedAt         time.Time
-	Browser         bool
-	Tab             *string
-	Idle            bool
-	CdpUrl          *string
+	ApplicationName       string
+	ApplicationIdentifier string
+	ApplicationPath       string
+	Reason                string
+	StartedAt             time.Time
+	EndedAt               time.Time
+	Browser               bool
+	Tab                   *string
+	Idle                  bool
+	CdpUrl                *string
 }
 
 type TransitionEventQueue interface {
@@ -55,15 +57,18 @@ func (q *QueueReporter) Record(_ context.Context, t session.Transition) error {
 
 	key := t.From.Key
 	appName := strings.TrimSpace(key.AppName)
+	identity := t.From.ApplicationIdentity
 	event := TransitionEvent{
-		ApplicationName: appName,
-		Reason:          string(t.Reason),
-		StartedAt:       t.From.StartedAt,
-		EndedAt:         t.From.EndedAt,
-		Browser:         browser.IsBrowser(appName) != browser.BrowserNone,
-		Tab:             stringPtr(key.TabTitle),
-		Idle:            key.IsIdle,
-		CdpUrl:          stringPtr(key.CDPURL),
+		ApplicationName:       appName,
+		ApplicationIdentifier: strings.TrimSpace(identity.Identifier),
+		ApplicationPath:       strings.TrimSpace(identity.Path),
+		Reason:                string(t.Reason),
+		StartedAt:             t.From.StartedAt,
+		EndedAt:               t.From.EndedAt,
+		Browser:               browser.IsBrowser(appName) != browser.BrowserNone,
+		Tab:                   stringPtr(key.TabTitle),
+		Idle:                  key.IsIdle,
+		CdpUrl:                stringPtr(key.CDPURL),
 	}
 
 	return q.queue.Add(event)

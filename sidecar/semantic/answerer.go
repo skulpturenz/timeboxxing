@@ -70,16 +70,22 @@ func (a *Answerer) Answer(ctx context.Context, question string, k int64) (*Answe
 
 func BuildAnswerPrompt(question string, sources []SearchResult) string {
 	var b strings.Builder
-	b.WriteString("You answer questions about user activity transition events.\n")
+	b.WriteString("You answer questions about indexed user activity history.\n")
 	b.WriteString("Use only the context below. If the context is insufficient, say you do not have enough information.\n")
-	b.WriteString("Cite transition_event_id values when they support your answer.\n")
+	b.WriteString("The context can contain event documents, day summaries, app-day summaries, and time-block summaries.\n")
+	b.WriteString("Prefer summary documents for totals and broad questions. Use event documents for specific examples.\n")
+	b.WriteString("Cite document_key values, and cite transition_event_id values when an event document supports your answer.\n")
 	b.WriteString("Do not invent applications, tabs, URLs, dates, durations, or reasons that are not in the context.\n\n")
 	b.WriteString("Question:\n")
 	b.WriteString(strings.TrimSpace(question))
 	b.WriteString("\n\nContext:\n")
 
 	for i, source := range sources {
-		b.WriteString(fmt.Sprintf("\n[%d] transition_event_id=%d distance=%.6f\n", i+1, source.TransitionEventID, source.Distance))
+		b.WriteString(fmt.Sprintf("\n[%d] document_key=%s document_type=%s", i+1, source.DocumentKey, source.DocumentType))
+		if source.TransitionEventID != 0 {
+			b.WriteString(fmt.Sprintf(" transition_event_id=%d", source.TransitionEventID))
+		}
+		b.WriteString(fmt.Sprintf(" distance=%.6f\n", source.Distance))
 		b.WriteString(strings.TrimSpace(source.Content))
 		b.WriteString("\n")
 	}

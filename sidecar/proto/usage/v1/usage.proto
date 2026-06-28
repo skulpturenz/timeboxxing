@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package usage.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/usage/v1;usagev1";
+option java_multiple_files = true;
+option java_package = "com.timeboxxing.sidecar.usage.v1";
+
+service UsageService {
+  rpc GetUsageEvents(GetUsageEventsRequest) returns (GetUsageEventsResponse);
+  rpc WatchUsageEvents(GetUsageEventsRequest) returns (stream UsageEvent);
+}
+
+message GetUsageEventsRequest {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
+}
+
+message GetUsageEventsResponse {
+  repeated UsageEvent usage_events = 1;
+}
+
+message UsageEvent {
+  int64 id = 1;
+  string title = 2;
+  string source_name = 3;
+  UsageSource source = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp ended_at = 6;
+  string reason = 7;
+  string application_name = 8;
+  string cdp_url = 9;
+  string application_identifier = 10;
+  string application_path = 11;
+  bool active = 12;
+}
+
+enum UsageSource {
+  USAGE_SOURCE_UNSPECIFIED = 0;
+  USAGE_SOURCE_APPLICATION = 1;
+  USAGE_SOURCE_BROWSER = 2;
+  USAGE_SOURCE_IDLE = 3;
+}

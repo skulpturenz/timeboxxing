@@ -7,17 +7,27 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 )
 
 const upsertApplication = `-- name: UpsertApplication :one
-INSERT INTO applications (name)
-VALUES (?)
-ON CONFLICT(name) DO UPDATE SET name = excluded.name
+INSERT INTO applications (name, platform_identifier, path)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(name) DO UPDATE SET
+  name = excluded.name,
+  platform_identifier = COALESCE(excluded.platform_identifier, applications.platform_identifier),
+  path = COALESCE(excluded.path, applications.path)
 RETURNING id
 `
 
-func (q *Queries) UpsertApplication(ctx context.Context, name string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, upsertApplication, name)
+type UpsertApplicationParams struct {
+	Name               string
+	PlatformIdentifier sql.NullString
+	Path               sql.NullString
+}
+
+func (q *Queries) UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, upsertApplication, arg.Name, arg.PlatformIdentifier, arg.Path)
 	var id int64
 	err := row.Scan(&id)
 	return id, err

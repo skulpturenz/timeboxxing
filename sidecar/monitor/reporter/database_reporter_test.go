@@ -29,6 +29,10 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 				TabTitle: "GitHub",
 				CDPURL:   "https://github.com/",
 			},
+			ApplicationIdentity: session.AppIdentity{
+				Identifier: "  com.google.Chrome  ",
+				Path:       "  /Applications/Google Chrome.app  ",
+			},
 			StartedAt: started,
 			EndedAt:   ended,
 			Duration:  ended.Sub(started),
@@ -45,7 +49,12 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 
 	var appCount int
 	var appName string
-	if err := database.WriteConn.QueryRowContext(ctx, `SELECT COUNT(*), MAX(name) FROM applications`).Scan(&appCount, &appName); err != nil {
+	var appIdentifier string
+	var appPath string
+	if err := database.WriteConn.QueryRowContext(ctx, `
+		SELECT COUNT(*), MAX(name), MAX(platform_identifier), MAX(path)
+		FROM applications
+	`).Scan(&appCount, &appName, &appIdentifier, &appPath); err != nil {
 		t.Fatalf("query applications: %v", err)
 	}
 	if appCount != 1 {
@@ -53,6 +62,12 @@ func TestDatabaseRecordUpsertsApplicationAndMetadata(t *testing.T) {
 	}
 	if appName != "Google Chrome" {
 		t.Fatalf("expected trimmed application name, got %q", appName)
+	}
+	if appIdentifier != "com.google.Chrome" {
+		t.Fatalf("expected trimmed application identifier, got %q", appIdentifier)
+	}
+	if appPath != "/Applications/Google Chrome.app" {
+		t.Fatalf("expected trimmed application path, got %q", appPath)
 	}
 
 	var eventCount int

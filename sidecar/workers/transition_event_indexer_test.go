@@ -1,0 +1,122 @@
+package workers
+
+import (
+	"context"
+	"database/sql"
+	"io"
+	"log/slog"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
+	"github.com/skulpturenz/timeboxxing/sidecar/queue"
+	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
+)
+
+type workerFakeEmbedder struct{}
+
+func (workerFakeEmbedder) Model() string { return "worker-fake-embedding" }
+
+func (workerFakeEmbedder) Dimension() int { return 2048 }
+
+func (workerFakeEmbedder) Embed(_ context.Context, input string) ([]float32, error) {
+	values := make([]float32, 2048)
+	if strings.Contains(input, "Google Chrome") {
+		values[0] = 1
+	} else {
+		values[1] = 1
+	}
+	return values, nil
+}
+
+func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	databasePath := filepath.Join(t.TempDir(), "workers.db")
+	database, err := db.New(ctx, db.Options{
+		Engine:         db.EngineSqlite,
+		DataSourceName: databasePath,
+	})
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+
+	queueDSN := db.SqliteDataSourceName(databasePath)
+	transitionEventQueue, err := queue.New[reporter.TransitionEvent](ctx, queue.QueueOptions{
+		ConnectionString: queueDSN,
+		QueueName:        TransitionEventQueueName.String(),
+	})
+	if err != nil {
+		t.Fatalf("create transition event queue: %v", err)
+	}
+	transitionEventReportedQueue, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions{
+		ConnectionString: queueDSN,
+		QueueName:        TransitionEventReportedQueueName.String(),
+	})
+	if err != nil {
+		t.Fatalf("create transition event reported queue: %v", err)
+	}
+
+	services := WorkerServices{
+		WriteConn:              database.WriteConn,
+		Logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		TransitionEventIndexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
+		Queues: WorkerQueues{
+			TransitionEventReportedQueue: transitionEventReportedQueue,
+		},
+	}
+	cleanupIndexer := services.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
+	defer cleanupIndexer()
+	cleanupReporter := services.TransitionEventReporterWorker(ctx, transitionEventQueue)
+	defer cleanupReporter()
+
+	tab := "GitHub"
+	url := "https://github.com/"
+	if err := transitionEventQueue.Add(reporter.TransitionEvent{
+		ApplicationName: "Google Chrome",
+		Reason:          "focus_change",
+		StartedAt:       time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC),
+		EndedAt:         time.Date(2026, 6, 13, 10, 5, 0, 0, time.UTC),
+		Browser:         true,
+		Tab:             &tab,
+		CdpUrl:          &url,
+	}); err != nil {
+		t.Fatalf("add transition event job: %v", err)
+	}
+
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "transition_events", 1)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_documents", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_float32_embeddings", 7)
+}
+
+func countWorkerRows(t *testing.T, ctx context.Context, conn *sql.DB, table string) int {
+	t.Helper()
+	var count int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	return count
+}
+
+func waitForWorkerRowCount(t *testing.T, ctx context.Context, conn *sql.DB, table string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if got := countWorkerRows(t, ctx, conn, table); got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected %s row count %d, got %d", table, want, countWorkerRows(t, ctx, conn, table))
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}

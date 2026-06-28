@@ -7,6 +7,7 @@ import (
 
 	"github.com/goptics/varmq"
 	"github.com/negrel/assert"
+	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
@@ -37,7 +38,11 @@ func (s WorkerServices) TransitionEventReporterWorker(ctx context.Context, q *qu
 		applicationID := sql.NullInt64{}
 
 		if !event.Idle && appName != "" {
-			id, err := q.UpsertApplication(ctx, appName)
+			id, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{
+				Name:               appName,
+				PlatformIdentifier: nullString(event.ApplicationIdentifier),
+				Path:               nullString(event.ApplicationPath),
+			})
 			if err != nil {
 				logger.ErrorContext(ctx, "upsert application", "application", appName, "error", err)
 				return
@@ -80,8 +85,20 @@ func (s WorkerServices) TransitionEventReporterWorker(ctx context.Context, q *qu
 			return
 		}
 
+		if s.Transitions != nil {
+			if err := s.Transitions.PublishTransitionEvent(ctx, componentTransitions.PublishTransitionEventParams{ID: eventID}); err != nil {
+				logger.ErrorContext(ctx, "publish transition event", "transition_event_id", eventID, "error", err)
+				return
+			}
+		}
+
 		logger.InfoContext(ctx, "recorded transition event", "transition_event_id", eventID)
 	}, 0)
 
 	return cleanup
+}
+
+func nullString(value string) sql.NullString {
+	trimmed := strings.TrimSpace(value)
+	return sql.NullString{String: trimmed, Valid: trimmed != ""}
 }

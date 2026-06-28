@@ -63,10 +63,15 @@ func (d *DatabaseReporter) Record(ctx context.Context, t session.Transition) (in
 	q := queries.New(tx)
 	key := t.From.Key
 	appName := strings.TrimSpace(key.AppName)
+	identity := t.From.ApplicationIdentity
 	applicationID := sql.NullInt64{}
 
 	if !key.IsIdle && appName != "" {
-		id, err := q.UpsertApplication(ctx, appName)
+		id, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{
+			Name:               appName,
+			PlatformIdentifier: nullString(identity.Identifier),
+			Path:               nullString(identity.Path),
+		})
 		if err != nil {
 			return 0, fmt.Errorf("upsert application %q: %w", appName, err)
 		}
@@ -110,4 +115,9 @@ func stringPtr(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func nullString(value string) sql.NullString {
+	trimmed := strings.TrimSpace(value)
+	return sql.NullString{String: trimmed, Valid: trimmed != ""}
 }

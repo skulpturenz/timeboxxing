@@ -43,6 +43,9 @@ func TestGetTransitionEventsFiltersByTime(t *testing.T) {
 	if events[0].ApplicationName != "Google Chrome" || events[0].Tab != "Docs" || !events[0].Browser {
 		t.Fatalf("unexpected mapped transition event: %#v", events[0])
 	}
+	if events[0].ApplicationIdentifier == "" || events[0].ApplicationPath == "" {
+		t.Fatalf("expected application identity to be mapped, got %#v", events[0])
+	}
 }
 
 func TestSubscribeStreamsNewEventsOnly(t *testing.T) {
@@ -126,6 +129,10 @@ func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Datab
 			Key: session.AppKey{
 				AppName:  appName,
 				TabTitle: tab,
+			},
+			ApplicationIdentity: session.AppIdentity{
+				Identifier: "test." + appName,
+				Path:       "/Applications/" + appName + ".app",
 			},
 			StartedAt: startedAt,
 			EndedAt:   startedAt.Add(5 * time.Minute),

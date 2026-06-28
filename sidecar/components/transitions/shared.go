@@ -9,15 +9,17 @@ import (
 const subscriberBufferSize = 64
 
 type Event struct {
-	ID              int64
-	ApplicationName string
-	Reason          string
-	StartedAt       time.Time
-	EndedAt         time.Time
-	Browser         bool
-	Tab             string
-	Idle            bool
-	CDPURL          string
+	ID                    int64
+	ApplicationName       string
+	ApplicationIdentifier string
+	ApplicationPath       string
+	Reason                string
+	StartedAt             time.Time
+	EndedAt               time.Time
+	Browser               bool
+	Tab                   string
+	Idle                  bool
+	CDPURL                string
 }
 
 type Filters struct {
@@ -68,6 +70,12 @@ func eventFromGetTransitionEventsRow(row queries.GetTransitionEventsRow) Event {
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
 	}
+	if row.ApplicationPlatformIdentifier.Valid {
+		event.ApplicationIdentifier = row.ApplicationPlatformIdentifier.String
+	}
+	if row.ApplicationPath.Valid {
+		event.ApplicationPath = row.ApplicationPath.String
+	}
 	if row.Browser.Valid {
 		event.Browser = row.Browser.Bool
 	}
@@ -93,6 +101,12 @@ func eventFromGetTransitionEventRow(row queries.GetTransitionEventRow) Event {
 	}
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
+	}
+	if row.ApplicationPlatformIdentifier.Valid {
+		event.ApplicationIdentifier = row.ApplicationPlatformIdentifier.String
+	}
+	if row.ApplicationPath.Valid {
+		event.ApplicationPath = row.ApplicationPath.String
 	}
 	if row.Browser.Valid {
 		event.Browser = row.Browser.Bool

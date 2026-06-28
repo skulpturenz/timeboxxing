@@ -10,8 +10,31 @@ import (
 )
 
 type Application struct {
-	ID   int64
-	Name string
+	ID                 int64
+	Name               string
+	PlatformIdentifier sql.NullString
+	Path               sql.NullString
+}
+
+type SemanticDocument struct {
+	ID                 int64
+	DocumentKey        string
+	DocumentType       string
+	TransitionEventID  sql.NullInt64
+	StartedAt          sql.NullTime
+	EndedAt            sql.NullTime
+	Content            string
+	EmbeddingModel     string
+	EmbeddingDimension int64
+	EmbeddedAt         sql.NullTime
+}
+
+type SemanticDocumentFloat32Embedding struct {
+	ID                 int64
+	SemanticDocumentID int64
+	Embedding          string
+	K                  sql.NullInt64
+	Distance           sql.NullFloat64
 }
 
 type TransitionEvent struct {
@@ -20,23 +43,6 @@ type TransitionEvent struct {
 	TransitionReasonID int64
 	StartedAt          time.Time
 	EndedAt            time.Time
-}
-
-type TransitionEventDocument struct {
-	ID                 int64
-	TransitionEventID  int64
-	Content            string
-	EmbeddingModel     string
-	EmbeddingDimension int64
-	EmbeddedAt         sql.NullTime
-}
-
-type TransitionEventDocumentFloat32Embedding struct {
-	ID                        int64
-	TransitionEventDocumentID int64
-	Embedding                 string
-	K                         sql.NullInt64
-	Distance                  sql.NullFloat64
 }
 
 type TransitionEventMetadatum struct {
