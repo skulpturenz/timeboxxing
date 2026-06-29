@@ -76,6 +76,48 @@ func TestManagerFirstSession(t *testing.T) {
 	}
 }
 
+func TestManagerFinalizesForegroundAppNameFromPath(t *testing.T) {
+	tracker := &fakeTracker{infos: []platform.WindowInfo{
+		{
+			AppPath:     "/Applications/Safari.app",
+			TitleSource: platform.TitleSourceWindowAPI,
+			Timestamp:   time.Now(),
+		},
+	}}
+	mgr := NewManager(ManagerConfig{
+		MinDuration:  0,
+		IdleDetector: idle.Nop(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	go mgr.Run(ctx, tracker, 50*time.Millisecond)
+	transitions := drain(mgr.Transitions)
+
+	if len(transitions) == 0 {
+		t.Fatal("expected finalized foreground transition")
+	}
+	first := transitions[0]
+	if first.To == nil || first.To.Key.AppName != "Safari" {
+		t.Fatalf("expected finalized app name Safari, got %#v", first.To)
+	}
+}
+
+func TestManagerIgnoresEmptyForegroundSample(t *testing.T) {
+	tracker := &fakeTracker{infos: []platform.WindowInfo{{Timestamp: time.Now()}}}
+	mgr := NewManager(ManagerConfig{
+		MinDuration:  0,
+		IdleDetector: idle.Nop(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	go mgr.Run(ctx, tracker, 50*time.Millisecond)
+	transitions := drain(mgr.Transitions)
+
+	if len(transitions) != 0 {
+		t.Fatalf("expected no transitions for empty sample, got %#v", transitions)
+	}
+}
+
 func TestManagerFocusChange(t *testing.T) {
 	tracker := &fakeTracker{infos: []platform.WindowInfo{
 		win("VSCode", "main.go"),

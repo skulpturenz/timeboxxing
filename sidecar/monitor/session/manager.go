@@ -113,7 +113,12 @@ func (m *SessionManager) CurrentSession() *Session {
 // tick polls for the active window and drives session transitions.
 func (m *SessionManager) tick(ctx context.Context, tracker platform.Tracker) {
 	info, err := tracker.Poll(ctx)
-	if err != nil || info.AppName == "" {
+	if err != nil {
+		return
+	}
+	var ok bool
+	info, ok = platform.FinalizeWindowInfo(info)
+	if !ok {
 		return
 	}
 

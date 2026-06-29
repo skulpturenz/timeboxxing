@@ -114,6 +114,7 @@ import "C"
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,27 +164,36 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 		rc := C.getActiveWindowAX(&nameC, &identifierC, &pathC, &pid, &titleC)
 
 		if rc == 0 {
+			focusedPID := int32(pid)
 			info := WindowInfo{
-				PID:         int32(pid),
+				PID:         focusedPID,
 				TitleSource: TitleSourceAX,
 				Timestamp:   now,
 			}
+			appName := ""
+			appIdentifier := ""
+			appPath := ""
 			if nameC != nil {
-				info.AppName = C.GoString(nameC)
+				appName = C.GoString(nameC)
 				C.free(unsafe.Pointer(nameC))
 			}
 			if identifierC != nil {
-				info.AppIdentifier = C.GoString(identifierC)
+				appIdentifier = C.GoString(identifierC)
 				C.free(unsafe.Pointer(identifierC))
 			}
 			if pathC != nil {
-				info.AppPath = C.GoString(pathC)
+				appPath = C.GoString(pathC)
 				C.free(unsafe.Pointer(pathC))
 			}
 			if titleC != nil {
 				info.WindowTitle = C.GoString(titleC)
 				C.free(unsafe.Pointer(titleC))
 			}
+			identity := normalizeDarwinAppIdentity(appName, appIdentifier, appPath, processPath(focusedPID))
+			info.AppName = identity.AppName
+			info.AppIdentifier = identity.AppIdentifier
+			info.AppPath = identity.AppPath
+			info, _ = FinalizeWindowInfo(info)
 			return info, nil
 		}
 
@@ -199,18 +209,21 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	// Fallback: osascript. Runs in its own process so it always sees the true
 	// frontmost application regardless of how this CLI binary was launched.
 	appName, identifier, pid, title := osascriptActiveWindow(ctx)
-	if appName == "" {
+	if appName == "" && identifier == "" && pid <= 0 && title == "" {
 		return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, nil
 	}
-	return WindowInfo{
-		AppName:       appName,
-		AppIdentifier: identifier,
-		AppPath:       pathFromBundleOrProcess("", pid),
+	identity := normalizeDarwinAppIdentity(appName, identifier, "", processPath(pid))
+	info := WindowInfo{
+		AppName:       identity.AppName,
+		AppIdentifier: identity.AppIdentifier,
+		AppPath:       identity.AppPath,
 		PID:           pid,
 		WindowTitle:   title,
 		TitleSource:   TitleSourceOsascript,
 		Timestamp:     now,
-	}, nil
+	}
+	info, _ = FinalizeWindowInfo(info)
+	return info, nil
 }
 
 func (t *darwinTracker) Permissions() []PermissionStatus {
@@ -270,6 +283,41 @@ func pathFromBundleOrProcess(bundlePath string, pid int32) string {
 		return bundlePath
 	}
 	return processPath(pid)
+}
+
+type darwinAppIdentity struct {
+	AppName       string
+	AppIdentifier string
+	AppPath       string
+}
+
+func normalizeDarwinAppIdentity(appName, identifier, bundlePath, executablePath string) darwinAppIdentity {
+	if runtimeName, ok := darwinRuntimeExecutableName(executablePath); ok {
+		return darwinAppIdentity{
+			AppName:       runtimeName,
+			AppIdentifier: runtimeName,
+			AppPath:       strings.TrimSpace(executablePath),
+		}
+	}
+	appPath := strings.TrimSpace(bundlePath)
+	if appPath == "" {
+		appPath = strings.TrimSpace(executablePath)
+	}
+	return darwinAppIdentity{
+		AppName:       strings.TrimSpace(appName),
+		AppIdentifier: strings.TrimSpace(identifier),
+		AppPath:       appPath,
+	}
+}
+
+func darwinRuntimeExecutableName(executablePath string) (string, bool) {
+	name := strings.TrimSpace(filepath.Base(strings.TrimSpace(executablePath)))
+	switch strings.ToLower(name) {
+	case "java", "javaw":
+		return strings.ToLower(name), true
+	default:
+		return "", false
+	}
 }
 
 func processPath(pid int32) string {

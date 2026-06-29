@@ -107,7 +107,7 @@ func (t *windowsTracker) Poll(ctx context.Context) (WindowInfo, error) {
 		appIdentifier, appName = windowsAppIdentity(appPath)
 	}
 
-	return WindowInfo{
+	info := WindowInfo{
 		AppName:       appName,
 		AppIdentifier: appIdentifier,
 		AppPath:       appPath,
@@ -115,7 +115,9 @@ func (t *windowsTracker) Poll(ctx context.Context) (WindowInfo, error) {
 		WindowTitle:   title,
 		TitleSource:   TitleSourceWindowAPI,
 		Timestamp:     now,
-	}, nil
+	}
+	info, _ = FinalizeWindowInfo(info)
+	return info, nil
 }
 
 func queryFullProcessImageName(processHandle uintptr) string {
@@ -143,10 +145,22 @@ func windowsAppIdentity(appPath string) (identifier string, appName string) {
 	if exe == "" {
 		return "", ""
 	}
+	if runtimeName, ok := windowsRuntimeExecutableName(exe); ok {
+		return runtimeName, runtimeName
+	}
 	if human, ok := windowsExeToAppName[exe]; ok {
 		return exe, human
 	}
 	return exe, strings.ToUpper(exe[:1]) + exe[1:]
+}
+
+func windowsRuntimeExecutableName(exe string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(exe)) {
+	case "java", "javaw":
+		return strings.ToLower(strings.TrimSpace(exe)), true
+	default:
+		return "", false
+	}
 }
 
 func (t *windowsTracker) Permissions() []PermissionStatus {

@@ -17,6 +17,12 @@ type Config struct {
 	IdleThreshold time.Duration
 }
 
+const (
+	defaultPollInterval  = 500 * time.Millisecond
+	defaultMinDuration   = time.Second
+	defaultIdleThreshold = 5 * time.Minute
+)
+
 type Handle struct {
 	Transitions <-chan session.Transition
 	manager     *session.SessionManager
@@ -33,15 +39,7 @@ func Start(ctx context.Context, logger *slog.Logger, cfg Config) (*Handle, error
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if cfg.PollInterval == 0 {
-		cfg.PollInterval = time.Second
-	}
-	if cfg.MinDuration == 0 {
-		cfg.MinDuration = time.Second
-	}
-	if cfg.IdleThreshold == 0 {
-		cfg.IdleThreshold = 5 * time.Minute
-	}
+	cfg = resolveConfig(cfg)
 
 	tracker, err := platform.New(ctx, platform.Config{})
 	if err != nil {
@@ -66,4 +64,17 @@ func Start(ctx context.Context, logger *slog.Logger, cfg Config) (*Handle, error
 		Transitions: manager.Transitions,
 		manager:     manager,
 	}, nil
+}
+
+func resolveConfig(cfg Config) Config {
+	if cfg.PollInterval == 0 {
+		cfg.PollInterval = defaultPollInterval
+	}
+	if cfg.MinDuration == 0 {
+		cfg.MinDuration = defaultMinDuration
+	}
+	if cfg.IdleThreshold == 0 {
+		cfg.IdleThreshold = defaultIdleThreshold
+	}
+	return cfg
 }

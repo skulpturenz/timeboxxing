@@ -19,6 +19,7 @@ import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimeboxxingMockData
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
+import com.timeboxxing.domain.model.UsageSourceType
 import com.timeboxxing.domain.model.formatDuration
 import com.timeboxxing.domain.model.plusDays
 
@@ -66,7 +67,9 @@ data class TimeboxxingScreenState(
         get() = selectedDay.calendarDate
 
     val selectedUsageEvents: List<UsageEvent>
-        get() = usageEvents.filter { !it.isActive && it.id in selectedUsageIds }.sortedBy { it.startMinute }
+        get() = usageEvents
+            .filter { it.isSelectableUsage() && it.id in selectedUsageIds }
+            .sortedBy { it.startMinute }
 
     val selectedUsageMinutes: Int
         get() = selectedUsageEvents.sumOf { it.durationMinutes }
@@ -75,12 +78,14 @@ data class TimeboxxingScreenState(
         get() = entries.filter { it.billable }.sumOf { it.durationMinutes }
 
     val capturedMinutes: Int
-        get() = usageEvents.sumOf { it.durationMinutes }
+        get() = usageEvents.filter { it.isCapturedUsage() }.sumOf { it.durationMinutes }
 
     val unassignedUsageMinutes: Int
         get() {
             val assignedUsageIds = entries.flatMap { it.sourceUsageIds }.toSet()
-            return usageEvents.filterNot { it.id in assignedUsageIds }.sumOf { it.durationMinutes }
+            return usageEvents
+                .filter { it.isCapturedUsage() && it.id !in assignedUsageIds }
+                .sumOf { it.durationMinutes }
         }
 
     val primaryActionLabel: String
@@ -304,13 +309,13 @@ fun reduceTimeboxxingState(
                 state.copy(
                     usageEvents = mergedEvents,
                     usageLoading = false,
-                    selectedUsageIds = state.selectedUsageIds.intersect(mergedEvents.completedUsageIds()),
+                    selectedUsageIds = state.selectedUsageIds.intersect(mergedEvents.selectableUsageIds()),
                 )
             }
         }
 
         is TimeboxxingAction.ToggleUsageSelection -> {
-            if (state.usageEvents.firstOrNull { it.id == action.usageId }?.isActive == true) {
+            if (state.usageEvents.firstOrNull { it.id == action.usageId }?.isSelectableUsage() != true) {
                 state
             } else {
                 val nextSelection = state.selectedUsageIds.toggle(action.usageId)
@@ -636,7 +641,9 @@ private fun draftFromSelection(
     state: TimeboxxingScreenState,
     selectedUsageIds: Set<String>,
 ): EntryDraft {
-    val selectedEvents = state.usageEvents.filter { !it.isActive && it.id in selectedUsageIds }.sortedBy { it.startMinute }
+    val selectedEvents = state.usageEvents
+        .filter { it.isSelectableUsage() && it.id in selectedUsageIds }
+        .sortedBy { it.startMinute }
     if (selectedEvents.isEmpty()) return blankDraft(state.draft.projectId)
 
     val firstEvent = selectedEvents.first()
@@ -687,8 +694,17 @@ private fun UsageEvent.matchesCompletedUsage(completed: UsageEvent): Boolean =
         sourceName == completed.sourceName &&
         title == completed.title
 
-private fun List<UsageEvent>.completedUsageIds(): Set<String> =
-    filterNot { it.isActive }.map { it.id }.toSet()
+private fun List<UsageEvent>.selectableUsageIds(): Set<String> =
+    filter { it.isSelectableUsage() }.map { it.id }.toSet()
+
+private fun UsageEvent.isSelectableUsage(): Boolean =
+    !isActive && !isIdleUsage()
+
+private fun UsageEvent.isCapturedUsage(): Boolean =
+    !isActive && !isIdleUsage()
+
+private fun UsageEvent.isIdleUsage(): Boolean =
+    sourceType == UsageSourceType.Idle
 
 private fun addEntryFromDraft(state: TimeboxxingScreenState): TimeboxxingScreenState {
     val draft = state.draft

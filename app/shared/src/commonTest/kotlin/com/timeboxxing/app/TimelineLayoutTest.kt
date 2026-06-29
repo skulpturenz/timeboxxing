@@ -29,6 +29,7 @@ import com.timeboxxing.app.ui.timelineEntryScrollDp
 import com.timeboxxing.app.ui.timelineMinuteOffsetDp
 import com.timeboxxing.app.ui.timelineNowScrollDirection
 import com.timeboxxing.app.ui.timelineRowHeightDpForZoom
+import com.timeboxxing.app.ui.scheduleTimelineUsageEvents
 import com.timeboxxing.app.ui.timelineScrollToMinuteDp
 import com.timeboxxing.app.ui.timelineSegmentsForRow
 import com.timeboxxing.app.ui.timelineIntervalMarkerOffsets
@@ -260,6 +261,26 @@ class TimelineLayoutTest {
         )
 
         assertWithin(timelineDpPerMinuteForZoom(15), grid.placements.single().heightDp)
+    }
+
+    @Test
+    fun scheduleTimelineExcludesActiveEventsButKeepsCompletedAndIdle() {
+        val active = usageEvent(id = "active", durationMinutes = 3, isActive = true)
+        val completed = usageEvent(id = "completed", durationMinutes = 5)
+        val idle = usageEvent(
+            id = "idle",
+            durationMinutes = 5,
+            sourceType = UsageSourceType.Idle,
+        )
+
+        val visibleEvents = scheduleTimelineUsageEvents(listOf(active, completed, idle))
+        val grid = buildTimelineGrid(
+            events = visibleEvents,
+            zoomMinutes = 15,
+        )
+
+        assertEquals(listOf("completed", "idle"), visibleEvents.map { it.id })
+        assertEquals(setOf("completed", "idle"), grid.placements.map { it.event.id }.toSet())
     }
 
     @Test

@@ -545,7 +545,8 @@ class TimeboxxingReducerTest {
         }
 
         assertEquals(listOf(updated), state.usageEvents)
-        assertEquals(4, state.capturedMinutes)
+        assertEquals(0, state.capturedMinutes)
+        assertEquals(0, state.unassignedUsageMinutes)
     }
 
     @Test
@@ -580,6 +581,41 @@ class TimeboxxingReducerTest {
 
         assertTrue(state.selectedUsageIds.isEmpty())
         assertTrue(state.selectedUsageEvents.isEmpty())
+    }
+
+    @Test
+    fun idleUsageCannotBeSelected() {
+        val idle = usageEvent(
+            id = "idle",
+            durationMinutes = 20,
+            sourceType = UsageSourceType.Idle,
+        )
+        val initial = createInitialTimeboxxingState().copy(usageEvents = listOf(idle))
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.ToggleUsageSelection("idle"))
+
+        assertTrue(state.selectedUsageIds.isEmpty())
+        assertTrue(state.selectedUsageEvents.isEmpty())
+    }
+
+    @Test
+    fun idleUsageDoesNotAffectCapturedOrUnassignedMetrics() {
+        val work = usageEvent(
+            id = "work",
+            durationMinutes = 30,
+        )
+        val idle = usageEvent(
+            id = "idle",
+            durationMinutes = 20,
+            sourceType = UsageSourceType.Idle,
+        )
+        val initial = createInitialTimeboxxingState().copy(
+            usageEvents = listOf(work, idle),
+            entries = listOf(timeEntry(startMinute = work.startMinute, sourceUsageIds = setOf(work.id))),
+        )
+
+        assertEquals(30, initial.capturedMinutes)
+        assertEquals(0, initial.unassignedUsageMinutes)
     }
 
     private fun createAmaConfiguredState() =

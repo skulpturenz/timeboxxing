@@ -72,20 +72,19 @@ func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
 		appName = procComm(pid)
 		appPath = procExe(pid)
 	}
-	if appName == "" && title != "" {
-		// Best-effort: use the window title as the app name.
-		appName = title
-	}
+	identity := normalizeLinuxAppIdentity(appName, appPath, windowClass, title)
 
-	return WindowInfo{
-		AppName:       appName,
-		AppIdentifier: linuxAppIdentifier(appName, appPath, windowClass),
-		AppPath:       appPath,
+	info := WindowInfo{
+		AppName:       identity.AppName,
+		AppIdentifier: identity.AppIdentifier,
+		AppPath:       identity.AppPath,
 		PID:           int32(pid),
 		WindowTitle:   title,
 		TitleSource:   TitleSourceWindowAPI,
 		Timestamp:     now,
-	}, nil
+	}
+	info, _ = FinalizeWindowInfo(info)
+	return info, nil
 }
 
 func (t *linuxTracker) Permissions() []PermissionStatus {
@@ -210,7 +209,48 @@ func (t *linuxTracker) waylandFallback(now time.Time) WindowInfo {
 	info.AppName = title
 	info.AppIdentifier = title
 	info.TitleSource = TitleSourceWindowAPI
+	info, _ = FinalizeWindowInfo(info)
 	return info
+}
+
+type linuxAppIdentity struct {
+	AppName       string
+	AppIdentifier string
+	AppPath       string
+}
+
+func normalizeLinuxAppIdentity(appName string, appPath string, windowClass string, windowTitle string) linuxAppIdentity {
+	appName = strings.TrimSpace(appName)
+	appPath = strings.TrimSpace(appPath)
+	windowClass = strings.TrimSpace(windowClass)
+	windowTitle = strings.TrimSpace(windowTitle)
+	if runtimeName, ok := linuxRuntimeExecutableName(appName, appPath); ok {
+		return linuxAppIdentity{
+			AppName:       runtimeName,
+			AppIdentifier: runtimeName,
+			AppPath:       appPath,
+		}
+	}
+	appName = firstNonEmpty(appName, displayNameFromPath(appPath), windowClass, windowTitle)
+	return linuxAppIdentity{
+		AppName:       appName,
+		AppIdentifier: linuxAppIdentifier(appName, appPath, windowClass),
+		AppPath:       appPath,
+	}
+}
+
+func linuxRuntimeExecutableName(appName string, appPath string) (string, bool) {
+	names := []string{
+		strings.TrimSpace(appName),
+		filepath.Base(strings.TrimSpace(appPath)),
+	}
+	for _, name := range names {
+		switch strings.ToLower(name) {
+		case "java", "javaw":
+			return strings.ToLower(name), true
+		}
+	}
+	return "", false
 }
 
 func linuxAppIdentifier(appName string, appPath string, windowClass string) string {

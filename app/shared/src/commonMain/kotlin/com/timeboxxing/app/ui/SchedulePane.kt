@@ -154,9 +154,12 @@ fun SchedulePane(
             state.entries.firstOrNull { it.id == entryId }
         }
     }
-    val timelineGrid = remember(state.usageEvents, state.zoomMinutes) {
+    val visibleUsageEvents = remember(state.usageEvents) {
+        scheduleTimelineUsageEvents(state.usageEvents)
+    }
+    val timelineGrid = remember(visibleUsageEvents, state.zoomMinutes) {
         buildTimelineGrid(
-            events = state.usageEvents,
+            events = visibleUsageEvents,
             zoomMinutes = state.zoomMinutes,
         )
     }
@@ -282,7 +285,7 @@ fun SchedulePane(
                     focusedEntry?.id,
                     focusedEntry?.startMinute,
                     focusedEntry?.sourceUsageIds,
-                    state.usageEvents,
+                    visibleUsageEvents,
                     state.zoomMinutes,
                     scrollViewportHeightPx,
                 ) {
@@ -325,7 +328,7 @@ fun SchedulePane(
                     onUsageClick = onUsageClick,
                 )
 
-                if (timelineGrid.placements.isEmpty()) {
+                if (timelineGrid.placements.isEmpty() && nowMinute == null) {
                     ScheduleStateMessage(
                         loading = state.usageLoading,
                         unavailable = state.notice != null,
@@ -370,6 +373,9 @@ fun SchedulePane(
         }
     }
 }
+
+internal fun scheduleTimelineUsageEvents(events: List<UsageEvent>): List<UsageEvent> =
+    events.filterNot { it.isActive }
 
 @Composable
 private fun DayStatusStrip(
@@ -561,16 +567,17 @@ private fun TimelineIntervalRow(
         }
 
         segments.forEach { segment ->
+            val event = segment.placement.event
             TimelineEventSegmentRow(
                 grid = grid,
                 segment = segment,
-                selected = segment.placement.event.id in selectedUsageIds,
-                assigned = segment.placement.event.id in assignedUsageIds,
+                selected = event.id in selectedUsageIds,
+                assigned = event.id in assignedUsageIds,
                 usageIconLoader = usageIconLoader,
-                onClick = if (segment.placement.event.isActive) {
+                onClick = if (event.isActive || event.sourceType == UsageSourceType.Idle) {
                     null
                 } else {
-                    { onUsageClick(segment.placement.event.id) }
+                    { onUsageClick(event.id) }
                 },
             )
         }

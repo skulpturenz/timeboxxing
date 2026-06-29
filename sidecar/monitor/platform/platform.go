@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -24,6 +25,81 @@ type WindowInfo struct {
 	WindowTitle   string
 	TitleSource   TitleSource
 	Timestamp     time.Time
+}
+
+const UnknownAppName = "Unknown app"
+
+// FinalizeWindowInfo normalizes a platform observation into a displayable
+// foreground identity. It returns false only when the sample has no foreground
+// signal at all.
+func FinalizeWindowInfo(info WindowInfo) (WindowInfo, bool) {
+	info.AppName = strings.TrimSpace(info.AppName)
+	info.AppIdentifier = strings.TrimSpace(info.AppIdentifier)
+	info.AppPath = strings.TrimSpace(info.AppPath)
+	info.WindowTitle = strings.TrimSpace(info.WindowTitle)
+
+	if info.AppName == "" {
+		info.AppName = firstNonEmpty(
+			displayNameFromPath(info.AppPath),
+			displayNameFromIdentifier(info.AppIdentifier),
+			info.WindowTitle,
+		)
+	}
+	if info.AppName == "" && hasForegroundEvidence(info) {
+		info.AppName = UnknownAppName
+	}
+
+	return info, info.AppName != ""
+}
+
+func hasForegroundEvidence(info WindowInfo) bool {
+	return info.AppName != "" ||
+		info.AppIdentifier != "" ||
+		info.AppPath != "" ||
+		info.WindowTitle != "" ||
+		info.PID > 0 ||
+		(info.TitleSource != "" && info.TitleSource != TitleSourceNone)
+}
+
+func displayNameFromPath(value string) string {
+	value = strings.TrimRight(strings.TrimSpace(value), `/\`)
+	if value == "" {
+		return ""
+	}
+	separatorIndex := strings.LastIndexAny(value, `/\`)
+	if separatorIndex >= 0 {
+		value = value[separatorIndex+1:]
+	}
+	lower := strings.ToLower(value)
+	for _, suffix := range []string{".app", ".exe"} {
+		if strings.HasSuffix(lower, suffix) {
+			return strings.TrimSpace(value[:len(value)-len(suffix)])
+		}
+	}
+	return strings.TrimSpace(value)
+}
+
+func displayNameFromIdentifier(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	parts := strings.Split(value, ".")
+	for index := len(parts) - 1; index >= 0; index-- {
+		if part := strings.TrimSpace(parts[index]); part != "" {
+			return part
+		}
+	}
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // PermissionStatus describes one OS permission required by this platform tracker.

@@ -24,6 +24,30 @@ func TestWindowsAppIdentityFallsBackToCapitalizedExecutable(t *testing.T) {
 	}
 }
 
+func TestWindowsAppIdentityPreservesJavaRuntimeName(t *testing.T) {
+	identifier, appName := windowsAppIdentity(`C:\Program Files\Eclipse Adoptium\jdk\bin\java.exe`)
+	if identifier != "java" {
+		t.Fatalf("expected identifier java, got %q", identifier)
+	}
+	if appName != "java" {
+		t.Fatalf("expected app name java, got %q", appName)
+	}
+}
+
+func TestFinalizeWindowInfoUsesWindowsTitleWhenPathMissing(t *testing.T) {
+	info, ok := FinalizeWindowInfo(WindowInfo{
+		WindowTitle: "Untitled - Notepad",
+		TitleSource: TitleSourceWindowAPI,
+	})
+
+	if !ok {
+		t.Fatal("expected finalized foreground sample")
+	}
+	if info.AppName != "Untitled - Notepad" {
+		t.Fatalf("expected title fallback, got %q", info.AppName)
+	}
+}
+
 func TestWindowsAppIdentityHandlesEmptyPath(t *testing.T) {
 	identifier, appName := windowsAppIdentity("")
 	if identifier != "" || appName != "" {
