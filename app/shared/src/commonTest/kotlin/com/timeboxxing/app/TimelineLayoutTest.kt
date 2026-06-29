@@ -37,6 +37,8 @@ import com.timeboxxing.app.ui.SchedulePaneAutoScrollState
 import com.timeboxxing.app.ui.TimelineScrollDirection
 import com.timeboxxing.app.ui.TbDarkColors
 import com.timeboxxing.app.ui.TbLightColors
+import com.timeboxxing.app.ui.TimelineEventLayerZIndex
+import com.timeboxxing.app.ui.TimelineNowMarkerLayerZIndex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -281,6 +283,11 @@ class TimelineLayoutTest {
 
         assertEquals(listOf("completed", "idle"), visibleEvents.map { it.id })
         assertEquals(setOf("completed", "idle"), grid.placements.map { it.event.id }.toSet())
+    }
+
+    @Test
+    fun timelineNowMarkerDrawsAboveUsageEvents() {
+        assertTrue(TimelineNowMarkerLayerZIndex > TimelineEventLayerZIndex)
     }
 
     @Test

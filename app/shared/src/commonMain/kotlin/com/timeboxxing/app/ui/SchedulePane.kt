@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.model.UsageSourceType
 import com.timeboxxing.domain.model.formatClockTime
@@ -68,6 +69,8 @@ import kotlin.time.ExperimentalTime
 private val TimelineTimeLabelWidth = 72.dp
 private val TimelineRuleGap = 12.dp
 private val TimelineGridLineThickness = 1.dp
+internal const val TimelineEventLayerZIndex = 0f
+internal const val TimelineNowMarkerLayerZIndex = 1f
 
 class SchedulePaneScrollState internal constructor(
     internal val listState: LazyListState,
@@ -562,10 +565,6 @@ private fun TimelineIntervalRow(
             dpPerMinute = grid.dpPerMinute,
         )
 
-        nowMinute?.takeIf { it in row.minute until rowEndMinute }?.let { minute ->
-            NowMarker(offsetDp = (minute - row.minute) * grid.dpPerMinute)
-        }
-
         segments.forEach { segment ->
             val event = segment.placement.event
             TimelineEventSegmentRow(
@@ -580,6 +579,10 @@ private fun TimelineIntervalRow(
                     { onUsageClick(event.id) }
                 },
             )
+        }
+
+        nowMinute?.takeIf { it in row.minute until rowEndMinute }?.let { minute ->
+            NowMarker(offsetDp = (minute - row.minute) * grid.dpPerMinute)
         }
     }
 }
@@ -659,7 +662,8 @@ private fun NowMarker(offsetDp: Float) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .offset(y = offsetDp.dp),
+            .offset(y = offsetDp.dp)
+            .zIndex(TimelineNowMarkerLayerZIndex),
         horizontalArrangement = Arrangement.spacedBy(TimelineRuleGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -701,7 +705,8 @@ private fun TimelineEventSegmentRow(
         modifier = Modifier
             .fillMaxWidth()
             .offset(y = segment.offsetDp.dp)
-            .height(segment.heightDp.dp),
+            .height(segment.heightDp.dp)
+            .zIndex(TimelineEventLayerZIndex),
         horizontalArrangement = Arrangement.spacedBy(TimelineRuleGap),
         verticalAlignment = Alignment.Top,
     ) {
