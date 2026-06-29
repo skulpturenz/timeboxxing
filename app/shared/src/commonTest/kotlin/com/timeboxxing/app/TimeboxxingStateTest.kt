@@ -20,7 +20,6 @@ import com.timeboxxing.app.model.formatClockTime
 import com.timeboxxing.app.model.formatDuration
 import com.timeboxxing.app.state.TimeboxxingAction
 import com.timeboxxing.app.state.TimeboxxingSection
-import com.timeboxxing.app.state.WorkspacePane
 import com.timeboxxing.app.state.createInitialTimeboxxingState
 import com.timeboxxing.app.state.reduceTimeboxxingState
 import com.timeboxxing.app.ui.buildTimelineGrid
@@ -119,7 +118,32 @@ class TimeboxxingStateTest {
 
         assertFalse(initial.isAmaConfigured)
         assertFalse(TimeboxxingSection.Ama in initial.visibleNavigationSections)
+        assertFalse(TimeboxxingSection.Diagnostics in initial.visibleNavigationSections)
         assertEquals(listOf(TimeboxxingSection.Overview, TimeboxxingSection.Settings), initial.visibleNavigationSections)
+    }
+
+    @Test
+    fun diagnosticsNavigationIsVisibleOnlyWhenEnabled() {
+        val disabled = createInitialTimeboxxingState()
+        val enabled = disabled.copy(diagnosticsEnabled = true)
+
+        assertFalse(TimeboxxingSection.Diagnostics in disabled.visibleNavigationSections)
+        assertEquals(
+            listOf(TimeboxxingSection.Overview, TimeboxxingSection.Diagnostics, TimeboxxingSection.Settings),
+            enabled.visibleNavigationSections,
+        )
+    }
+
+    @Test
+    fun selectingDiagnosticsRequiresDiagnosticsFlag() {
+        val disabled = createInitialTimeboxxingState()
+        val enabled = disabled.copy(diagnosticsEnabled = true)
+
+        val blocked = reduceTimeboxxingState(disabled, TimeboxxingAction.SelectSection(TimeboxxingSection.Diagnostics))
+        val selected = reduceTimeboxxingState(enabled, TimeboxxingAction.SelectSection(TimeboxxingSection.Diagnostics))
+
+        assertEquals(TimeboxxingSection.Overview, blocked.selectedSection)
+        assertEquals(TimeboxxingSection.Diagnostics, selected.selectedSection)
     }
 
     @Test
@@ -130,6 +154,24 @@ class TimeboxxingStateTest {
 
         assertTrue(state.isAmaConfigured)
         assertTrue(TimeboxxingSection.Ama in state.visibleNavigationSections)
+    }
+
+    @Test
+    fun amaAndDiagnosticsNavigationUseExplicitOrder() {
+        val state = createInitialTimeboxxingState().copy(
+            aiSettings = AiSettings(openRouterSecretExists = true),
+            diagnosticsEnabled = true,
+        )
+
+        assertEquals(
+            listOf(
+                TimeboxxingSection.Overview,
+                TimeboxxingSection.Ama,
+                TimeboxxingSection.Diagnostics,
+                TimeboxxingSection.Settings,
+            ),
+            state.visibleNavigationSections,
+        )
     }
 
     @Test
@@ -449,72 +491,6 @@ class TimeboxxingStateTest {
         )
 
         assertEquals(60, state.zoomMinutes)
-    }
-
-    @Test
-    fun collapsedWorkspacePanesDefaultToExpanded() {
-        val state = createInitialTimeboxxingState()
-
-        assertTrue(state.collapsedPanes.isEmpty())
-    }
-
-    @Test
-    fun workspacePanesToggleCollapsedState() {
-        val initial = createInitialTimeboxxingState()
-
-        val collapsed = reduceTimeboxxingState(
-            initial,
-            TimeboxxingAction.ToggleWorkspacePaneCollapsed(WorkspacePane.TimeEntries),
-        )
-        val expanded = reduceTimeboxxingState(
-            collapsed,
-            TimeboxxingAction.ToggleWorkspacePaneCollapsed(WorkspacePane.TimeEntries),
-        )
-
-        assertEquals(setOf(WorkspacePane.TimeEntries), collapsed.collapsedPanes)
-        assertTrue(expanded.collapsedPanes.isEmpty())
-    }
-
-    @Test
-    fun workspacePaneToggleCannotCollapseEveryPane() {
-        val initial = createInitialTimeboxxingState(
-            collapsedPanes = setOf(WorkspacePane.TimeEntries, WorkspacePane.Projects),
-        )
-
-        val state = reduceTimeboxxingState(
-            initial,
-            TimeboxxingAction.ToggleWorkspacePaneCollapsed(WorkspacePane.UsageSchedule),
-        )
-
-        assertEquals(setOf(WorkspacePane.TimeEntries, WorkspacePane.Projects), state.collapsedPanes)
-    }
-
-    @Test
-    fun settingCollapsedWorkspacePanesSanitizesAllCollapsedInput() {
-        val state = reduceTimeboxxingState(
-            createInitialTimeboxxingState(),
-            TimeboxxingAction.SetCollapsedWorkspacePanes(WorkspacePane.entries.toSet()),
-        )
-
-        assertEquals(setOf(WorkspacePane.TimeEntries, WorkspacePane.Projects), state.collapsedPanes)
-    }
-
-    @Test
-    fun workspacePaneCollapseStateSurvivesUnrelatedActions() {
-        val initial = reduceTimeboxxingState(
-            createInitialTimeboxxingState(),
-            TimeboxxingAction.SetCollapsedWorkspacePanes(setOf(WorkspacePane.Projects)),
-        )
-
-        val movedDate = reduceTimeboxxingState(initial, TimeboxxingAction.MoveDate(1))
-        val loaded = reduceTimeboxxingState(initial, TimeboxxingAction.LoadUsage)
-        val editedDraft = reduceTimeboxxingState(initial, TimeboxxingAction.UpdateDraftTitle("Follow-up"))
-        val addedEntry = reduceTimeboxxingState(initial, TimeboxxingAction.AddDraftEntry)
-
-        assertEquals(initial.collapsedPanes, movedDate.collapsedPanes)
-        assertEquals(initial.collapsedPanes, loaded.collapsedPanes)
-        assertEquals(initial.collapsedPanes, editedDraft.collapsedPanes)
-        assertEquals(initial.collapsedPanes, addedEntry.collapsedPanes)
     }
 
     @Test

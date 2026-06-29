@@ -302,6 +302,7 @@ fun TbTextField(
     maxLines: Int = Int.MAX_VALUE,
     suffix: (@Composable () -> Unit)? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    inputModifier: Modifier = Modifier,
 ) {
     val colors = TbTheme.colors
     val state = rememberTextFieldState(initialText = value)
@@ -344,7 +345,9 @@ fun TbTextField(
                 verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
             ) {
                 UnstyledTextField(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(inputModifier),
                     state = state,
                     cursorBrush = SolidColor(colors.accent),
                     selectionColors = androidx.compose.foundation.text.selection.TextSelectionColors(

@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 internal class DesktopSettingsRepository(
     private val delegate: SettingsRepository,
     private val secretStore: SecretStore,
-    private val onSettingsSaved: suspend () -> Unit,
+    private val onSettingsSaved: () -> Unit,
 ) : SettingsRepository {
     override suspend fun listModelOptions(): AiModelOptions =
         delegate.listModelOptions()

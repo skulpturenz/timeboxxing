@@ -18,6 +18,7 @@ import com.timeboxxing.app.data.StaticSettingsRepository
 import com.timeboxxing.app.data.UsageHistoryRepository
 import com.timeboxxing.app.data.mockTimeboxxingData
 import com.timeboxxing.app.model.AppearanceMode
+import com.timeboxxing.app.model.DiagnosticsLogLine
 import com.timeboxxing.app.state.TimeboxxingAction
 import com.timeboxxing.app.state.TimeboxxingScreenState
 import com.timeboxxing.app.state.TimeboxxingSection
@@ -46,6 +47,9 @@ fun App(
     onNoticeAction: (() -> Unit)? = null,
     overlay: @Composable (() -> Unit)? = null,
     appearanceMode: AppearanceMode = AppearanceMode.System,
+    sidecarReady: Boolean = true,
+    diagnosticsEnabled: Boolean = false,
+    diagnosticsLogs: List<DiagnosticsLogLine> = emptyList(),
 ) {
     TimeboxxingApp(
         fontFamily = fontFamily,
@@ -60,6 +64,9 @@ fun App(
         onNoticeAction = onNoticeAction,
         overlay = overlay,
         appearanceMode = appearanceMode,
+        sidecarReady = sidecarReady,
+        diagnosticsEnabled = diagnosticsEnabled,
+        diagnosticsLogs = diagnosticsLogs,
     )
 }
 
@@ -83,8 +90,25 @@ fun TimeboxxingApp(
     onNoticeAction: (() -> Unit)? = null,
     overlay: @Composable (() -> Unit)? = null,
     appearanceMode: AppearanceMode = AppearanceMode.System,
+    sidecarReady: Boolean = true,
+    diagnosticsEnabled: Boolean = false,
+    diagnosticsLogs: List<DiagnosticsLogLine> = emptyList(),
 ) {
-    var state by remember { mutableStateOf(initialState) }
+    var state by remember { mutableStateOf(initialState.copy(diagnosticsEnabled = diagnosticsEnabled)) }
+    LaunchedEffect(diagnosticsEnabled) {
+        if (state.diagnosticsEnabled != diagnosticsEnabled) {
+            val nextState = state.copy(
+                diagnosticsEnabled = diagnosticsEnabled,
+                selectedSection = if (!diagnosticsEnabled && state.selectedSection == TimeboxxingSection.Diagnostics) {
+                    TimeboxxingSection.Overview
+                } else {
+                    state.selectedSection
+                },
+            )
+            state = nextState
+            onStateChange(nextState)
+        }
+    }
     LaunchedEffect(appearanceMode) {
         if (state.appearanceMode != appearanceMode) {
             val nextState = state.copy(appearanceMode = appearanceMode)
@@ -119,7 +143,8 @@ fun TimeboxxingApp(
         )
     }
 
-    LaunchedEffect(usageHistoryRepository, selectedDay.startedAtEpochMillis) {
+    LaunchedEffect(sidecarReady, usageHistoryRepository, selectedDay.startedAtEpochMillis) {
+        if (!sidecarReady) return@LaunchedEffect
         state = reduceTimeboxxingState(state, TimeboxxingAction.LoadUsage)
         val loaded = runCatching { usageHistoryRepository.getUsageEvents(selectedDay) }
         state = loaded.fold(
@@ -141,7 +166,8 @@ fun TimeboxxingApp(
         )
     }
 
-    LaunchedEffect(usageHistoryRepository, selectedDay.startedAtEpochMillis) {
+    LaunchedEffect(sidecarReady, usageHistoryRepository, selectedDay.startedAtEpochMillis) {
+        if (!sidecarReady) return@LaunchedEffect
         usageHistoryRepository.watchUsageEvents(selectedDay)
             .catch { error ->
                 state = reduceTimeboxxingState(
@@ -160,7 +186,8 @@ fun TimeboxxingApp(
             }
     }
 
-    LaunchedEffect(amaRepository, state.selectedSection) {
+    LaunchedEffect(sidecarReady, amaRepository, state.selectedSection) {
+        if (!sidecarReady) return@LaunchedEffect
         if (state.selectedSection == TimeboxxingSection.Ama) {
             while (true) {
                 val status = runCatching { amaRepository.getSemanticIndexStatus() }
@@ -178,11 +205,13 @@ fun TimeboxxingApp(
         }
     }
 
-    LaunchedEffect(settingsRepository) {
+    LaunchedEffect(sidecarReady, settingsRepository) {
+        if (!sidecarReady) return@LaunchedEffect
         loadSettings(showLoading = false)
     }
 
-    LaunchedEffect(settingsRepository, state.selectedSection) {
+    LaunchedEffect(sidecarReady, settingsRepository, state.selectedSection) {
+        if (!sidecarReady) return@LaunchedEffect
         if (state.selectedSection == TimeboxxingSection.Settings) {
             loadSettings(showLoading = true)
         }
@@ -195,6 +224,7 @@ fun TimeboxxingApp(
         TimeboxxingScreen(
             state = state,
             usageIconLoader = usageIconLoader,
+            diagnosticsLogs = diagnosticsLogs,
             noticeActionLabel = noticeActionLabel,
             onNoticeAction = onNoticeAction,
             onAction = { action ->

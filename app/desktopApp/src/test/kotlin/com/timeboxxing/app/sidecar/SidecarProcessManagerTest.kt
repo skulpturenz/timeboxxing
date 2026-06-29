@@ -1,5 +1,8 @@
 package com.timeboxxing.app.sidecar
 
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -43,4 +46,68 @@ class SidecarProcessManagerTest {
         assertFalse(redacted.contains("sk-or-v1-fakeplaceholder"))
         assertTrue(redacted.contains("[REDACTED]"))
     }
+
+    @Test
+    fun capturedSidecarLinesAreRedactedBeforeSessionStorage() {
+        val sessionLog = SidecarSessionLog(clock = fixedClock())
+        val tail = ProcessLogTail(
+            redactor = SecretRedactor(listOf("literal-secret")),
+            sessionLog = sessionLog,
+        )
+
+        tail.append("startup failed with literal-secret and sk-or-v1-placeholder")
+
+        val line = sessionLog.snapshot().single()
+        assertEquals("10:15:30.123", line.timestamp)
+        assertFalse(line.message.contains("literal-secret"))
+        assertFalse(line.message.contains("sk-or-v1-placeholder"))
+        assertTrue(line.message.contains("[REDACTED]"))
+    }
+
+    @Test
+    fun sessionLogSurvivesMultipleSidecarTails() {
+        val sessionLog = SidecarSessionLog(clock = fixedClock())
+        val firstTail = ProcessLogTail(SecretRedactor(emptyList()), sessionLog)
+        val secondTail = ProcessLogTail(SecretRedactor(emptyList()), sessionLog)
+
+        firstTail.append("first sidecar boot")
+        secondTail.append("second sidecar boot")
+
+        assertEquals(
+            listOf("first sidecar boot", "second sidecar boot"),
+            sessionLog.snapshot().map { it.message },
+        )
+    }
+
+    @Test
+    fun sessionLogDropsOldestLinesWhenBounded() {
+        val sessionLog = SidecarSessionLog(maxLines = 2, clock = fixedClock())
+
+        sessionLog.append("one")
+        sessionLog.append("two")
+        sessionLog.append("three")
+
+        assertEquals(listOf("two", "three"), sessionLog.snapshot().map { it.message })
+    }
+
+    @Test
+    fun startupFailureSuffixUsesOnlyCurrentProcessTail() {
+        val sessionLog = SidecarSessionLog(clock = fixedClock())
+        val firstTail = ProcessLogTail(SecretRedactor(emptyList()), sessionLog)
+        val secondTail = ProcessLogTail(SecretRedactor(emptyList()), sessionLog)
+
+        firstTail.append("previous process line")
+        secondTail.append("current process line")
+
+        assertTrue(firstTail.messageSuffix().contains("previous process line"))
+        assertFalse(secondTail.messageSuffix().contains("previous process line"))
+        assertTrue(secondTail.messageSuffix().contains("current process line"))
+        assertEquals(
+            listOf("previous process line", "current process line"),
+            sessionLog.snapshot().map { it.message },
+        )
+    }
+
+    private fun fixedClock(): Clock =
+        Clock.fixed(Instant.parse("2026-06-29T10:15:30.123Z"), ZoneOffset.UTC)
 }

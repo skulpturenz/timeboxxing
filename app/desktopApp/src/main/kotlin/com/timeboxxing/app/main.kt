@@ -1,26 +1,43 @@
 package com.timeboxxing.app
 
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -31,8 +48,12 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.MenuBar
@@ -52,10 +73,19 @@ import com.timeboxxing.app.model.AppearanceMode
 import com.timeboxxing.app.sidecar.SidecarConnection
 import com.timeboxxing.app.sidecar.SidecarProcessManager
 import com.timeboxxing.app.sidecar.SidecarSecrets
+import com.timeboxxing.app.sidecar.SidecarSessionLog
 import com.timeboxxing.app.sidecar.SidecarStartResult
 import com.timeboxxing.app.state.createSidecarTimeboxxingState
 import com.timeboxxing.app.ui.TbDarkColors
 import com.timeboxxing.app.ui.TbLightColors
+import com.timeboxxing.app.ui.DiagnosticsPane
+import com.timeboxxing.app.ui.TbButton
+import com.timeboxxing.app.ui.TbButtonVariant
+import com.timeboxxing.app.ui.TbCard
+import com.timeboxxing.app.ui.TbIcon
+import com.timeboxxing.app.ui.TbSurface
+import com.timeboxxing.app.ui.TbText
+import com.timeboxxing.app.ui.TbTheme
 import com.timeboxxing.app.ui.fonts.InterFontLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,6 +97,12 @@ private const val AppName = "Timeboxxing"
 private const val MinWindowWidth = 760
 private const val MinWindowHeight = 640
 private val MacWindowControlsInset = 28.dp
+
+private sealed interface SidecarUiState {
+    data object Starting : SidecarUiState
+    data object Ready : SidecarUiState
+    data class Failed(val message: String) : SidecarUiState
+}
 
 @Suppress("UNUSED_PARAMETER")
 fun main(args: Array<String>) {
@@ -90,19 +126,20 @@ fun main(args: Array<String>) {
             val isMacOs = remember { isMacOs() }
             var interFontFamily by remember { mutableStateOf<FontFamily?>(null) }
             val usageDays = remember { recentUsageDays() }
-            val sidecarManager = remember { SidecarProcessManager() }
+            val sidecarSessionLog = remember { SidecarSessionLog() }
+            val sidecarManager = remember(sidecarSessionLog) { SidecarProcessManager(sessionLog = sidecarSessionLog) }
+            val diagnosticsLogs by sidecarSessionLog.lines.collectAsState()
             val secretStore = remember { DesktopSecretStore() }
             val usageIconLoader = remember { NativeUsageIconLoader() }
-            val workspacePanePreferences = remember { WorkspacePanePreferences() }
             val appearancePreferences = remember { AppearancePreferences() }
-            val initialCollapsedPanes = remember { workspacePanePreferences.load() }
             val initialAppearanceMode = remember { appearancePreferences.load() }
             val setupScope = rememberCoroutineScope()
             var usageHistoryRepository by remember { mutableStateOf<UsageHistoryRepository>(EmptyUsageHistoryRepository()) }
             var amaRepository by remember { mutableStateOf<AmaRepository>(UnavailableAmaRepository("Starting usage sidecar...")) }
             var settingsRepository by remember { mutableStateOf<SettingsRepository>(UnavailableSettingsRepository("Starting usage sidecar...")) }
             var sidecarConnection by remember { mutableStateOf<SidecarConnection?>(null) }
-            var savedCollapsedPanes by remember { mutableStateOf(initialCollapsedPanes) }
+            var sidecarUiState by remember { mutableStateOf<SidecarUiState>(SidecarUiState.Starting) }
+            var diagnosticsOverlayVisible by remember { mutableStateOf(false) }
             var appearanceMode by remember { mutableStateOf(initialAppearanceMode) }
             val latestSidecarConnection by rememberUpdatedState(sidecarConnection)
             val systemDarkTheme = isSystemInDarkTheme()
@@ -126,6 +163,8 @@ fun main(args: Array<String>) {
             }
 
             suspend fun restartSidecar() {
+                sidecarUiState = SidecarUiState.Starting
+                diagnosticsOverlayVisible = false
                 sidecarConnection?.close()
                 sidecarConnection = null
                 usageHistoryRepository = EmptyUsageHistoryRepository()
@@ -147,14 +186,20 @@ fun main(args: Array<String>) {
                         settingsRepository = DesktopSettingsRepository(
                             delegate = result.connection.settingsRepository,
                             secretStore = secretStore,
-                            onSettingsSaved = { restartSidecar() },
+                            onSettingsSaved = {
+                                setupScope.launch {
+                                    restartSidecar()
+                                }
+                            },
                         )
+                        sidecarUiState = SidecarUiState.Ready
                     }
 
                     is SidecarStartResult.Failed -> {
                         usageHistoryRepository = UnavailableUsageHistoryRepository(result.message)
                         amaRepository = UnavailableAmaRepository(result.message)
                         settingsRepository = UnavailableSettingsRepository(result.message)
+                        sidecarUiState = SidecarUiState.Failed(result.message)
                     }
                 }
             }
@@ -205,18 +250,13 @@ fun main(args: Array<String>) {
                         initialState = createSidecarTimeboxxingState(
                             usageDays = usageDays,
                             initialNotice = "Starting usage sidecar...",
-                            collapsedPanes = initialCollapsedPanes,
                             appearanceMode = initialAppearanceMode,
                         ),
                         appearanceMode = appearanceMode,
+                        sidecarReady = sidecarUiState is SidecarUiState.Ready,
+                        diagnosticsEnabled = DesktopBuildConfig.DiagnosticsEnabled,
+                        diagnosticsLogs = diagnosticsLogs,
                         onStateChange = { nextState ->
-                            if (nextState.collapsedPanes != savedCollapsedPanes) {
-                                val panesToSave = nextState.collapsedPanes
-                                savedCollapsedPanes = panesToSave
-                                setupScope.launch(Dispatchers.IO) {
-                                    workspacePanePreferences.save(panesToSave)
-                                }
-                            }
                             if (nextState.appearanceMode != appearanceMode) {
                                 val modeToSave = nextState.appearanceMode
                                 appearanceMode = modeToSave
@@ -224,11 +264,185 @@ fun main(args: Array<String>) {
                                     appearancePreferences.save(modeToSave)
                                 }
                             }
-                        }
+                        },
+                        overlay = {
+                            when (val state = sidecarUiState) {
+                                SidecarUiState.Ready -> Unit
+                                SidecarUiState.Starting -> SidecarStartupOverlay(state = state)
+                                is SidecarUiState.Failed -> SidecarStartupOverlay(
+                                    state = state,
+                                    onRetry = {
+                                        diagnosticsOverlayVisible = false
+                                        setupScope.launch {
+                                            restartSidecar()
+                                        }
+                                    },
+                                    onDiagnostics = if (DesktopBuildConfig.DiagnosticsEnabled) {
+                                        { diagnosticsOverlayVisible = true }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                            if (diagnosticsOverlayVisible && DesktopBuildConfig.DiagnosticsEnabled) {
+                                DiagnosticsPane(
+                                    logs = diagnosticsLogs,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onClose = { diagnosticsOverlayVisible = false },
+                                )
+                            }
+                        },
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SidecarStartupOverlay(
+    state: SidecarUiState,
+    onRetry: (() -> Unit)? = null,
+    onDiagnostics: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(TbTheme.colors.appBackground),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                },
+        )
+        when (state) {
+            SidecarUiState.Starting -> SidecarLoadingDots()
+            is SidecarUiState.Failed -> {
+                TbCard(
+                    modifier = Modifier
+                        .widthIn(max = 460.dp)
+                        .padding(24.dp),
+                    color = TbTheme.colors.surface,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SidecarFailureIcon()
+                        TbText(
+                            text = "Usage sidecar could not start",
+                            style = TbTheme.typography.title.copy(textAlign = TextAlign.Center),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        TbText(
+                            text = state.message,
+                            style = TbTheme.typography.body.copy(textAlign = TextAlign.Center),
+                            color = TbTheme.colors.secondaryText,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (onRetry != null || onDiagnostics != null) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (onRetry != null) {
+                                    TbButton(
+                                        onClick = onRetry,
+                                        variant = TbButtonVariant.Primary,
+                                    ) {
+                                        TbText("Retry", style = TbTheme.typography.button)
+                                    }
+                                }
+                                if (onDiagnostics != null) {
+                                    TbButton(
+                                        onClick = onDiagnostics,
+                                        variant = TbButtonVariant.Secondary,
+                                    ) {
+                                        TbText("Diagnostics", style = TbTheme.typography.button)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            SidecarUiState.Ready -> Unit
+        }
+    }
+}
+
+@Composable
+private fun SidecarLoadingDots() {
+    val transition = rememberInfiniteTransition(label = "sidecar-loading-dots")
+    val dotColor = TbTheme.colors.accent
+    val bouncePx = with(LocalDensity.current) { 9.dp.toPx() }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.height(34.dp),
+    ) {
+        repeat(3) { index ->
+            val wave by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 900
+                        0f at 0
+                        0f at index * 140
+                        1f at index * 140 + 180
+                        0f at index * 140 + 360
+                        0f at 900
+                    },
+                ),
+                label = "sidecar-loading-dot-$index",
+            )
+            Canvas(
+                modifier = Modifier
+                    .size(12.dp)
+                    .graphicsLayer {
+                        alpha = 0.42f + (wave * 0.58f)
+                        translationY = -bouncePx * wave
+                    },
+            ) {
+                drawCircle(color = dotColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SidecarFailureIcon() {
+    TbSurface(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape),
+        shape = CircleShape,
+        color = TbTheme.colors.destructiveSubtle,
+        contentColor = TbTheme.colors.destructive,
+        contentAlignment = Alignment.Center,
+    ) {
+        TbIcon(
+            imageVector = Icons.Rounded.Close,
+            contentDescription = "Sidecar startup failed",
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 

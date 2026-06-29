@@ -19,6 +19,7 @@ import kotlin.io.path.exists
 
 class SidecarProcessManager(
     private val env: Map<String, String> = System.getenv(),
+    private val sessionLog: SidecarSessionLog = SidecarSessionLog(),
 ) {
     suspend fun start(
         readinessDay: UsageDay,
@@ -32,7 +33,7 @@ class SidecarProcessManager(
             )
         val port = findLoopbackPort()
         val target = "127.0.0.1:$port"
-        val logTail = ProcessLogTail(redactor)
+        val logTail = ProcessLogTail(redactor, sessionLog)
         val process = ProcessBuilder(binary.absolutePath)
             .redirectErrorStream(true)
             .apply {
@@ -155,8 +156,9 @@ data class SidecarSecrets(
     fun values(): List<String> = listOf(openRouterApiKey, ollamaApiKey)
 }
 
-private class ProcessLogTail(
+internal class ProcessLogTail(
     private val redactor: SecretRedactor,
+    private val sessionLog: SidecarSessionLog,
     private val maxLines: Int = 16,
 ) {
     private val lines = ArrayDeque<String>()
@@ -170,11 +172,13 @@ private class ProcessLogTail(
     }
 
     @Synchronized
-    private fun append(line: String) {
-        lines.addLast(redactor.redact(line))
+    internal fun append(line: String) {
+        val redacted = redactor.redact(line)
+        lines.addLast(redacted)
         while (lines.size > maxLines) {
             lines.removeFirst()
         }
+        sessionLog.append(redacted)
     }
 
     @Synchronized

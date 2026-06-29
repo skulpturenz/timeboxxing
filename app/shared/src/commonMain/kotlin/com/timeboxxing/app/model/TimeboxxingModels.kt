@@ -145,6 +145,12 @@ data class AmaMessage(
     val artifacts: List<AmaArtifact> = emptyList(),
 )
 
+data class DiagnosticsLogLine(
+    val sequence: Long,
+    val timestamp: String,
+    val message: String,
+)
+
 enum class AiProvider {
     OpenRouter,
     Ollama,

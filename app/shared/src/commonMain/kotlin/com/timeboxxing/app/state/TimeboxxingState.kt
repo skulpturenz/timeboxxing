@@ -37,7 +37,6 @@ data class TimeboxxingScreenState(
     val notice: String?,
     val nextEntryNumber: Int,
     val usageDays: List<UsageDay>,
-    val collapsedPanes: Set<WorkspacePane> = emptySet(),
     val amaInput: String = "",
     val amaMessages: List<AmaMessage> = emptyList(),
     val amaLoading: Boolean = false,
@@ -52,6 +51,7 @@ data class TimeboxxingScreenState(
     val settingsError: String? = null,
     val settingsSavedMessage: String? = null,
     val appearanceMode: AppearanceMode = AppearanceMode.System,
+    val diagnosticsEnabled: Boolean = false,
 ) {
     val dateLabels: List<String>
         get() = usageDays.map { it.label }
@@ -93,10 +93,15 @@ data class TimeboxxingScreenState(
         get() = aiSettings.hasConfiguredAiSecret()
 
     val visibleNavigationSections: List<TimeboxxingSection>
-        get() = if (isAmaConfigured) {
-            TimeboxxingSection.entries
-        } else {
-            TimeboxxingSection.entries.filterNot { it == TimeboxxingSection.Ama }
+        get() = buildList {
+            add(TimeboxxingSection.Overview)
+            if (isAmaConfigured) {
+                add(TimeboxxingSection.Ama)
+            }
+            if (diagnosticsEnabled) {
+                add(TimeboxxingSection.Diagnostics)
+            }
+            add(TimeboxxingSection.Settings)
         }
 
     fun projectFor(projectId: String): Project =
@@ -115,13 +120,8 @@ data class TimeboxxingScreenState(
 enum class TimeboxxingSection {
     Overview,
     Ama,
+    Diagnostics,
     Settings,
-}
-
-enum class WorkspacePane {
-    UsageSchedule,
-    TimeEntries,
-    Projects,
 }
 
 sealed interface TimeboxxingAction {
@@ -148,8 +148,6 @@ sealed interface TimeboxxingAction {
     data class DeleteEntry(val entryId: String) : TimeboxxingAction
     data object ConfirmPrimaryAction : TimeboxxingAction
     data object DismissNotice : TimeboxxingAction
-    data class ToggleWorkspacePaneCollapsed(val pane: WorkspacePane) : TimeboxxingAction
-    data class SetCollapsedWorkspacePanes(val panes: Set<WorkspacePane>) : TimeboxxingAction
     data class UpdateAmaInput(val input: String) : TimeboxxingAction
     data object SubmitAmaQuestion : TimeboxxingAction
     data class AmaAnswerSucceeded(val answer: AmaAnswer) : TimeboxxingAction
@@ -175,7 +173,6 @@ sealed interface TimeboxxingAction {
 
 fun createInitialTimeboxxingState(
     data: TimeboxxingMockData = mockTimeboxxingData(),
-    collapsedPanes: Set<WorkspacePane> = emptySet(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
     val defaultProject = data.projects.first()
@@ -194,7 +191,6 @@ fun createInitialTimeboxxingState(
         notice = null,
         nextEntryNumber = data.initialEntries.size + 1,
         usageDays = data.usageDays,
-        collapsedPanes = sanitizeCollapsedWorkspacePanes(collapsedPanes),
         appearanceMode = appearanceMode,
     )
 }
@@ -203,7 +199,6 @@ fun createSidecarTimeboxxingState(
     usageDays: List<UsageDay>,
     initialNotice: String? = null,
     data: TimeboxxingMockData = mockTimeboxxingData(),
-    collapsedPanes: Set<WorkspacePane> = emptySet(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
     val defaultProject = data.projects.first()
@@ -223,7 +218,6 @@ fun createSidecarTimeboxxingState(
         notice = initialNotice,
         nextEntryNumber = 1,
         usageDays = safeUsageDays,
-        collapsedPanes = sanitizeCollapsedWorkspacePanes(collapsedPanes),
         appearanceMode = appearanceMode,
     )
 }
@@ -234,10 +228,10 @@ fun reduceTimeboxxingState(
 ): TimeboxxingScreenState =
     when (action) {
         is TimeboxxingAction.SelectSection -> {
-            val selectedSection = if (action.section == TimeboxxingSection.Ama && !state.isAmaConfigured) {
-                TimeboxxingSection.Settings
-            } else {
-                action.section
+            val selectedSection = when {
+                action.section == TimeboxxingSection.Ama && !state.isAmaConfigured -> TimeboxxingSection.Settings
+                action.section == TimeboxxingSection.Diagnostics && !state.diagnosticsEnabled -> state.selectedSection
+                else -> action.section
             }
             state.copy(
                 selectedSection = selectedSection,
@@ -395,19 +389,6 @@ fun reduceTimeboxxingState(
         )
 
         TimeboxxingAction.DismissNotice -> state.copy(scheduleFocusEntryId = null, notice = null)
-
-        is TimeboxxingAction.ToggleWorkspacePaneCollapsed -> {
-            val nextPanes = if (action.pane in state.collapsedPanes) {
-                state.collapsedPanes - action.pane
-            } else {
-                state.collapsedPanes + action.pane
-            }
-            state.copy(collapsedPanes = sanitizeCollapsedWorkspacePanes(nextPanes))
-        }
-
-        is TimeboxxingAction.SetCollapsedWorkspacePanes -> state.copy(
-            collapsedPanes = sanitizeCollapsedWorkspacePanes(action.panes),
-        )
 
         is TimeboxxingAction.UpdateAmaInput -> state.copy(
             amaInput = action.input,
@@ -574,15 +555,6 @@ private fun selectVisibleSectionAfterSettingsChange(
     } else {
         selectedSection
     }
-
-fun sanitizeCollapsedWorkspacePanes(panes: Set<WorkspacePane>): Set<WorkspacePane> {
-    val validPanes = panes.intersect(WorkspacePane.entries.toSet())
-    return if (validPanes.size >= WorkspacePane.entries.size) {
-        validPanes - WorkspacePane.UsageSchedule
-    } else {
-        validPanes
-    }
-}
 
 private fun sanitizeAiSettings(settings: AiSettings, options: AiModelOptions): AiSettings {
     val embeddingModels = options.embeddingModels.filter { it.supports(settings.provider) }
