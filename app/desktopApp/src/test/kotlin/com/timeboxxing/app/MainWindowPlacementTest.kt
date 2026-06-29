@@ -28,4 +28,10 @@ class MainWindowPlacementTest {
             nextTitleBarDoubleClickPlacement(WindowPlacement.Fullscreen),
         )
     }
+
+    @Test
+    fun macOsWindowAppearanceFollowsAppTheme() {
+        assertEquals("NSAppearanceNameDarkAqua", macOsWindowAppearanceName(darkTheme = true))
+        assertEquals("NSAppearanceNameAqua", macOsWindowAppearanceName(darkTheme = false))
+    }
 }

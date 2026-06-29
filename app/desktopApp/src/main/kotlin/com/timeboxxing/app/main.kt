@@ -117,8 +117,8 @@ fun main(args: Array<String>) {
                 window.minimumSize = Dimension(MinWindowWidth, MinWindowHeight)
             }
 
-            LaunchedEffect(windowBackground) {
-                window.applyDesktopChrome(windowBackground)
+            LaunchedEffect(windowBackground, darkTheme) {
+                window.applyDesktopChrome(windowBackground, darkTheme)
             }
 
             LaunchedEffect(Unit) {
@@ -241,7 +241,10 @@ private fun configureDesktopSystemProperties() {
     System.setProperty("com.apple.mrj.application.apple.menu.about.name", AppName)
 }
 
-private fun ComposeWindow.applyDesktopChrome(backgroundColor: Color) {
+private fun ComposeWindow.applyDesktopChrome(
+    backgroundColor: Color,
+    darkTheme: Boolean,
+) {
     val awtBackground = backgroundColor.toAwtColor()
     background = awtBackground
     contentPane.background = awtBackground
@@ -252,7 +255,11 @@ private fun ComposeWindow.applyDesktopChrome(backgroundColor: Color) {
     rootPane.putClientProperty("apple.awt.fullWindowContent", true)
     rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
     rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
+    rootPane.putClientProperty("apple.awt.windowAppearance", macOsWindowAppearanceName(darkTheme))
 }
+
+internal fun macOsWindowAppearanceName(darkTheme: Boolean): String =
+    if (darkTheme) "NSAppearanceNameDarkAqua" else "NSAppearanceNameAqua"
 
 @Composable
 private fun FrameWindowScope.PlatformMenu(onClose: () -> Unit) {
