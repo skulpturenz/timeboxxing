@@ -2,11 +2,16 @@ package usage
 
 import (
 	"context"
+	"fmt"
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 )
 
 func (s *Service) GetEvents(ctx context.Context, params GetEventsParams) ([]Event, error) {
+	if s == nil || s.transitions == nil {
+		return nil, fmt.Errorf("usage transition service is unavailable")
+	}
+
 	events, err := s.transitions.GetTransitionEvents(ctx, componentTransitions.GetTransitionEventsParams{})
 	if err != nil {
 		return nil, err

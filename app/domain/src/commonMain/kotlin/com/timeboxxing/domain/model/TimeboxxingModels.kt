@@ -52,6 +52,7 @@ data class UsageApplicationIdentity(
     val name: String,
     val identifier: String?,
     val path: String?,
+    val pid: Int? = null,
 )
 
 data class UsageDay(

@@ -51,9 +51,10 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 	}
 	defer database.Close()
 
-	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 8)
+	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 1)
 	assertMigrationTableVersion(t, ctx, database, "seed_migrations_embedding_models", 1)
 	assertMigrationTableVersion(t, ctx, database, "seed_migrations_semantic_models", 1)
+	assertMigrationTableVersion(t, ctx, database, "seed_migrations_settings", 1)
 	assertMigrationTableVersion(t, ctx, database, "seed_migrations_transition_event_reasons", 1)
 }
 

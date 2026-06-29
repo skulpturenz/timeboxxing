@@ -7,11 +7,12 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createTransitionEventMetadata = `-- name: CreateTransitionEventMetadata :exec
-INSERT INTO transition_event_metadata (transition_event_id, browser, tab, idle, cdp_url)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO transition_event_metadata (transition_event_id, browser, tab, idle, cdp_url, pid)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateTransitionEventMetadataParams struct {
@@ -20,6 +21,7 @@ type CreateTransitionEventMetadataParams struct {
 	Tab               *string
 	Idle              bool
 	CdpUrl            *string
+	Pid               sql.NullInt64
 }
 
 func (q *Queries) CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error {
@@ -29,6 +31,7 @@ func (q *Queries) CreateTransitionEventMetadata(ctx context.Context, arg CreateT
 		arg.Tab,
 		arg.Idle,
 		arg.CdpUrl,
+		arg.Pid,
 	)
 	return err
 }

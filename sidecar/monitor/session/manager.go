@@ -207,6 +207,7 @@ func (m *SessionManager) buildKey(ctx context.Context, info platform.WindowInfo)
 	identity := AppIdentity{
 		Identifier: info.AppIdentifier,
 		Path:       info.AppPath,
+		PID:        info.PID,
 	}
 	if m.cfg.NoBrowserTabs {
 		return AppKey{AppName: info.AppName}, identity

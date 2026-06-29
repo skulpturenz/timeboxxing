@@ -1,9 +1,34 @@
-DROP TABLE IF EXISTS semantic_document_float32_embeddings;
+CREATE TABLE IF NOT EXISTS applications (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  platform_identifier TEXT,
+  path TEXT
+);
 
-DROP INDEX IF EXISTS semantic_documents_type_started_idx;
-DROP INDEX IF EXISTS semantic_documents_transition_event_idx;
+CREATE TABLE IF NOT EXISTS transition_event_reasons (
+  id INTEGER PRIMARY KEY NOT NULL,
+  reason TEXT NOT NULL UNIQUE
+);
 
-CREATE TABLE semantic_documents_new (
+CREATE TABLE IF NOT EXISTS transition_events (
+  id INTEGER PRIMARY KEY,
+  application_id INTEGER REFERENCES applications(id),
+  transition_reason_id INTEGER NOT NULL REFERENCES transition_event_reasons(id),
+  started_at TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  ended_at TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS transition_event_metadata (
+  id INTEGER PRIMARY KEY,
+  transition_event_id INTEGER NOT NULL REFERENCES transition_events(id),
+  browser BOOLEAN NOT NULL DEFAULT false,
+  tab TEXT,
+  idle BOOLEAN NOT NULL DEFAULT false,
+  cdp_url TEXT,
+  pid INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS semantic_documents (
   id INTEGER PRIMARY KEY,
   document_key TEXT NOT NULL UNIQUE,
   document_type TEXT NOT NULL,
@@ -12,28 +37,6 @@ CREATE TABLE semantic_documents_new (
   ended_at TIMESTAMP,
   content TEXT NOT NULL
 );
-
-INSERT INTO semantic_documents_new (
-  id,
-  document_key,
-  document_type,
-  transition_event_id,
-  started_at,
-  ended_at,
-  content
-)
-SELECT
-  id,
-  document_key,
-  document_type,
-  transition_event_id,
-  started_at,
-  ended_at,
-  content
-FROM semantic_documents;
-
-DROP TABLE semantic_documents;
-ALTER TABLE semantic_documents_new RENAME TO semantic_documents;
 
 CREATE INDEX IF NOT EXISTS semantic_documents_type_started_idx
   ON semantic_documents(document_type, started_at);

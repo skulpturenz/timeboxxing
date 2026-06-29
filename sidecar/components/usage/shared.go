@@ -28,6 +28,7 @@ type Event struct {
 	ApplicationName       string
 	ApplicationIdentifier string
 	ApplicationPath       string
+	PID                   int32
 	CDPURL                string
 	Active                bool
 }
@@ -68,6 +69,7 @@ func eventFromTransition(event componentTransitions.Event) Event {
 		EndedAt:         event.EndedAt,
 		Reason:          event.Reason,
 		ApplicationName: applicationName,
+		PID:             event.PID,
 		CDPURL:          event.CDPURL,
 	}
 	if !event.Idle {
@@ -108,6 +110,7 @@ func eventFromActiveSession(activeSession *session.Session, now time.Time, windo
 		ApplicationName:       key.AppName,
 		ApplicationIdentifier: activeSession.ApplicationIdentity.Identifier,
 		ApplicationPath:       activeSession.ApplicationIdentity.Path,
+		PID:                   activeSession.ApplicationIdentity.PID,
 		Reason:                "active",
 		StartedAt:             activeSession.StartedAt,
 		EndedAt:               endedAt,

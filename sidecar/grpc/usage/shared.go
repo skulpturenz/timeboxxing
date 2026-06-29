@@ -23,8 +23,8 @@ func windowFromRequest(req *usagev1.GetUsageEventsRequest) (componentUsage.Windo
 		return window, status.Errorf(codes.InvalidArgument, "ended_at is invalid: %v", err)
 	}
 
-	window.StartedAt = req.GetStartedAt().AsTime()
-	window.EndedAt = req.GetEndedAt().AsTime()
+	window.StartedAt = req.GetStartedAt().AsTime().UTC()
+	window.EndedAt = req.GetEndedAt().AsTime().UTC()
 	if !window.EndedAt.After(window.StartedAt) {
 		return window, status.Error(codes.InvalidArgument, "ended_at must be after started_at")
 	}
@@ -38,14 +38,15 @@ func eventToProto(event componentUsage.Event) *usagev1.UsageEvent {
 		Title:                 event.Title,
 		SourceName:            event.SourceName,
 		Source:                sourceToProto(event.Source),
-		StartedAt:             timestamppb.New(event.StartedAt),
-		EndedAt:               timestamppb.New(event.EndedAt),
+		StartedAt:             timestamppb.New(event.StartedAt.UTC()),
+		EndedAt:               timestamppb.New(event.EndedAt.UTC()),
 		Reason:                event.Reason,
 		ApplicationName:       event.ApplicationName,
 		CdpUrl:                event.CDPURL,
 		ApplicationIdentifier: event.ApplicationIdentifier,
 		ApplicationPath:       event.ApplicationPath,
 		Active:                event.Active,
+		Pid:                   event.PID,
 	}
 }
 

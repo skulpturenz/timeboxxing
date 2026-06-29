@@ -15,13 +15,13 @@ type TransitionEventIndexed struct {
 	TransitionEventId int64
 }
 
-func (s WorkerServices) TransitionEventIndexerWorker(ctx context.Context, q *queue.Queue[TransitionEventReported]) func() {
-	logger := s.Logger.With("worker", "transition_event_indexer")
+func (r *Runtime) TransitionEventIndexerWorker(ctx context.Context, q *queue.Queue[TransitionEventReported]) func() {
+	logger := r.logger.With("worker", "transition_event_indexer")
 
 	cleanup := q.AddWorker(ctx, func(j varmq.Job[TransitionEventReported]) {
 		event := j.Data()
-		assert.NotNil(s.TransitionEventIndexer)
-		if s.TransitionEventIndexer == nil {
+		assert.NotNil(r.indexer)
+		if r.indexer == nil {
 			logger.ErrorContext(ctx, "transition event indexer is nil", "transition_event_id", event.TransitionEventId)
 			return
 		}
@@ -31,7 +31,7 @@ func (s WorkerServices) TransitionEventIndexerWorker(ctx context.Context, q *que
 			err        error
 		)
 		for attempt := 1; attempt <= transitionEventIndexAttempts; attempt++ {
-			documentID, err = s.TransitionEventIndexer.IndexTransitionEvent(ctx, event.TransitionEventId)
+			documentID, err = r.indexer.IndexTransitionEvent(ctx, event.TransitionEventId)
 			if err == nil {
 				break
 			}

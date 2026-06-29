@@ -5,6 +5,7 @@ import (
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 const defaultActiveSnapshotInterval = 30 * time.Second
@@ -20,28 +21,54 @@ type Service struct {
 	activeSnapshotInterval time.Duration
 }
 
-type NewServiceParams struct {
-	Transitions            *componentTransitions.Service
-	ActiveSessions         ActiveSessionProvider
-	Clock                  func() time.Time
-	ActiveSnapshotInterval time.Duration
+type serviceKey struct{}
+type activeSessionsKey struct{}
+type clockKey struct{}
+type activeSnapshotIntervalKey struct{}
+
+func RegisterService(registry *services.Services[any, any], service *Service) {
+	services.Set(registry, serviceKey{}, service)
 }
 
-func NewService(params NewServiceParams) *Service {
-	clock := params.Clock
+func ServiceFromServices(registry *services.Services[any, any]) (*Service, bool) {
+	service, ok := services.Get[*Service](registry, serviceKey{})
+	if !ok {
+		return nil, false
+	}
+	return service.Unwrap(), true
+}
+
+func RegisterActiveSessions(registry *services.Services[any, any], provider ActiveSessionProvider) {
+	services.Set(registry, activeSessionsKey{}, provider)
+}
+
+func RegisterClock(registry *services.Services[any, any], clock func() time.Time) {
+	services.Set(registry, clockKey{}, clock)
+}
+
+func RegisterActiveSnapshotInterval(registry *services.Services[any, any], interval time.Duration) {
+	services.Set(registry, activeSnapshotIntervalKey{}, interval)
+}
+
+func NewService(registry *services.Services[any, any]) *Service {
+	transitions, _ := componentTransitions.ServiceFromServices(registry)
+	activeSessions, _ := activeSessionsFromServices(registry)
+	clock := clockFromServices(registry)
 	if clock == nil {
 		clock = time.Now
 	}
-	interval := params.ActiveSnapshotInterval
+	interval := activeSnapshotIntervalFromServices(registry)
 	if interval <= 0 {
 		interval = defaultActiveSnapshotInterval
 	}
-	return &Service{
-		transitions:            params.Transitions,
-		activeSessions:         params.ActiveSessions,
+	service := &Service{
+		transitions:            transitions,
+		activeSessions:         activeSessions,
 		clock:                  clock,
 		activeSnapshotInterval: interval,
 	}
+	RegisterService(registry, service)
+	return service
 }
 
 func minDuration(first time.Duration, second time.Duration) time.Duration {
@@ -49,4 +76,28 @@ func minDuration(first time.Duration, second time.Duration) time.Duration {
 		return first
 	}
 	return second
+}
+
+func activeSessionsFromServices(registry *services.Services[any, any]) (ActiveSessionProvider, bool) {
+	service, ok := services.Get[ActiveSessionProvider](registry, activeSessionsKey{})
+	if !ok {
+		return nil, false
+	}
+	return service.Unwrap(), true
+}
+
+func clockFromServices(registry *services.Services[any, any]) func() time.Time {
+	service, ok := services.Get[func() time.Time](registry, clockKey{})
+	if !ok {
+		return nil
+	}
+	return service.Unwrap()
+}
+
+func activeSnapshotIntervalFromServices(registry *services.Services[any, any]) time.Duration {
+	service, ok := services.Get[time.Duration](registry, activeSnapshotIntervalKey{})
+	if !ok {
+		return 0
+	}
+	return service.Unwrap()
 }

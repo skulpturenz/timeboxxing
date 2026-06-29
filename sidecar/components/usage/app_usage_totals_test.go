@@ -5,15 +5,13 @@ import (
 	"testing"
 	"time"
 
-	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
 )
 
 func TestGetAppUsageTotalsAggregatesClipsSortsAndLimits(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
-	service := NewService(NewServiceParams{Transitions: transitions})
+	service, _ := newTestService(t, database)
 	windowStart := time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC)
 	windowEnd := windowStart.Add(4 * time.Hour)
 
@@ -59,8 +57,7 @@ func TestGetAppUsageTotalsAggregatesClipsSortsAndLimits(t *testing.T) {
 func TestGetAppUsageTotalsIdleRequiresOptIn(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
-	service := NewService(NewServiceParams{Transitions: transitions})
+	service, _ := newTestService(t, database)
 	windowStart := time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC)
 	window := Window{StartedAt: windowStart, EndedAt: windowStart.Add(2 * time.Hour)}
 
@@ -98,12 +95,10 @@ func TestGetAppUsageTotalsIdleRequiresOptIn(t *testing.T) {
 func TestGetAppUsageTotalsIncludesActiveSession(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
 	windowStart := time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC)
 	now := windowStart.Add(90 * time.Minute)
-	service := NewService(NewServiceParams{
-		Transitions: transitions,
-		ActiveSessions: fakeActiveSessionProvider{
+	service, _ := newTestService(t, database,
+		withActiveSessions(fakeActiveSessionProvider{
 			current: &session.Session{
 				Key: session.AppKey{
 					AppName: "Linear",
@@ -114,9 +109,9 @@ func TestGetAppUsageTotalsIncludesActiveSession(t *testing.T) {
 				},
 				StartedAt: windowStart.Add(30 * time.Minute),
 			},
-		},
-		Clock: func() time.Time { return now },
-	})
+		}),
+		withClock(func() time.Time { return now }),
+	)
 
 	totals, err := service.GetAppUsageTotals(ctx, AppUsageTotalsParams{
 		Window: Window{StartedAt: windowStart, EndedAt: windowStart.Add(4 * time.Hour)},

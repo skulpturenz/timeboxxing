@@ -2,17 +2,20 @@ package reporter
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/browser"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 type TransitionEvent struct {
 	ApplicationName       string
 	ApplicationIdentifier string
 	ApplicationPath       string
+	PID                   int32
 	Reason                string
 	StartedAt             time.Time
 	EndedAt               time.Time
@@ -26,11 +29,30 @@ type TransitionEventQueue interface {
 	Add(TransitionEvent) error
 }
 
+type TransitionEventIndexer interface {
+	IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error)
+}
+
 type QueueReporter struct {
 	queue TransitionEventQueue
 }
 
-func NewQueueReporter(queue TransitionEventQueue) *QueueReporter {
+type transitionEventQueueKey struct{}
+
+func RegisterTransitionEventQueue(registry *services.Services[any, any], queue TransitionEventQueue) {
+	services.Set(registry, transitionEventQueueKey{}, queue)
+}
+
+func TransitionEventQueueFromServices(registry *services.Services[any, any]) (TransitionEventQueue, bool) {
+	service, ok := services.Get[TransitionEventQueue](registry, transitionEventQueueKey{})
+	if !ok {
+		return nil, false
+	}
+	return service.Unwrap(), true
+}
+
+func NewQueueReporter(registry *services.Services[any, any]) *QueueReporter {
+	queue, _ := TransitionEventQueueFromServices(registry)
 	return &QueueReporter{queue: queue}
 }
 
@@ -54,6 +76,9 @@ func (q *QueueReporter) Record(_ context.Context, t session.Transition) error {
 	if t.From == nil || t.From.IsOpen() {
 		return nil
 	}
+	if q.queue == nil {
+		return fmt.Errorf("transition event queue is unavailable")
+	}
 
 	key := t.From.Key
 	appName := strings.TrimSpace(key.AppName)
@@ -62,6 +87,7 @@ func (q *QueueReporter) Record(_ context.Context, t session.Transition) error {
 		ApplicationName:       appName,
 		ApplicationIdentifier: strings.TrimSpace(identity.Identifier),
 		ApplicationPath:       strings.TrimSpace(identity.Path),
+		PID:                   identity.PID,
 		Reason:                string(t.Reason),
 		StartedAt:             t.From.StartedAt,
 		EndedAt:               t.From.EndedAt,
@@ -72,4 +98,11 @@ func (q *QueueReporter) Record(_ context.Context, t session.Transition) error {
 	}
 
 	return q.queue.Add(event)
+}
+
+func stringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

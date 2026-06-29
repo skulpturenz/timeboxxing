@@ -9,6 +9,15 @@ import (
 
 func (s *Service) Subscribe(ctx context.Context, params SubscribeParams) Subscription {
 	ctx, cancel := context.WithCancel(ctx)
+	if s == nil || s.transitions == nil {
+		events := make(chan Event)
+		close(events)
+		return Subscription{
+			Events: events,
+			Close:  cancel,
+		}
+	}
+
 	transitionSubscription := s.transitions.Subscribe(ctx, componentTransitions.SubscribeParams{})
 	events := make(chan Event, 64)
 

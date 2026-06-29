@@ -30,4 +30,5 @@ message TransitionEvent {
   string tab = 7;
   bool idle = 8;
   string cdp_url = 9;
+  int32 pid = 10;
 }

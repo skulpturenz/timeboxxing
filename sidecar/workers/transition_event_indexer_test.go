@@ -10,10 +10,13 @@ import (
 	"testing"
 	"time"
 
+	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	"github.com/skulpturenz/timeboxxing/sidecar/logging"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 type workerFakeEmbedder struct{}
@@ -66,17 +69,20 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 		t.Fatalf("create transition event reported queue: %v", err)
 	}
 
-	services := WorkerServices{
-		WriteConn:              database.WriteConn,
-		Logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
-		TransitionEventIndexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
-		Queues: WorkerQueues{
-			TransitionEventReportedQueue: transitionEventReportedQueue,
-		},
-	}
-	cleanupIndexer := services.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
+	registry := services.New()
+	logging.RegisterLogger(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	db.Register(registry, database)
+	reporter.RegisterTransitionEventQueue(registry, transitionEventQueue)
+	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
+	_ = componentTransitions.NewService(registry)
+	semantic.RegisterRuntime(registry, &semantic.Runtime{
+		Indexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
+	})
+
+	runtime := NewRuntime(registry)
+	cleanupIndexer := runtime.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
 	defer cleanupIndexer()
-	cleanupReporter := services.TransitionEventReporterWorker(ctx, transitionEventQueue)
+	cleanupReporter := runtime.TransitionEventReporterWorker(ctx, transitionEventQueue)
 	defer cleanupReporter()
 
 	tab := "GitHub"

@@ -14,8 +14,8 @@ CREATE TABLE transition_events (
   id INTEGER PRIMARY KEY,
   application_id INTEGER REFERENCES applications(id),
   transition_reason_id INTEGER NOT NULL REFERENCES transition_event_reasons(id),
-  started_at TIMESTAMP NOT NULL,
-  ended_at TIMESTAMP NOT NULL
+  started_at TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  ended_at TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE transition_event_metadata (
@@ -24,7 +24,8 @@ CREATE TABLE transition_event_metadata (
   browser BOOLEAN NOT NULL DEFAULT false,
   tab TEXT,
   idle BOOLEAN NOT NULL DEFAULT false,
-  cdp_url TEXT
+  cdp_url TEXT,
+  pid INTEGER
 );
 
 CREATE TABLE semantic_documents (

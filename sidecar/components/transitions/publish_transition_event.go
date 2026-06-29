@@ -1,9 +1,16 @@
 package transitions
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 func (s *Service) PublishTransitionEvent(ctx context.Context, params PublishTransitionEventParams) error {
-	row, err := s.querier.GetTransitionEvent(ctx, params.ID)
+	if s == nil || s.readQuerier == nil {
+		return fmt.Errorf("transition event store is unavailable")
+	}
+
+	row, err := s.readQuerier.GetTransitionEvent(ctx, params.ID)
 	if err != nil {
 		return err
 	}

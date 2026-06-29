@@ -129,6 +129,7 @@ type TransitionEvent struct {
 	Tab             string                 `protobuf:"bytes,7,opt,name=tab,proto3" json:"tab,omitempty"`
 	Idle            bool                   `protobuf:"varint,8,opt,name=idle,proto3" json:"idle,omitempty"`
 	CdpUrl          string                 `protobuf:"bytes,9,opt,name=cdp_url,json=cdpUrl,proto3" json:"cdp_url,omitempty"`
+	Pid             int32                  `protobuf:"varint,10,opt,name=pid,proto3" json:"pid,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -226,6 +227,13 @@ func (x *TransitionEvent) GetCdpUrl() string {
 	return ""
 }
 
+func (x *TransitionEvent) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
 var File_transitions_v1_transitions_proto protoreflect.FileDescriptor
 
 const file_transitions_v1_transitions_proto_rawDesc = "" +
@@ -236,7 +244,7 @@ const file_transitions_v1_transitions_proto_rawDesc = "" +
 	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
 	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"k\n" +
 	"\x1bGetTransitionEventsResponse\x12L\n" +
-	"\x11transition_events\x18\x01 \x03(\v2\x1f.transitions.v1.TransitionEventR\x10transitionEvents\"\xaf\x02\n" +
+	"\x11transition_events\x18\x01 \x03(\v2\x1f.transitions.v1.TransitionEventR\x10transitionEvents\"\xc1\x02\n" +
 	"\x0fTransitionEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12)\n" +
 	"\x10application_name\x18\x02 \x01(\tR\x0fapplicationName\x12\x16\n" +
@@ -247,7 +255,9 @@ const file_transitions_v1_transitions_proto_rawDesc = "" +
 	"\abrowser\x18\x06 \x01(\bR\abrowser\x12\x10\n" +
 	"\x03tab\x18\a \x01(\tR\x03tab\x12\x12\n" +
 	"\x04idle\x18\b \x01(\bR\x04idle\x12\x17\n" +
-	"\acdp_url\x18\t \x01(\tR\x06cdpUrl2\xef\x01\n" +
+	"\acdp_url\x18\t \x01(\tR\x06cdpUrl\x12\x10\n" +
+	"\x03pid\x18\n" +
+	" \x01(\x05R\x03pid2\xef\x01\n" +
 	"\x12TransitionsService\x12n\n" +
 	"\x13GetTransitionEvents\x12*.transitions.v1.GetTransitionEventsRequest\x1a+.transitions.v1.GetTransitionEventsResponse\x12i\n" +
 	"\x18GetTransitionEventStream\x12*.transitions.v1.GetTransitionEventsRequest\x1a\x1f.transitions.v1.TransitionEvent0\x01B\xcc\x01\n" +

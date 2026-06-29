@@ -23,6 +23,7 @@ class UsageEventMapperTest {
             .setSource(UsageSource.USAGE_SOURCE_BROWSER)
             .setApplicationIdentifier("com.google.Chrome")
             .setApplicationPath("/Applications/Google Chrome.app")
+            .setPid(4242)
             .setStartedAt(timestampFromEpochMillis(day.startedAtEpochMillis - 15 * 60_000))
             .setEndedAt(timestampFromEpochMillis(day.startedAtEpochMillis + 45 * 60_000))
             .build()
@@ -38,6 +39,7 @@ class UsageEventMapperTest {
         assertEquals("Google Chrome", mapped?.applicationIdentity?.name)
         assertEquals("com.google.Chrome", mapped?.applicationIdentity?.identifier)
         assertEquals("/Applications/Google Chrome.app", mapped?.applicationIdentity?.path)
+        assertEquals(4242, mapped?.applicationIdentity?.pid)
     }
 
     @Test

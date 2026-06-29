@@ -13,6 +13,7 @@ type Event struct {
 	ApplicationName       string
 	ApplicationIdentifier string
 	ApplicationPath       string
+	PID                   int32
 	Reason                string
 	StartedAt             time.Time
 	EndedAt               time.Time
@@ -37,6 +38,20 @@ type SubscribeParams struct {
 
 type PublishTransitionEventParams struct {
 	ID int64
+}
+
+type RecordTransitionEventParams struct {
+	ApplicationName       string
+	ApplicationIdentifier string
+	ApplicationPath       string
+	PID                   int32
+	Reason                string
+	StartedAt             time.Time
+	EndedAt               time.Time
+	Browser               bool
+	Tab                   *string
+	Idle                  bool
+	CDPURL                *string
 }
 
 type Subscription struct {
@@ -64,8 +79,8 @@ func eventFromGetTransitionEventsRow(row queries.GetTransitionEventsRow) Event {
 	event := Event{
 		ID:        row.TransitionEventID,
 		Reason:    row.Reason,
-		StartedAt: row.StartedAt,
-		EndedAt:   row.EndedAt,
+		StartedAt: row.StartedAt.UTC(),
+		EndedAt:   row.EndedAt.UTC(),
 	}
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
@@ -87,6 +102,9 @@ func eventFromGetTransitionEventsRow(row queries.GetTransitionEventsRow) Event {
 	}
 	if row.CdpUrl != nil {
 		event.CDPURL = *row.CdpUrl
+	}
+	if row.Pid.Valid {
+		event.PID = int32(row.Pid.Int64)
 	}
 
 	return event
@@ -96,8 +114,8 @@ func eventFromGetTransitionEventRow(row queries.GetTransitionEventRow) Event {
 	event := Event{
 		ID:        row.TransitionEventID,
 		Reason:    row.Reason,
-		StartedAt: row.StartedAt,
-		EndedAt:   row.EndedAt,
+		StartedAt: row.StartedAt.UTC(),
+		EndedAt:   row.EndedAt.UTC(),
 	}
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
@@ -119,6 +137,9 @@ func eventFromGetTransitionEventRow(row queries.GetTransitionEventRow) Event {
 	}
 	if row.CdpUrl != nil {
 		event.CDPURL = *row.CdpUrl
+	}
+	if row.Pid.Valid {
+		event.PID = int32(row.Pid.Int64)
 	}
 
 	return event

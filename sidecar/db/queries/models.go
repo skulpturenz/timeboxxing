@@ -76,6 +76,7 @@ type TransitionEventMetadatum struct {
 	Tab               *string
 	Idle              bool
 	CdpUrl            *string
+	Pid               sql.NullInt64
 }
 
 type TransitionEventReason struct {

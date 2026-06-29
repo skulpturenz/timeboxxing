@@ -184,6 +184,7 @@ type UsageEvent struct {
 	ApplicationIdentifier string                 `protobuf:"bytes,10,opt,name=application_identifier,json=applicationIdentifier,proto3" json:"application_identifier,omitempty"`
 	ApplicationPath       string                 `protobuf:"bytes,11,opt,name=application_path,json=applicationPath,proto3" json:"application_path,omitempty"`
 	Active                bool                   `protobuf:"varint,12,opt,name=active,proto3" json:"active,omitempty"`
+	Pid                   int32                  `protobuf:"varint,13,opt,name=pid,proto3" json:"pid,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -302,6 +303,13 @@ func (x *UsageEvent) GetActive() bool {
 	return false
 }
 
+func (x *UsageEvent) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
 var File_usage_v1_usage_proto protoreflect.FileDescriptor
 
 const file_usage_v1_usage_proto_rawDesc = "" +
@@ -312,7 +320,7 @@ const file_usage_v1_usage_proto_rawDesc = "" +
 	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
 	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"Q\n" +
 	"\x16GetUsageEventsResponse\x127\n" +
-	"\fusage_events\x18\x01 \x03(\v2\x14.usage.v1.UsageEventR\vusageEvents\"\xca\x03\n" +
+	"\fusage_events\x18\x01 \x03(\v2\x14.usage.v1.UsageEventR\vusageEvents\"\xdc\x03\n" +
 	"\n" +
 	"UsageEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
@@ -329,7 +337,8 @@ const file_usage_v1_usage_proto_rawDesc = "" +
 	"\x16application_identifier\x18\n" +
 	" \x01(\tR\x15applicationIdentifier\x12)\n" +
 	"\x10application_path\x18\v \x01(\tR\x0fapplicationPath\x12\x16\n" +
-	"\x06active\x18\f \x01(\bR\x06active*z\n" +
+	"\x06active\x18\f \x01(\bR\x06active\x12\x10\n" +
+	"\x03pid\x18\r \x01(\x05R\x03pid*z\n" +
 	"\vUsageSource\x12\x1c\n" +
 	"\x18USAGE_SOURCE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18USAGE_SOURCE_APPLICATION\x10\x01\x12\x18\n" +

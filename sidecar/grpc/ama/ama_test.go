@@ -9,6 +9,7 @@ import (
 
 	amav1 "github.com/skulpturenz/timeboxxing/sidecar/gen/ama/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -19,7 +20,7 @@ func TestAskReturnsAnswerAndSources(t *testing.T) {
 			{TransitionEventID: 42, Content: "Application: Google Chrome", Distance: 0.125},
 		},
 	}
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer: semantic.NewAnswerer(searcher, &recordingGenerator{answer: "You were browsing GitHub."}),
 	})
 
@@ -52,7 +53,7 @@ func TestAskReturnsAnswerAndSources(t *testing.T) {
 
 func TestAskDefaultsMaxSourcesAndHandlesNoContext(t *testing.T) {
 	searcher := &recordingSearcher{}
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer: semantic.NewAnswerer(searcher, &recordingGenerator{answer: "unused"}),
 	})
 
@@ -74,7 +75,7 @@ func TestAskDefaultsMaxSourcesAndHandlesNoContext(t *testing.T) {
 func TestAskSchedulesBackfillAndReturnsCatchupMessageWhenNoContextHasMissingRows(t *testing.T) {
 	searcher := &recordingSearcher{}
 	backfilling := &recordingAmaBackfillCoordinator{hasMissing: true}
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer:    semantic.NewAnswerer(searcher, &recordingGenerator{answer: "unused"}),
 		Backfilling: backfilling,
 	})
@@ -103,7 +104,7 @@ func TestAskSchedulesBackfillAndReturnsCatchupMessageWhenNoContextHasMissingRows
 func TestAskKeepsNoContextAnswerWhenNoContextHasNoMissingRows(t *testing.T) {
 	searcher := &recordingSearcher{}
 	backfilling := &recordingAmaBackfillCoordinator{}
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer:    semantic.NewAnswerer(searcher, &recordingGenerator{answer: "unused"}),
 		Backfilling: backfilling,
 	})
@@ -125,7 +126,7 @@ func TestAskDoesNotScheduleBackfillWhenSourcesExist(t *testing.T) {
 		results: []semantic.SearchResult{{TransitionEventID: 42, Content: "Application: Calendar"}},
 	}
 	backfilling := &recordingAmaBackfillCoordinator{hasMissing: true}
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer:    semantic.NewAnswerer(searcher, &recordingGenerator{answer: "Calendar work."}),
 		Backfilling: backfilling,
 	})
@@ -143,25 +144,25 @@ func TestAskDoesNotScheduleBackfillWhenSourcesExist(t *testing.T) {
 }
 
 func TestAskValidationAndErrors(t *testing.T) {
-	if _, err := NewServer(NewServerParams{}).Ask(context.Background(), &amav1.AskRequest{Question: "hello"}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := newTestServer(testServerParams{}).Ask(context.Background(), &amav1.AskRequest{Question: "hello"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("expected failed precondition, got %v", err)
 	}
 
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer: semantic.NewAnswerer(&recordingSearcher{}, &recordingGenerator{answer: "ok"}),
 	})
 	if _, err := server.Ask(context.Background(), &amav1.AskRequest{Question: "   "}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("expected invalid argument, got %v", err)
 	}
 
-	server = NewServer(NewServerParams{
+	server = newTestServer(testServerParams{
 		Answerer: semantic.NewAnswerer(&recordingSearcher{err: fmt.Errorf("search failed")}, &recordingGenerator{answer: "ok"}),
 	})
 	if _, err := server.Ask(context.Background(), &amav1.AskRequest{Question: "hello"}); status.Code(err) != codes.Internal {
 		t.Fatalf("expected internal search error, got %v", err)
 	}
 
-	server = NewServer(NewServerParams{
+	server = newTestServer(testServerParams{
 		Answerer: semantic.NewAnswerer(
 			&recordingSearcher{results: []semantic.SearchResult{{TransitionEventID: 1, Content: "Application: Calendar"}}},
 			&recordingGenerator{err: fmt.Errorf("generate failed")},
@@ -173,7 +174,7 @@ func TestAskValidationAndErrors(t *testing.T) {
 }
 
 func TestAskMapsAIRequestErrorsToSafeGrpcStatus(t *testing.T) {
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer: semantic.NewAnswerer(
 			&recordingSearcher{err: &semantic.AIRequestError{
 				Provider:   semantic.ProviderOpenRouter,
@@ -232,7 +233,7 @@ func TestAnswerToProtoMapsAppUsageChartArtifact(t *testing.T) {
 }
 
 func TestSemanticIndexStatusIncludesUnavailableReason(t *testing.T) {
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		UnavailableReason: "OpenRouter API key is invalid or expired.",
 	})
 
@@ -249,7 +250,7 @@ func TestSemanticIndexStatusIncludesUnavailableReason(t *testing.T) {
 }
 
 func TestSemanticIndexStatusPreservesCountsWhenAnsweringUnavailable(t *testing.T) {
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		IndexStatus: &recordingIndexStatusProvider{status: semantic.IndexStatus{
 			State:               semantic.IndexStateReady,
 			CompletedEventCount: 10,
@@ -276,7 +277,7 @@ func TestSemanticIndexStatusPreservesCountsWhenAnsweringUnavailable(t *testing.T
 }
 
 func TestSemanticIndexStatusProviderErrorReturnsUnavailableStatus(t *testing.T) {
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		IndexStatus: &recordingIndexStatusProvider{err: fmt.Errorf("sqlite status failed")},
 	})
 
@@ -298,7 +299,7 @@ func TestAskSurvivesSemanticIndexStatusProviderError(t *testing.T) {
 			{TransitionEventID: 42, Content: "Application: Calendar", Distance: 0.125},
 		},
 	}
-	server := NewServer(NewServerParams{
+	server := newTestServer(testServerParams{
 		Answerer:    semantic.NewAnswerer(searcher, &recordingGenerator{answer: "You used Calendar."}),
 		IndexStatus: &recordingIndexStatusProvider{err: fmt.Errorf("sqlite status failed")},
 	})
@@ -316,6 +317,25 @@ func TestAskSurvivesSemanticIndexStatusProviderError(t *testing.T) {
 	if resp.GetSemanticIndexStatus().GetMessage() != "Semantic index status is unavailable." {
 		t.Fatalf("unexpected attached status message %q", resp.GetSemanticIndexStatus().GetMessage())
 	}
+}
+
+type testServerParams struct {
+	Answerer          *semantic.Answerer
+	Backfilling       BackfillCoordinator
+	IndexStatus       IndexStatusProvider
+	UnavailableReason string
+}
+
+func newTestServer(params testServerParams) *Server {
+	registry := services.New()
+	semantic.RegisterRuntime(registry, &semantic.Runtime{
+		Answerer:          params.Answerer,
+		UnavailableReason: params.UnavailableReason,
+	})
+	server := NewServer(registry)
+	server.backfilling = params.Backfilling
+	server.indexStatus = params.IndexStatus
+	return server
 }
 
 type recordingSearcher struct {

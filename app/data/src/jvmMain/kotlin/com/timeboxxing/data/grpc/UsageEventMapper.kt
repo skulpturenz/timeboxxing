@@ -25,6 +25,7 @@ internal fun UsageEventProto.toUsageEvent(day: UsageDay): UsageEvent? {
             name = applicationName.ifBlank { sourceName },
             identifier = applicationIdentifier.takeIf { it.isNotBlank() },
             path = applicationPath.takeIf { it.isNotBlank() },
+            pid = pid.takeIf { it > 0 },
         )
     }
     val title = title.ifBlank {

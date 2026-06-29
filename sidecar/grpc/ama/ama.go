@@ -5,7 +5,9 @@ import (
 	"log/slog"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/gen/ama/v1"
+	"github.com/skulpturenz/timeboxxing/sidecar/logging"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 type Server struct {
@@ -18,14 +20,6 @@ type Server struct {
 	logger            *slog.Logger
 }
 
-type NewServerParams struct {
-	Answerer          *semantic.Answerer
-	Backfilling       BackfillCoordinator
-	IndexStatus       IndexStatusProvider
-	UnavailableReason string
-	Logger            *slog.Logger
-}
-
 type BackfillCoordinator interface {
 	HasMissing(ctx context.Context) (bool, error)
 	Start(limit int64) bool
@@ -35,16 +29,32 @@ type IndexStatusProvider interface {
 	Status(ctx context.Context) (semantic.IndexStatus, error)
 }
 
-func NewServer(params NewServerParams) *Server {
-	logger := params.Logger
-	if logger == nil {
-		logger = slog.Default()
+type serverKey struct{}
+
+func RegisterServer(registry *services.Services[any, any], server *Server) {
+	services.Set(registry, serverKey{}, server)
+}
+
+func ServerFromServices(registry *services.Services[any, any]) (*Server, bool) {
+	service, ok := services.Get[*Server](registry, serverKey{})
+	if !ok {
+		return nil, false
 	}
-	return &Server{
-		answerer:          params.Answerer,
-		backfilling:       params.Backfilling,
-		indexStatus:       params.IndexStatus,
-		unavailableReason: params.UnavailableReason,
-		logger:            logger,
+	return service.Unwrap(), true
+}
+
+func NewServer(registry *services.Services[any, any]) *Server {
+	logger := logging.LoggerFromServices(registry).With("service", "gRPC/ama")
+	runtime, _ := semantic.RuntimeFromServices(registry)
+	server := &Server{
+		logger: logger,
 	}
+	if runtime != nil {
+		server.answerer = runtime.Answerer
+		server.backfilling = runtime.Backfilling
+		server.indexStatus = runtime.IndexStatus
+		server.unavailableReason = runtime.UnavailableReason
+	}
+	RegisterServer(registry, server)
+	return server
 }

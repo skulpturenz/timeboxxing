@@ -76,11 +76,11 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 		}
 		startedAt := time.Time{}
 		if row.StartedAt.Valid {
-			startedAt = row.StartedAt.Time
+			startedAt = row.StartedAt.Time.UTC()
 		}
 		endedAt := time.Time{}
 		if row.EndedAt.Valid {
-			endedAt = row.EndedAt.Time
+			endedAt = row.EndedAt.Time.UTC()
 		}
 		results = append(results, SearchResult{
 			DocumentID:        row.ID,

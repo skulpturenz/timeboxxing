@@ -12,6 +12,7 @@ type Querier interface {
 	CreateSemanticDocumentEmbedding(ctx context.Context, arg CreateSemanticDocumentEmbeddingParams) error
 	CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error)
 	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
+	CreateTransitionEventNow(ctx context.Context, arg CreateTransitionEventNowParams) (int64, error)
 	DeleteSemanticDocumentEmbedding(ctx context.Context, semanticDocumentID int64) error
 	GetAISettings(ctx context.Context) (GetAISettingsRow, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)

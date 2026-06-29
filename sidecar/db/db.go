@@ -17,6 +17,7 @@ import (
 	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 
 	_ "modernc.org/sqlite"
 	_ "modernc.org/sqlite/vec"
@@ -41,6 +42,20 @@ type Database struct {
 	ReadQuerier  queries.Querier
 	WriteConn    *sql.DB
 	ReadConn     *sql.DB
+}
+
+type databaseKey struct{}
+
+func Register(registry *services.Services[any, any], database *Database) {
+	services.Set(registry, databaseKey{}, database)
+}
+
+func FromServices(registry *services.Services[any, any]) (*Database, bool) {
+	service, ok := services.Get[*Database](registry, databaseKey{})
+	if !ok {
+		return nil, false
+	}
+	return service.Unwrap(), true
 }
 
 func New(ctx context.Context, opts Options) (*Database, error) {

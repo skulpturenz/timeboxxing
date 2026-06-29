@@ -7,21 +7,20 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/browser"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 func TestGetTransitionEventsFiltersByTime(t *testing.T) {
 	ctx := context.Background()
-	database := newTestDatabase(t, ctx)
-	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
+	service, _ := newTestService(t, ctx)
 
 	firstStarted := time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC)
 	secondStarted := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	thirdStarted := time.Date(2026, 6, 13, 11, 0, 0, 0, time.UTC)
-	createTransitionEvent(t, ctx, database, "VSCode", "Editor", firstStarted)
-	secondID := createTransitionEvent(t, ctx, database, "Google Chrome", "Docs", secondStarted)
-	createTransitionEvent(t, ctx, database, "Slack", "Team", thirdStarted)
+	createTransitionEvent(t, ctx, service, "VSCode", "Editor", firstStarted)
+	secondID := createTransitionEvent(t, ctx, service, "Google Chrome", "Docs", secondStarted)
+	createTransitionEvent(t, ctx, service, "Slack", "Team", thirdStarted)
 	endedAt := secondStarted.Add(5 * time.Minute)
 
 	events, err := service.GetTransitionEvents(ctx, GetTransitionEventsParams{
@@ -46,21 +45,58 @@ func TestGetTransitionEventsFiltersByTime(t *testing.T) {
 	if events[0].ApplicationIdentifier == "" || events[0].ApplicationPath == "" {
 		t.Fatalf("expected application identity to be mapped, got %#v", events[0])
 	}
+	if events[0].PID != 4242 {
+		t.Fatalf("expected pid 4242, got %d", events[0].PID)
+	}
+}
+
+func TestRecordTransitionEventCanUseDatabaseTimestampDefaults(t *testing.T) {
+	ctx := context.Background()
+	service, _ := newTestService(t, ctx)
+	before := time.Now().UTC().Add(-time.Second)
+
+	id, err := service.RecordTransitionEvent(ctx, RecordTransitionEventParams{
+		ApplicationName: "VSCode",
+		Reason:          "focus_change",
+	})
+	if err != nil {
+		t.Fatalf("record transition event: %v", err)
+	}
+	after := time.Now().UTC().Add(time.Second)
+
+	events, err := service.GetTransitionEvents(ctx, GetTransitionEventsParams{})
+	if err != nil {
+		t.Fatalf("get transition events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one transition event, got %d", len(events))
+	}
+	if events[0].ID != id {
+		t.Fatalf("expected transition event id %d, got %d", id, events[0].ID)
+	}
+	if events[0].StartedAt.IsZero() || events[0].EndedAt.IsZero() {
+		t.Fatalf("expected timestamp defaults, got %#v", events[0])
+	}
+	if events[0].StartedAt.Location() != time.UTC || events[0].EndedAt.Location() != time.UTC {
+		t.Fatalf("expected UTC timestamps, got %s and %s", events[0].StartedAt.Location(), events[0].EndedAt.Location())
+	}
+	if events[0].StartedAt.Before(before) || events[0].StartedAt.After(after) {
+		t.Fatalf("started_at %s outside expected range %s..%s", events[0].StartedAt, before, after)
+	}
+	if events[0].EndedAt.Before(before) || events[0].EndedAt.After(after) {
+		t.Fatalf("ended_at %s outside expected range %s..%s", events[0].EndedAt, before, after)
+	}
 }
 
 func TestSubscribeStreamsNewEventsOnly(t *testing.T) {
 	ctx := context.Background()
-	database := newTestDatabase(t, ctx)
-	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
+	service, _ := newTestService(t, ctx)
 
-	oldID := createTransitionEvent(t, ctx, database, "VSCode", "Editor", time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
+	oldID := createTransitionEvent(t, ctx, service, "VSCode", "Editor", time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
 	subscription := service.Subscribe(ctx, SubscribeParams{})
 	defer subscription.Close()
 
-	newID := createTransitionEvent(t, ctx, database, "Google Chrome", "Docs", time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
-	if err := service.PublishTransitionEvent(ctx, PublishTransitionEventParams{ID: newID}); err != nil {
-		t.Fatalf("publish transition event: %v", err)
-	}
+	newID := createTransitionEvent(t, ctx, service, "Google Chrome", "Docs", time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
 
 	select {
 	case event := <-subscription.Events:
@@ -77,21 +113,14 @@ func TestSubscribeStreamsNewEventsOnly(t *testing.T) {
 
 func TestSubscribeAppliesFilters(t *testing.T) {
 	ctx := context.Background()
-	database := newTestDatabase(t, ctx)
-	service := NewService(NewServiceParams{Querier: database.ReadQuerier})
+	service, _ := newTestService(t, ctx)
 	threshold := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 	subscription := service.Subscribe(ctx, SubscribeParams{Filters: Filters{StartedAt: &threshold}})
 	defer subscription.Close()
 
-	filteredID := createTransitionEvent(t, ctx, database, "VSCode", "Editor", threshold.Add(-time.Hour))
-	if err := service.PublishTransitionEvent(ctx, PublishTransitionEventParams{ID: filteredID}); err != nil {
-		t.Fatalf("publish filtered transition event: %v", err)
-	}
+	createTransitionEvent(t, ctx, service, "VSCode", "Editor", threshold.Add(-time.Hour))
 
-	matchingID := createTransitionEvent(t, ctx, database, "Google Chrome", "Docs", threshold)
-	if err := service.PublishTransitionEvent(ctx, PublishTransitionEventParams{ID: matchingID}); err != nil {
-		t.Fatalf("publish matching transition event: %v", err)
-	}
+	matchingID := createTransitionEvent(t, ctx, service, "Google Chrome", "Docs", threshold)
 
 	select {
 	case event := <-subscription.Events:
@@ -101,6 +130,14 @@ func TestSubscribeAppliesFilters(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for matching streamed transition event")
 	}
+}
+
+func newTestService(t *testing.T, ctx context.Context) (*Service, *db.Database) {
+	t.Helper()
+	database := newTestDatabase(t, ctx)
+	registry := services.New()
+	db.Register(registry, database)
+	return NewService(registry), database
 }
 
 func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
@@ -121,24 +158,18 @@ func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 	return database
 }
 
-func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Database, appName string, tab string, startedAt time.Time) int64 {
+func createTransitionEvent(t *testing.T, ctx context.Context, service *Service, appName string, tab string, startedAt time.Time) int64 {
 	t.Helper()
-	reporter := reporter.NewDatabaseReporter(database.WriteConn)
-	id, err := reporter.Record(ctx, session.Transition{
-		From: &session.Session{
-			Key: session.AppKey{
-				AppName:  appName,
-				TabTitle: tab,
-			},
-			ApplicationIdentity: session.AppIdentity{
-				Identifier: "test." + appName,
-				Path:       "/Applications/" + appName + ".app",
-			},
-			StartedAt: startedAt,
-			EndedAt:   startedAt.Add(5 * time.Minute),
-			Duration:  5 * time.Minute,
-		},
-		Reason: session.ReasonFocusChange,
+	id, err := service.RecordTransitionEvent(ctx, RecordTransitionEventParams{
+		ApplicationName:       appName,
+		ApplicationIdentifier: "test." + appName,
+		ApplicationPath:       "/Applications/" + appName + ".app",
+		PID:                   4242,
+		Reason:                "focus_change",
+		StartedAt:             startedAt,
+		EndedAt:               startedAt.Add(5 * time.Minute),
+		Browser:               browser.IsBrowser(appName) != browser.BrowserNone,
+		Tab:                   &tab,
 	})
 	if err != nil {
 		t.Fatalf("record transition event: %v", err)

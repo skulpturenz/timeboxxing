@@ -18,6 +18,7 @@ type AppKey struct {
 type AppIdentity struct {
 	Identifier string
 	Path       string
+	PID        int32
 }
 
 func (k AppKey) DisplayName() string {

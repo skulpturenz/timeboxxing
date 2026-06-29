@@ -54,8 +54,8 @@ func (i *Indexer) RefreshSummariesForTime(ctx context.Context, value time.Time) 
 	dayStart := startOfLocalDay(value, i.location)
 	dayEnd := dayStart.AddDate(0, 0, 1)
 	rows, err := i.readQuerier.ListTransitionEventDocumentSourcesForWindow(ctx, queries.ListTransitionEventDocumentSourcesForWindowParams{
-		WindowStartedAt: dayStart,
-		WindowEndedAt:   dayEnd,
+		WindowStartedAt: dayStart.UTC(),
+		WindowEndedAt:   dayEnd.UTC(),
 	})
 	if err != nil {
 		return fmt.Errorf("list transition event document sources for semantic summaries: %w", err)
@@ -96,8 +96,8 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 		DocumentKey:       spec.Key,
 		DocumentType:      spec.Type,
 		TransitionEventID: spec.TransitionEventID,
-		StartedAt:         spec.StartedAt,
-		EndedAt:           spec.EndedAt,
+		StartedAt:         utcNullTime(spec.StartedAt),
+		EndedAt:           utcNullTime(spec.EndedAt),
 		Content:           content,
 	})
 	if err != nil {
@@ -123,4 +123,11 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 	}
 
 	return documentID, nil
+}
+
+func utcNullTime(value sql.NullTime) sql.NullTime {
+	if !value.Valid {
+		return value
+	}
+	return sql.NullTime{Time: value.Time.UTC(), Valid: true}
 }

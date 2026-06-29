@@ -11,13 +11,13 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 func TestGetEventsReturnsOverlappingUsage(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
-	service := NewService(NewServiceParams{Transitions: transitions})
+	service, _ := newTestService(t, database)
 	windowStart := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
 	windowEnd := windowStart.Add(24 * time.Hour)
 
@@ -100,13 +100,11 @@ func TestUsageEventMapping(t *testing.T) {
 func TestGetEventsIncludesActiveSession(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
 	windowStart := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
 	now := windowStart.Add(10 * time.Hour)
 	activeStartedAt := now.Add(-20 * time.Minute)
-	service := NewService(NewServiceParams{
-		Transitions: transitions,
-		ActiveSessions: fakeActiveSessionProvider{
+	service, _ := newTestService(t, database,
+		withActiveSessions(fakeActiveSessionProvider{
 			current: &session.Session{
 				Key: session.AppKey{
 					AppName:  "Google Chrome",
@@ -119,9 +117,9 @@ func TestGetEventsIncludesActiveSession(t *testing.T) {
 				},
 				StartedAt: activeStartedAt,
 			},
-		},
-		Clock: func() time.Time { return now },
-	})
+		}),
+		withClock(func() time.Time { return now }),
+	)
 
 	events, err := service.GetEvents(ctx, GetEventsParams{
 		Window: Window{StartedAt: windowStart, EndedAt: windowStart.Add(24 * time.Hour)},
@@ -151,18 +149,16 @@ func TestGetEventsIncludesActiveSession(t *testing.T) {
 func TestGetEventsExcludesActiveSessionOutsideWindow(t *testing.T) {
 	ctx := context.Background()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
 	windowStart := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
-	service := NewService(NewServiceParams{
-		Transitions: transitions,
-		ActiveSessions: fakeActiveSessionProvider{
+	service, _ := newTestService(t, database,
+		withActiveSessions(fakeActiveSessionProvider{
 			current: &session.Session{
 				Key:       session.AppKey{AppName: "Slack"},
 				StartedAt: windowStart.Add(25 * time.Hour),
 			},
-		},
-		Clock: func() time.Time { return windowStart.Add(25 * time.Hour) },
-	})
+		}),
+		withClock(func() time.Time { return windowStart.Add(25 * time.Hour) }),
+	)
 
 	events, err := service.GetEvents(ctx, GetEventsParams{
 		Window: Window{StartedAt: windowStart, EndedAt: windowStart.Add(24 * time.Hour)},
@@ -179,19 +175,17 @@ func TestSubscribeEmitsInitialAndPeriodicActiveSnapshots(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
 	windowStart := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
-	service := NewService(NewServiceParams{
-		Transitions: transitions,
-		ActiveSessions: fakeActiveSessionProvider{
+	service, _ := newTestService(t, database,
+		withActiveSessions(fakeActiveSessionProvider{
 			current: &session.Session{
 				Key:       session.AppKey{AppName: "Slack"},
 				StartedAt: windowStart.Add(9 * time.Hour),
 			},
-		},
-		Clock:                  func() time.Time { return windowStart.Add(10 * time.Hour) },
-		ActiveSnapshotInterval: 5 * time.Millisecond,
-	})
+		}),
+		withClock(func() time.Time { return windowStart.Add(10 * time.Hour) }),
+		withActiveSnapshotInterval(5*time.Millisecond),
+	)
 
 	subscription := service.Subscribe(ctx, SubscribeParams{
 		Window: Window{StartedAt: windowStart, EndedAt: windowStart.Add(24 * time.Hour)},
@@ -209,19 +203,17 @@ func TestSubscribeEmitsCompletedTransitionThenActiveSnapshot(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	database := newTestDatabase(t, ctx)
-	transitions := componentTransitions.NewService(componentTransitions.NewServiceParams{Querier: database.ReadQuerier})
 	windowStart := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
-	service := NewService(NewServiceParams{
-		Transitions: transitions,
-		ActiveSessions: fakeActiveSessionProvider{
+	service, transitions := newTestService(t, database,
+		withActiveSessions(fakeActiveSessionProvider{
 			current: &session.Session{
 				Key:       session.AppKey{AppName: "Slack"},
 				StartedAt: windowStart.Add(10 * time.Hour),
 			},
-		},
-		Clock:                  func() time.Time { return windowStart.Add(10*time.Hour + time.Minute) },
-		ActiveSnapshotInterval: time.Hour,
-	})
+		}),
+		withClock(func() time.Time { return windowStart.Add(10*time.Hour + time.Minute) }),
+		withActiveSnapshotInterval(time.Hour),
+	)
 	subscription := service.Subscribe(ctx, SubscribeParams{
 		Window: Window{StartedAt: windowStart, EndedAt: windowStart.Add(24 * time.Hour)},
 	})
@@ -268,6 +260,37 @@ func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 	})
 
 	return database
+}
+
+type testServiceOption func(*services.Services[any, any])
+
+func newTestService(t *testing.T, database *db.Database, opts ...testServiceOption) (*Service, *componentTransitions.Service) {
+	t.Helper()
+	registry := services.New()
+	db.Register(registry, database)
+	for _, opt := range opts {
+		opt(registry)
+	}
+	transitions := componentTransitions.NewService(registry)
+	return NewService(registry), transitions
+}
+
+func withActiveSessions(provider ActiveSessionProvider) testServiceOption {
+	return func(registry *services.Services[any, any]) {
+		RegisterActiveSessions(registry, provider)
+	}
+}
+
+func withClock(clock func() time.Time) testServiceOption {
+	return func(registry *services.Services[any, any]) {
+		RegisterClock(registry, clock)
+	}
+}
+
+func withActiveSnapshotInterval(interval time.Duration) testServiceOption {
+	return func(registry *services.Services[any, any]) {
+		RegisterActiveSnapshotInterval(registry, interval)
+	}
 }
 
 type transitionEventFixture struct {
