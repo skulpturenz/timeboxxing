@@ -96,24 +96,24 @@ import androidx.compose.material.icons.rounded.Minimize
 import androidx.compose.material.icons.rounded.QuestionAnswer
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
-import com.timeboxxing.app.data.currentCalendarDate
-import com.timeboxxing.app.model.AmaAppUsageChart
-import com.timeboxxing.app.model.AmaMessage
-import com.timeboxxing.app.model.AmaMessageRole
-import com.timeboxxing.app.model.AmaIndexState
-import com.timeboxxing.app.model.AmaIndexStatus
-import com.timeboxxing.app.model.AmaSource
-import com.timeboxxing.app.model.CalendarDate
-import com.timeboxxing.app.model.DiagnosticsLogLine
-import com.timeboxxing.app.model.EntryMode
-import com.timeboxxing.app.model.WeekdayShortLabels
-import com.timeboxxing.app.model.calendarMonthGrid
-import com.timeboxxing.app.model.monthYearLabel
-import com.timeboxxing.app.model.plusMonths
-import com.timeboxxing.app.model.startOfMonth
-import com.timeboxxing.app.state.TimeboxxingAction
-import com.timeboxxing.app.state.TimeboxxingScreenState
-import com.timeboxxing.app.state.TimeboxxingSection
+import com.timeboxxing.data.time.currentCalendarDate
+import com.timeboxxing.domain.model.AmaAppUsageChart
+import com.timeboxxing.domain.model.AmaMessage
+import com.timeboxxing.domain.model.AmaMessageRole
+import com.timeboxxing.domain.model.AmaIndexState
+import com.timeboxxing.domain.model.AmaIndexStatus
+import com.timeboxxing.domain.model.AmaSource
+import com.timeboxxing.domain.model.CalendarDate
+import com.timeboxxing.domain.model.DiagnosticsLogLine
+import com.timeboxxing.domain.model.EntryMode
+import com.timeboxxing.domain.model.WeekdayShortLabels
+import com.timeboxxing.domain.model.calendarMonthGrid
+import com.timeboxxing.domain.model.monthYearLabel
+import com.timeboxxing.domain.model.plusMonths
+import com.timeboxxing.domain.model.startOfMonth
+import com.timeboxxing.app.presentation.TimeboxxingAction
+import com.timeboxxing.app.presentation.TimeboxxingScreenState
+import com.timeboxxing.app.presentation.TimeboxxingSection
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
@@ -1821,9 +1821,10 @@ private fun AmaMessageRow(message: AmaMessage) {
                     content = message.content,
                     isUser = isUser,
                 )
-                if (!isUser && message.model != null) {
+                val messageModel = message.model
+                if (!isUser && messageModel != null) {
                     TbText(
-                        text = message.model,
+                        text = messageModel,
                         style = TbTheme.typography.caption,
                         color = TbTheme.colors.tertiaryText,
                         maxLines = 1,

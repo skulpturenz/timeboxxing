@@ -33,5 +33,7 @@ plugins {
 }
 
 include(":desktopApp")
+include(":data")
+include(":domain")
 include(":shared")
 include(":sidecarApi")

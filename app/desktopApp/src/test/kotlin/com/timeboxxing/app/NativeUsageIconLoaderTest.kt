@@ -1,7 +1,7 @@
 package com.timeboxxing.app
 
 import androidx.compose.ui.graphics.ImageBitmap
-import com.timeboxxing.app.model.UsageApplicationIdentity
+import com.timeboxxing.domain.model.UsageApplicationIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import java.awt.image.BufferedImage

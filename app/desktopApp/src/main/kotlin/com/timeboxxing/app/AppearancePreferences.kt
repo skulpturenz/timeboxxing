@@ -1,6 +1,6 @@
 package com.timeboxxing.app
 
-import com.timeboxxing.app.model.AppearanceMode
+import com.timeboxxing.domain.model.AppearanceMode
 
 internal class AppearancePreferences(
     private val store: PreferenceStringStore = JavaPreferenceStringStore(preferencesNode()),

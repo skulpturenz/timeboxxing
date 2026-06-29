@@ -24,11 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.timeboxxing.app.model.AiModelOption
-import com.timeboxxing.app.model.AiProvider
-import com.timeboxxing.app.model.AppearanceMode
-import com.timeboxxing.app.state.TimeboxxingAction
-import com.timeboxxing.app.state.TimeboxxingScreenState
+import com.timeboxxing.domain.model.AiModelOption
+import com.timeboxxing.domain.model.AiProvider
+import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.app.presentation.TimeboxxingAction
+import com.timeboxxing.app.presentation.TimeboxxingScreenState
 
 @Composable
 fun SettingsPane(

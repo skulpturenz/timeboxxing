@@ -2,7 +2,7 @@ package com.timeboxxing.app
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
-import com.timeboxxing.app.model.UsageApplicationIdentity
+import com.timeboxxing.domain.model.UsageApplicationIdentity
 import com.timeboxxing.app.ui.UsageIconLoader
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers

@@ -1,7 +1,7 @@
 package com.timeboxxing.app.ui
 
 import androidx.compose.ui.graphics.ImageBitmap
-import com.timeboxxing.app.model.UsageApplicationIdentity
+import com.timeboxxing.domain.model.UsageApplicationIdentity
 
 interface UsageIconLoader {
     suspend fun loadIcon(identity: UsageApplicationIdentity): ImageBitmap?

@@ -30,7 +30,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,21 +60,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.timeboxxing.app.data.EmptyUsageHistoryRepository
-import com.timeboxxing.app.data.AmaRepository
-import com.timeboxxing.app.data.SettingsRepository
-import com.timeboxxing.app.data.UnavailableAmaRepository
-import com.timeboxxing.app.data.UnavailableSettingsRepository
-import com.timeboxxing.app.data.UnavailableUsageHistoryRepository
-import com.timeboxxing.app.data.UsageHistoryRepository
-import com.timeboxxing.app.data.recentUsageDays
-import com.timeboxxing.app.model.AppearanceMode
-import com.timeboxxing.app.sidecar.SidecarConnection
-import com.timeboxxing.app.sidecar.SidecarProcessManager
-import com.timeboxxing.app.sidecar.SidecarSecrets
-import com.timeboxxing.app.sidecar.SidecarSessionLog
-import com.timeboxxing.app.sidecar.SidecarStartResult
-import com.timeboxxing.app.state.createSidecarTimeboxxingState
+import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.app.presentation.TimeboxxingSidecarStatus
 import com.timeboxxing.app.ui.TbDarkColors
 import com.timeboxxing.app.ui.TbLightColors
 import com.timeboxxing.app.ui.DiagnosticsPane
@@ -87,9 +73,9 @@ import com.timeboxxing.app.ui.TbSurface
 import com.timeboxxing.app.ui.TbText
 import com.timeboxxing.app.ui.TbTheme
 import com.timeboxxing.app.ui.fonts.InterFontLoader
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import org.koin.compose.KoinApplication
+import org.koin.compose.koinInject
 import java.awt.Dimension
 import java.awt.Color as AwtColor
 
@@ -97,12 +83,6 @@ private const val AppName = "Timeboxxing"
 private const val MinWindowWidth = 760
 private const val MinWindowHeight = 640
 private val MacWindowControlsInset = 28.dp
-
-private sealed interface SidecarUiState {
-    data object Starting : SidecarUiState
-    data object Ready : SidecarUiState
-    data class Failed(val message: String) : SidecarUiState
-}
 
 @Suppress("UNUSED_PARAMETER")
 fun main(args: Array<String>) {
@@ -123,176 +103,113 @@ fun main(args: Array<String>) {
                 }
             },
         ) {
-            val isMacOs = remember { isMacOs() }
-            var interFontFamily by remember { mutableStateOf<FontFamily?>(null) }
-            val usageDays = remember { recentUsageDays() }
-            val sidecarSessionLog = remember { SidecarSessionLog() }
-            val sidecarManager = remember(sidecarSessionLog) { SidecarProcessManager(sessionLog = sidecarSessionLog) }
-            val diagnosticsLogs by sidecarSessionLog.lines.collectAsState()
-            val secretStore = remember { DesktopSecretStore() }
-            val usageIconLoader = remember { NativeUsageIconLoader() }
-            val appearancePreferences = remember { AppearancePreferences() }
-            val initialAppearanceMode = remember { appearancePreferences.load() }
-            val setupScope = rememberCoroutineScope()
-            var usageHistoryRepository by remember { mutableStateOf<UsageHistoryRepository>(EmptyUsageHistoryRepository()) }
-            var amaRepository by remember { mutableStateOf<AmaRepository>(UnavailableAmaRepository("Starting usage sidecar...")) }
-            var settingsRepository by remember { mutableStateOf<SettingsRepository>(UnavailableSettingsRepository("Starting usage sidecar...")) }
-            var sidecarConnection by remember { mutableStateOf<SidecarConnection?>(null) }
-            var sidecarUiState by remember { mutableStateOf<SidecarUiState>(SidecarUiState.Starting) }
-            var diagnosticsOverlayVisible by remember { mutableStateOf(false) }
-            var appearanceMode by remember { mutableStateOf(initialAppearanceMode) }
-            val latestSidecarConnection by rememberUpdatedState(sidecarConnection)
-            val systemDarkTheme = isSystemInDarkTheme()
-            val darkTheme = when (appearanceMode) {
-                AppearanceMode.System -> systemDarkTheme
-                AppearanceMode.Light -> false
-                AppearanceMode.Dark -> true
-            }
-            val windowBackground = if (darkTheme) TbDarkColors.appBackground else TbLightColors.appBackground
+            KoinApplication(
+                application = {
+                    modules(desktopTimeboxxingModule)
+                },
+            ) {
+                val runtime = koinInject<DesktopTimeboxxingRuntime>()
+                val isMacOs = remember { isMacOs() }
+                var interFontFamily by remember { mutableStateOf<FontFamily?>(null) }
+                val setupScope = rememberCoroutineScope()
+                var diagnosticsOverlayVisible by remember { mutableStateOf(false) }
+                val diagnosticsLogs by runtime.diagnosticsLogs.collectAsState()
+                val sidecarStatus by runtime.sidecarStatus.collectAsState()
+                val appearanceMode by runtime.appearanceMode.collectAsState()
+                val systemDarkTheme = isSystemInDarkTheme()
+                val darkTheme = when (appearanceMode) {
+                    AppearanceMode.System -> systemDarkTheme
+                    AppearanceMode.Light -> false
+                    AppearanceMode.Dark -> true
+                }
+                val windowBackground = if (darkTheme) TbDarkColors.appBackground else TbLightColors.appBackground
 
-            LaunchedEffect(Unit) {
-                window.minimumSize = Dimension(MinWindowWidth, MinWindowHeight)
-            }
-
-            LaunchedEffect(windowBackground, darkTheme) {
-                window.applyDesktopChrome(windowBackground, darkTheme)
-            }
-
-            LaunchedEffect(Unit) {
-                interFontFamily = InterFontLoader.loadFontFamily()
-            }
-
-            suspend fun restartSidecar() {
-                sidecarUiState = SidecarUiState.Starting
-                diagnosticsOverlayVisible = false
-                sidecarConnection?.close()
-                sidecarConnection = null
-                usageHistoryRepository = EmptyUsageHistoryRepository()
-                amaRepository = UnavailableAmaRepository("Starting usage sidecar...")
-                settingsRepository = UnavailableSettingsRepository("Starting usage sidecar...")
-
-                val secrets = withContext(Dispatchers.IO) {
-                    SidecarSecrets(
-                        openRouterApiKey = secretStore.read(SecretKey.OpenRouter),
-                        ollamaApiKey = secretStore.read(SecretKey.Ollama),
-                    )
+                LaunchedEffect(Unit) {
+                    window.minimumSize = Dimension(MinWindowWidth, MinWindowHeight)
                 }
 
-                when (val result = sidecarManager.start(usageDays[usageDays.size / 2], secrets)) {
-                    is SidecarStartResult.Started -> {
-                        sidecarConnection = result.connection
-                        usageHistoryRepository = result.connection.repository
-                        amaRepository = result.connection.amaRepository
-                        settingsRepository = DesktopSettingsRepository(
-                            delegate = result.connection.settingsRepository,
-                            secretStore = secretStore,
-                            onSettingsSaved = {
-                                setupScope.launch {
-                                    restartSidecar()
+                LaunchedEffect(windowBackground, darkTheme) {
+                    window.applyDesktopChrome(windowBackground, darkTheme)
+                }
+
+                LaunchedEffect(Unit) {
+                    interFontFamily = InterFontLoader.loadFontFamily()
+                }
+
+                LaunchedEffect(runtime) {
+                    runtime.start()
+                }
+
+                LaunchedEffect(sidecarStatus) {
+                    if (sidecarStatus is TimeboxxingSidecarStatus.Starting) {
+                        diagnosticsOverlayVisible = false
+                    }
+                }
+
+                DisposableEffect(runtime) {
+                    onDispose {
+                        runtime.close()
+                    }
+                }
+
+                PlatformMenu(onClose = ::exitApplication)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(windowBackground),
+                ) {
+                    if (isMacOs) {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(MacWindowControlsInset)
+                                .pointerInput(windowState) {
+                                    detectTapGestures(
+                                        onDoubleTap = {
+                                            windowState.placement = nextTitleBarDoubleClickPlacement(windowState.placement)
+                                        },
+                                    )
+                                },
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                    ) {
+                        App(
+                            fontFamily = interFontFamily,
+                            darkTheme = darkTheme,
+                            overlay = {
+                                when (val state = sidecarStatus) {
+                                    TimeboxxingSidecarStatus.Ready -> Unit
+                                    TimeboxxingSidecarStatus.Starting -> SidecarStartupOverlay(state = state)
+                                    is TimeboxxingSidecarStatus.Failed -> SidecarStartupOverlay(
+                                        state = state,
+                                        onRetry = {
+                                            diagnosticsOverlayVisible = false
+                                            setupScope.launch {
+                                                runtime.restartSidecar()
+                                            }
+                                        },
+                                        onDiagnostics = if (DesktopBuildConfig.DiagnosticsEnabled) {
+                                            { diagnosticsOverlayVisible = true }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                }
+                                if (diagnosticsOverlayVisible && DesktopBuildConfig.DiagnosticsEnabled) {
+                                    DiagnosticsPane(
+                                        logs = diagnosticsLogs,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onClose = { diagnosticsOverlayVisible = false },
+                                    )
                                 }
                             },
                         )
-                        sidecarUiState = SidecarUiState.Ready
                     }
-
-                    is SidecarStartResult.Failed -> {
-                        usageHistoryRepository = UnavailableUsageHistoryRepository(result.message)
-                        amaRepository = UnavailableAmaRepository(result.message)
-                        settingsRepository = UnavailableSettingsRepository(result.message)
-                        sidecarUiState = SidecarUiState.Failed(result.message)
-                    }
-                }
-            }
-
-            LaunchedEffect(Unit) {
-                restartSidecar()
-            }
-
-            DisposableEffect(Unit) {
-                onDispose {
-                    latestSidecarConnection?.close()
-                }
-            }
-
-            PlatformMenu(onClose = ::exitApplication)
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(windowBackground),
-            ) {
-                if (isMacOs) {
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(MacWindowControlsInset)
-                            .pointerInput(windowState) {
-                                detectTapGestures(
-                                    onDoubleTap = {
-                                        windowState.placement = nextTitleBarDoubleClickPlacement(windowState.placement)
-                                    },
-                                )
-                            },
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                ) {
-                    App(
-                        fontFamily = interFontFamily,
-                        darkTheme = darkTheme,
-                        usageHistoryRepository = usageHistoryRepository,
-                        amaRepository = amaRepository,
-                        settingsRepository = settingsRepository,
-                        usageIconLoader = usageIconLoader,
-                        initialState = createSidecarTimeboxxingState(
-                            usageDays = usageDays,
-                            initialNotice = "Starting usage sidecar...",
-                            appearanceMode = initialAppearanceMode,
-                        ),
-                        appearanceMode = appearanceMode,
-                        sidecarReady = sidecarUiState is SidecarUiState.Ready,
-                        diagnosticsEnabled = DesktopBuildConfig.DiagnosticsEnabled,
-                        diagnosticsLogs = diagnosticsLogs,
-                        onStateChange = { nextState ->
-                            if (nextState.appearanceMode != appearanceMode) {
-                                val modeToSave = nextState.appearanceMode
-                                appearanceMode = modeToSave
-                                setupScope.launch(Dispatchers.IO) {
-                                    appearancePreferences.save(modeToSave)
-                                }
-                            }
-                        },
-                        overlay = {
-                            when (val state = sidecarUiState) {
-                                SidecarUiState.Ready -> Unit
-                                SidecarUiState.Starting -> SidecarStartupOverlay(state = state)
-                                is SidecarUiState.Failed -> SidecarStartupOverlay(
-                                    state = state,
-                                    onRetry = {
-                                        diagnosticsOverlayVisible = false
-                                        setupScope.launch {
-                                            restartSidecar()
-                                        }
-                                    },
-                                    onDiagnostics = if (DesktopBuildConfig.DiagnosticsEnabled) {
-                                        { diagnosticsOverlayVisible = true }
-                                    } else {
-                                        null
-                                    },
-                                )
-                            }
-                            if (diagnosticsOverlayVisible && DesktopBuildConfig.DiagnosticsEnabled) {
-                                DiagnosticsPane(
-                                    logs = diagnosticsLogs,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onClose = { diagnosticsOverlayVisible = false },
-                                )
-                            }
-                        },
-                    )
                 }
             }
         }
@@ -301,7 +218,7 @@ fun main(args: Array<String>) {
 
 @Composable
 private fun SidecarStartupOverlay(
-    state: SidecarUiState,
+    state: TimeboxxingSidecarStatus,
     onRetry: (() -> Unit)? = null,
     onDiagnostics: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -325,8 +242,8 @@ private fun SidecarStartupOverlay(
                 },
         )
         when (state) {
-            SidecarUiState.Starting -> SidecarLoadingDots()
-            is SidecarUiState.Failed -> {
+            TimeboxxingSidecarStatus.Starting -> SidecarLoadingDots()
+            is TimeboxxingSidecarStatus.Failed -> {
                 TbCard(
                     modifier = Modifier
                         .widthIn(max = 460.dp)
@@ -381,7 +298,7 @@ private fun SidecarStartupOverlay(
                 }
             }
 
-            SidecarUiState.Ready -> Unit
+            TimeboxxingSidecarStatus.Ready -> Unit
         }
     }
 }

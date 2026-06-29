@@ -18,10 +18,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
-import com.timeboxxing.app.model.Project
-import com.timeboxxing.app.model.formatDuration
-import com.timeboxxing.app.state.TimeboxxingAction
-import com.timeboxxing.app.state.TimeboxxingScreenState
+import com.timeboxxing.domain.model.Project
+import com.timeboxxing.domain.model.formatDuration
+import com.timeboxxing.app.presentation.TimeboxxingAction
+import com.timeboxxing.app.presentation.TimeboxxingScreenState
 
 @Composable
 fun ProjectSummaryRail(

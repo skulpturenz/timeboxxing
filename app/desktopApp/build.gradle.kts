@@ -40,15 +40,23 @@ plugins {
 
 dependencies {
     implementation(projects.shared)
+    implementation(projects.data)
+    implementation(projects.domain)
 
     implementation(compose.animation)
     implementation(compose.desktop.currentOs)
     implementation(compose.materialIconsExtended)
+    implementation(platform(libs.koin.bom))
+    implementation(libs.koin.compose)
+    implementation(libs.koin.compose.viewmodel)
+    implementation(libs.koin.core)
     implementation(libs.kotlinx.coroutinesSwing)
 
     implementation(libs.compose.uiToolingPreview)
 
     testImplementation(libs.kotlin.testJunit)
+    testImplementation(platform(libs.koin.bom))
+    testImplementation(libs.koin.test)
 }
 
 val sidecarExecutableName = if (System.getProperty("os.name").lowercase().contains("windows")) {

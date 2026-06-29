@@ -1,8 +1,8 @@
 package com.timeboxxing.app
 
-import com.timeboxxing.app.data.SettingsRepository
-import com.timeboxxing.app.model.AiModelOptions
-import com.timeboxxing.app.model.AiSettings
+import com.timeboxxing.domain.repository.SettingsRepository
+import com.timeboxxing.domain.model.AiModelOptions
+import com.timeboxxing.domain.model.AiSettings
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

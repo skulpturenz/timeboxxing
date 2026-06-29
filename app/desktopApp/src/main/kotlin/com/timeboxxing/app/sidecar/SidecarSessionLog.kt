@@ -1,6 +1,6 @@
 package com.timeboxxing.app.sidecar
 
-import com.timeboxxing.app.model.DiagnosticsLogLine
+import com.timeboxxing.domain.model.DiagnosticsLogLine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

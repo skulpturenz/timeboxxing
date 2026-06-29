@@ -1,9 +1,9 @@
 package com.timeboxxing.app.sidecar
 
-import com.timeboxxing.app.data.GrpcAmaRepository
-import com.timeboxxing.app.data.GrpcSettingsRepository
-import com.timeboxxing.app.data.GrpcUsageHistoryRepository
-import com.timeboxxing.app.model.UsageDay
+import com.timeboxxing.data.grpc.GrpcAmaRepository
+import com.timeboxxing.data.grpc.GrpcSettingsRepository
+import com.timeboxxing.data.grpc.GrpcUsageHistoryRepository
+import com.timeboxxing.domain.model.UsageDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext

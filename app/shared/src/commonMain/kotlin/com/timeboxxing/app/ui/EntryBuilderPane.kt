@@ -34,17 +34,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.timeboxxing.app.model.EntryDraft
-import com.timeboxxing.app.model.EntryMode
-import com.timeboxxing.app.model.Project
-import com.timeboxxing.app.model.TimeEntry
-import com.timeboxxing.app.model.UsageEvent
-import com.timeboxxing.app.model.UsageSourceType
-import com.timeboxxing.app.model.formatClockTime
-import com.timeboxxing.app.model.formatDuration
-import com.timeboxxing.app.model.formatTimeRange
-import com.timeboxxing.app.state.TimeboxxingAction
-import com.timeboxxing.app.state.TimeboxxingScreenState
+import com.timeboxxing.domain.model.EntryDraft
+import com.timeboxxing.domain.model.EntryMode
+import com.timeboxxing.domain.model.Project
+import com.timeboxxing.domain.model.TimeEntry
+import com.timeboxxing.domain.model.UsageEvent
+import com.timeboxxing.domain.model.UsageSourceType
+import com.timeboxxing.domain.model.formatClockTime
+import com.timeboxxing.domain.model.formatDuration
+import com.timeboxxing.domain.model.formatTimeRange
+import com.timeboxxing.app.presentation.TimeboxxingAction
+import com.timeboxxing.app.presentation.TimeboxxingScreenState
 
 @Composable
 fun EntryBuilderPane(

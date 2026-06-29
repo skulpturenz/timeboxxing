@@ -1,7 +1,7 @@
 package com.timeboxxing.app.ui
 
-import com.timeboxxing.app.model.TimeEntry
-import com.timeboxxing.app.model.UsageEvent
+import com.timeboxxing.domain.model.TimeEntry
+import com.timeboxxing.domain.model.UsageEvent
 
 const val TimelineDayMinutes = 24 * 60
 const val TimelineLaneGapDp = 4f
