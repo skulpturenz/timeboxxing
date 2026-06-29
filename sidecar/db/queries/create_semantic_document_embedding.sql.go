@@ -7,19 +7,35 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createSemanticDocumentEmbedding = `-- name: CreateSemanticDocumentEmbedding :exec
-INSERT INTO semantic_document_float32_embeddings (semantic_document_id, embedding)
-VALUES (?, ?)
+INSERT INTO semantic_document_float32_embeddings (
+  semantic_document_id,
+  embedding_model,
+  embedding_dimension,
+  embedded_at,
+  embedding
+)
+VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateSemanticDocumentEmbeddingParams struct {
 	SemanticDocumentID int64
+	EmbeddingModel     string
+	EmbeddingDimension int64
+	EmbeddedAt         sql.NullTime
 	Embedding          string
 }
 
 func (q *Queries) CreateSemanticDocumentEmbedding(ctx context.Context, arg CreateSemanticDocumentEmbeddingParams) error {
-	_, err := q.db.ExecContext(ctx, createSemanticDocumentEmbedding, arg.SemanticDocumentID, arg.Embedding)
+	_, err := q.db.ExecContext(ctx, createSemanticDocumentEmbedding,
+		arg.SemanticDocumentID,
+		arg.EmbeddingModel,
+		arg.EmbeddingDimension,
+		arg.EmbeddedAt,
+		arg.Embedding,
+	)
 	return err
 }

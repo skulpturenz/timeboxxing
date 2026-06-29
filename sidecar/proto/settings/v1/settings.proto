@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package settings.v1;
+
+option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1;settingsv1";
+option java_multiple_files = true;
+option java_package = "com.timeboxxing.sidecar.settings.v1";
+
+service SettingsService {
+  rpc ListModelOptions(ListModelOptionsRequest) returns (ListModelOptionsResponse);
+  rpc GetAiSettings(GetAiSettingsRequest) returns (AiSettings);
+  rpc SaveAiSettings(SaveAiSettingsRequest) returns (AiSettings);
+}
+
+message ListModelOptionsRequest {}
+
+message ListModelOptionsResponse {
+  repeated ModelOption embedding_models = 1;
+  repeated ModelOption semantic_models = 2;
+}
+
+message ModelOption {
+  int64 id = 1;
+  string openrouter_slug = 2;
+  string ollama_slug = 3;
+  string label = 4;
+}
+
+message GetAiSettingsRequest {
+  bool openrouter_secret_exists = 1;
+  bool ollama_secret_exists = 2;
+}
+
+message SaveAiSettingsRequest {
+  AiProvider provider = 1;
+  string openrouter_base_url = 2;
+  string ollama_base_url = 3;
+  int64 embedding_model_id = 4;
+  int64 semantic_model_id = 5;
+  bool openrouter_secret_exists = 6;
+  bool ollama_secret_exists = 7;
+}
+
+message AiSettings {
+  AiProvider provider = 1;
+  string openrouter_base_url = 2;
+  string ollama_base_url = 3;
+  int64 embedding_model_id = 4;
+  int64 semantic_model_id = 5;
+  bool openrouter_secret_exists = 6;
+  bool ollama_secret_exists = 7;
+}
+
+enum AiProvider {
+  AI_PROVIDER_UNSPECIFIED = 0;
+  OPENROUTER = 1;
+  OLLAMA = 2;
+}

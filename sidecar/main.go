@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -18,8 +19,10 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	"github.com/skulpturenz/timeboxxing/sidecar/envs"
 	amav1 "github.com/skulpturenz/timeboxxing/sidecar/gen/ama/v1"
+	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	usagev1 "github.com/skulpturenz/timeboxxing/sidecar/gen/usage/v1"
 	grpcAma "github.com/skulpturenz/timeboxxing/sidecar/grpc/ama"
+	grpcSettings "github.com/skulpturenz/timeboxxing/sidecar/grpc/settings"
 	grpcUsage "github.com/skulpturenz/timeboxxing/sidecar/grpc/usage"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
@@ -42,8 +45,18 @@ type appServices struct {
 	answerer    *semantic.Answerer
 	backfilling *semantic.BackfillCoordinator
 	indexStatus *semantic.IndexStatusService
+	indexer     *semantic.Indexer
 	transitions *componentTransitions.Service
 	usage       *componentUsage.Service
+}
+
+type semanticServices struct {
+	answerer       *semantic.Answerer
+	backfilling    *semantic.BackfillCoordinator
+	indexStatus    *semantic.IndexStatusService
+	indexer        *semantic.Indexer
+	embeddingModel string
+	ragModel       string
 }
 
 // interceptorLogger adapts slog logger to interceptor logger.
@@ -93,49 +106,35 @@ func main() {
 		panic(err)
 	}
 
-	openRouterAPIKey := strings.TrimSpace(envs.OpenRouterAPIKey.Value())
-	embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
-		APIKey:    openRouterAPIKey,
-		BaseURL:   envs.OpenRouterBaseURL.Value(),
-		Model:     envs.EmbeddingModel.Value(),
-		Dimension: int(envs.EmbeddingDimension.Value()),
-	})
+	semanticRuntime, err := newSemanticServices(ctx, database, logger)
+	semanticUnavailableReason := ""
 	if err != nil {
-		logger.ErrorContext(ctx, "create semantic embedder", "error", err)
-		panic(err)
+		logger.WarnContext(ctx, "semantic services unavailable", "error", err)
+		semanticUnavailableReason = semanticStartupMessage(err)
 	}
-	if err := semantic.CheckEmbedderHealth(ctx, embedder); err != nil {
-		logger.ErrorContext(ctx, "check semantic embedder", "error", err)
-		panic(err)
-	}
-	generator, err := semantic.NewOpenRouterGenerator(semantic.OpenRouterConfig{
-		APIKey:  openRouterAPIKey,
-		BaseURL: envs.OpenRouterBaseURL.Value(),
-		Model:   envs.RAGModel.Value(),
-	})
-	if err != nil {
-		logger.ErrorContext(ctx, "create semantic generator", "error", err)
-		panic(err)
-	}
-	transitionEventIndexer := semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder)
-	semanticBackfiller := semantic.NewBackfiller(database.ReadQuerier, transitionEventIndexer)
-	semanticBackfillCoordinator := semantic.NewBackfillCoordinator(ctx, semanticBackfiller, logger.With("service", "semantic_backfill"))
-	semanticIndexStatus := semantic.NewIndexStatusService(database.ReadQuerier, semanticBackfillCoordinator)
-	searcher := semantic.NewSearcher(database.ReadConn, embedder)
 
 	transitionsService := componentTransitions.NewService(componentTransitions.NewServiceParams{
 		Querier: database.ReadQuerier,
 	})
 	services := appServices{
-		answerer:    semantic.NewAnswerer(searcher, generator),
-		backfilling: semanticBackfillCoordinator,
-		indexStatus: semanticIndexStatus,
 		transitions: transitionsService,
 	}
-	logger.InfoContext(ctx, "semantic indexing enabled", "embedding_model", embedder.Model(), "embedding_dimension", embedder.Dimension())
-	logger.InfoContext(ctx, "RAG answering enabled", "rag_model", generator.Model())
-
-	semanticBackfillCoordinator.Start(startupSemanticBackfillLimit)
+	if semanticRuntime != nil {
+		services.answerer = semanticRuntime.answerer
+		services.backfilling = semanticRuntime.backfilling
+		services.indexStatus = semanticRuntime.indexStatus
+		services.indexer = semanticRuntime.indexer
+	}
+	if semanticRuntime != nil {
+		logger.InfoContext(ctx, "semantic indexing enabled",
+			"embedding_model", semanticRuntime.embeddingModel,
+			"embedding_dimension", semantic.StoreEmbeddingDimension,
+		)
+		logger.InfoContext(ctx, "RAG answering enabled", "rag_model", semanticRuntime.ragModel)
+		semanticRuntime.backfilling.Start(startupSemanticBackfillLimit)
+	} else {
+		logger.WarnContext(ctx, "semantic indexing disabled until AI settings are configured")
+	}
 
 	workerServices := workers.WorkerServices{
 		ReadQueries:            database.ReadQuerier,
@@ -143,7 +142,7 @@ func main() {
 		ReadConn:               database.ReadConn,
 		WriteConn:              database.WriteConn,
 		Logger:                 logger.With("service", "workers"),
-		TransitionEventIndexer: transitionEventIndexer,
+		TransitionEventIndexer: services.indexer,
 		Transitions:            services.transitions,
 		Queues: workers.WorkerQueues{
 			TransitionEventReportedQueue: transitionEventReportedQueue,
@@ -152,8 +151,12 @@ func main() {
 	}
 
 	// workers
-	transitionEventReportedCleanup := workerServices.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
-	defer transitionEventReportedCleanup()
+	if services.indexer != nil {
+		transitionEventReportedCleanup := workerServices.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
+		defer transitionEventReportedCleanup()
+	} else {
+		logger.WarnContext(ctx, "transition event semantic indexer worker disabled")
+	}
 
 	transitionEventCleanup := workerServices.TransitionEventReporterWorker(ctx, transitionEventQueue)
 	defer transitionEventCleanup()
@@ -167,6 +170,9 @@ func main() {
 		Transitions:    transitionsService,
 		ActiveSessions: monitorHandle,
 	})
+	if services.answerer != nil {
+		services.answerer.SetToolRunner(grpcAma.NewAppUsageToolRunner(services.usage))
+	}
 	transitionQueueReporter := reporter.NewQueueReporter(transitionEventQueue)
 	go func() {
 		if err := transitionQueueReporter.Run(ctx, monitorHandle.Transitions); err != nil {
@@ -205,10 +211,14 @@ func main() {
 	)
 	reflection.Register(server)
 	amav1.RegisterAmaServiceServer(server, grpcAma.NewServer(grpcAma.NewServerParams{
-		Answerer:    services.answerer,
-		Backfilling: services.backfilling,
-		IndexStatus: services.indexStatus,
-		Logger:      logger.With("service", "gRPC/ama"),
+		Answerer:          services.answerer,
+		Backfilling:       services.backfilling,
+		IndexStatus:       services.indexStatus,
+		UnavailableReason: semanticUnavailableReason,
+		Logger:            logger.With("service", "gRPC/ama"),
+	}))
+	settingsv1.RegisterSettingsServiceServer(server, grpcSettings.NewServer(grpcSettings.NewServerParams{
+		Querier: database.WriteQuerier,
 	}))
 	usagev1.RegisterUsageServiceServer(server, grpcUsage.NewServer(grpcUsage.NewServerParams{
 		Usage: services.usage,
@@ -219,4 +229,108 @@ func main() {
 		logger.ErrorContext(ctx, "serve grpc", "error", err)
 		panic(err)
 	}
+}
+
+func newSemanticServices(ctx context.Context, database *db.Database, logger *slog.Logger) (*semanticServices, error) {
+	settings, err := semantic.LoadAISettings(ctx, database.ReadQuerier)
+	if err != nil {
+		return nil, err
+	}
+
+	embeddingSlug, err := settings.EmbeddingSlug()
+	if err != nil {
+		return nil, err
+	}
+	semanticSlug, err := settings.SemanticSlug()
+	if err != nil {
+		return nil, err
+	}
+
+	embedder, generator, err := buildAIClients(settings, embeddingSlug, semanticSlug)
+	if err != nil {
+		return nil, err
+	}
+	if err := semantic.CheckEmbedderHealth(ctx, embedder); err != nil {
+		return nil, err
+	}
+
+	indexer := semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder)
+	backfiller := semantic.NewBackfiller(database.ReadQuerier, indexer, embedder.Model())
+	backfillCoordinator := semantic.NewBackfillCoordinator(ctx, backfiller, logger.With("service", "semantic_backfill"))
+	indexStatus := semantic.NewIndexStatusService(database.ReadQuerier, backfillCoordinator, embedder.Model())
+	searcher := semantic.NewSearcher(database.ReadConn, embedder)
+
+	return &semanticServices{
+		answerer:       semantic.NewAnswerer(searcher, generator),
+		backfilling:    backfillCoordinator,
+		indexStatus:    indexStatus,
+		indexer:        indexer,
+		embeddingModel: embedder.Model(),
+		ragModel:       generator.Model(),
+	}, nil
+}
+
+func buildAIClients(settings semantic.AISettings, embeddingSlug string, semanticSlug string) (semantic.Embedder, semantic.Generator, error) {
+	switch settings.Provider {
+	case semantic.ProviderOpenRouter:
+		apiKey, ok := envs.OpenRouterAPIKey.Value()
+		apiKey = strings.TrimSpace(apiKey)
+		if !ok || apiKey == "" {
+			return nil, nil, fmt.Errorf("OpenRouter API key is not configured")
+		}
+		embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
+			APIKey:    apiKey,
+			BaseURL:   settings.OpenRouterBaseURL,
+			Model:     embeddingSlug,
+			Dimension: semantic.StoreEmbeddingDimension,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		generator, err := semantic.NewOpenRouterGenerator(semantic.OpenRouterConfig{
+			APIKey:  apiKey,
+			BaseURL: settings.OpenRouterBaseURL,
+			Model:   semanticSlug,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return embedder, generator, nil
+
+	case semantic.ProviderOllama:
+		apiKey, _ := envs.OllamaAPIKey.Value()
+		apiKey = strings.TrimSpace(apiKey)
+		embedder, err := semantic.NewOllamaEmbedder(semantic.OllamaConfig{
+			APIKey:    apiKey,
+			BaseURL:   settings.OllamaBaseURL,
+			Model:     embeddingSlug,
+			Dimension: semantic.StoreEmbeddingDimension,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		generator, err := semantic.NewOllamaGenerator(semantic.OllamaConfig{
+			APIKey:  apiKey,
+			BaseURL: settings.OllamaBaseURL,
+			Model:   semanticSlug,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return embedder, generator, nil
+
+	default:
+		return nil, nil, fmt.Errorf("unsupported AI provider %q", settings.Provider)
+	}
+}
+
+func semanticStartupMessage(err error) string {
+	if message, ok := semantic.AIRequestUserMessage(err); ok {
+		return message
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		return "Semantic index is unavailable."
+	}
+	return message
 }

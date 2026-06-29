@@ -1,5 +1,10 @@
 package com.timeboxxing.app.data
 
+import com.google.protobuf.Timestamp
+import com.timeboxxing.app.model.AmaAppUsageChart
+import com.timeboxxing.sidecar.ama.v1.AppUsageBucket
+import com.timeboxxing.sidecar.ama.v1.AppUsageChart
+import com.timeboxxing.sidecar.ama.v1.Artifact
 import com.timeboxxing.sidecar.ama.v1.AskResponse
 import com.timeboxxing.sidecar.ama.v1.SemanticIndexStatus
 import com.timeboxxing.sidecar.ama.v1.Source
@@ -21,6 +26,29 @@ class AmaRepositoryMapperTest {
                     .setDocumentType("event")
                     .setContent("Application: Google Chrome")
                     .setDistance(0.125)
+                    .build(),
+            )
+            .addArtifacts(
+                Artifact.newBuilder()
+                    .setAppUsageChart(
+                        AppUsageChart.newBuilder()
+                            .setStartedAt(Timestamp.newBuilder().setSeconds(1).build())
+                            .setEndedAt(Timestamp.newBuilder().setSeconds(3601).build())
+                            .setTimezone("UTC")
+                            .setPeriodLabel("Yesterday")
+                            .setTotalDurationSeconds(3600)
+                            .addBuckets(
+                                AppUsageBucket.newBuilder()
+                                    .setName("Google Chrome")
+                                    .setSourceType("browser")
+                                    .setDurationSeconds(3600)
+                                    .setSessionCount(2)
+                                    .setApplicationIdentifier("com.google.Chrome")
+                                    .setApplicationPath("/Applications/Google Chrome.app")
+                                    .build(),
+                            )
+                            .build(),
+                    )
                     .build(),
             )
             .setSemanticIndexStatus(
@@ -45,6 +73,14 @@ class AmaRepositoryMapperTest {
         assertEquals("Application: Google Chrome", answer.sources.first().content)
         assertEquals(0.125, answer.sources.first().distance)
         assertEquals(3, answer.indexStatus?.completedEventCount)
+        val chart = answer.artifacts.first() as AmaAppUsageChart
+        assertEquals("Yesterday", chart.periodLabel)
+        assertEquals(1000, chart.startedAtEpochMillis)
+        assertEquals(3601000, chart.endedAtEpochMillis)
+        assertEquals("UTC", chart.timeZone)
+        assertEquals(3600L, chart.totalDurationSeconds)
+        assertEquals("Google Chrome", chart.buckets.first().name)
+        assertEquals("browser", chart.buckets.first().sourceType)
     }
 
     @Test
@@ -72,13 +108,49 @@ class AmaRepositoryMapperTest {
     }
 
     @Test
-    fun mapsGrpcInternalSemanticErrorToFriendlyMessage() {
+    fun preservesFailedPreconditionProviderMessage() {
+        val error = StatusRuntimeException(
+            Status.FAILED_PRECONDITION.withDescription("OpenRouter API key is invalid or expired."),
+        )
+
+        assertEquals(
+            "OpenRouter API key is invalid or expired.",
+            error.toAmaErrorMessage(),
+        )
+    }
+
+    @Test
+    fun preservesResourceExhaustedProviderMessage() {
+        val error = StatusRuntimeException(
+            Status.RESOURCE_EXHAUSTED.withDescription("OpenRouter rate limit exceeded. Try again in 2 minutes."),
+        )
+
+        assertEquals(
+            "OpenRouter rate limit exceeded. Try again in 2 minutes.",
+            error.toAmaErrorMessage(),
+        )
+    }
+
+    @Test
+    fun preservesUnavailableProviderMessage() {
+        val error = StatusRuntimeException(
+            Status.UNAVAILABLE.withDescription("OpenRouter provider is temporarily unavailable."),
+        )
+
+        assertEquals(
+            "OpenRouter provider is temporarily unavailable.",
+            error.toAmaErrorMessage(),
+        )
+    }
+
+    @Test
+    fun mapsUnsafeInternalSemanticErrorToGenericMessage() {
         val error = StatusRuntimeException(
             Status.INTERNAL.withDescription("answer question: search answer context: embed semantic search query: openrouter request failed"),
         )
 
         assertEquals(
-            "Semantic model unavailable. Please try again in a moment.",
+            "AMA could not answer right now. Please try again in a moment.",
             error.toAmaErrorMessage(),
         )
     }

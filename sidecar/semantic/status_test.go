@@ -9,7 +9,7 @@ import (
 func TestIndexStatusServiceStates(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	service := NewIndexStatusService(database.ReadQuerier, nil)
+	service := NewIndexStatusService(database.ReadQuerier, nil, fakeEmbedder{}.Model())
 
 	status, err := service.Status(ctx)
 	if err != nil {

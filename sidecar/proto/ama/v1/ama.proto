@@ -23,6 +23,7 @@ message AskResponse {
   string model = 2;
   repeated Source sources = 3;
   SemanticIndexStatus semantic_index_status = 4;
+  repeated Artifact artifacts = 5;
 }
 
 message Source {
@@ -33,6 +34,30 @@ message Source {
   string document_type = 5;
   google.protobuf.Timestamp started_at = 6;
   google.protobuf.Timestamp ended_at = 7;
+}
+
+message Artifact {
+  oneof value {
+    AppUsageChart app_usage_chart = 1;
+  }
+}
+
+message AppUsageChart {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
+  string timezone = 3;
+  int64 total_duration_seconds = 4;
+  repeated AppUsageBucket buckets = 5;
+  string period_label = 6;
+}
+
+message AppUsageBucket {
+  string name = 1;
+  string source_type = 2;
+  int64 duration_seconds = 3;
+  int64 session_count = 4;
+  string application_identifier = 5;
+  string application_path = 6;
 }
 
 message GetSemanticIndexStatusRequest {}

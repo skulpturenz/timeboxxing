@@ -93,15 +93,12 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 	q := queries.New(tx)
 
 	documentID, err := q.UpsertSemanticDocument(ctx, queries.UpsertSemanticDocumentParams{
-		DocumentKey:        spec.Key,
-		DocumentType:       spec.Type,
-		TransitionEventID:  spec.TransitionEventID,
-		StartedAt:          spec.StartedAt,
-		EndedAt:            spec.EndedAt,
-		Content:            content,
-		EmbeddingModel:     i.embedder.Model(),
-		EmbeddingDimension: int64(i.embedder.Dimension()),
-		EmbeddedAt:         sql.NullTime{Time: time.Now().UTC(), Valid: true},
+		DocumentKey:       spec.Key,
+		DocumentType:      spec.Type,
+		TransitionEventID: spec.TransitionEventID,
+		StartedAt:         spec.StartedAt,
+		EndedAt:           spec.EndedAt,
+		Content:           content,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("upsert semantic document %q: %w", spec.Key, err)
@@ -113,6 +110,9 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 
 	if err := q.CreateSemanticDocumentEmbedding(ctx, queries.CreateSemanticDocumentEmbeddingParams{
 		SemanticDocumentID: documentID,
+		EmbeddingModel:     i.embedder.Model(),
+		EmbeddingDimension: int64(i.embedder.Dimension()),
+		EmbeddedAt:         sql.NullTime{Time: time.Now().UTC(), Valid: true},
 		Embedding:          encoded,
 	}); err != nil {
 		return 0, fmt.Errorf("create semantic document embedding %q: %w", spec.Key, err)

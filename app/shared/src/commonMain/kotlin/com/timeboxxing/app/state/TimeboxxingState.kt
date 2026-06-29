@@ -6,6 +6,10 @@ import com.timeboxxing.app.model.AmaAnswer
 import com.timeboxxing.app.model.AmaIndexStatus
 import com.timeboxxing.app.model.AmaMessage
 import com.timeboxxing.app.model.AmaMessageRole
+import com.timeboxxing.app.model.AiModelOptions
+import com.timeboxxing.app.model.AiProvider
+import com.timeboxxing.app.model.AiSettings
+import com.timeboxxing.app.model.AppearanceMode
 import com.timeboxxing.app.model.CalendarDate
 import com.timeboxxing.app.model.EntryDraft
 import com.timeboxxing.app.model.EntryMode
@@ -39,6 +43,14 @@ data class TimeboxxingScreenState(
     val amaError: String? = null,
     val amaIndexStatus: AmaIndexStatus? = null,
     val nextAmaMessageNumber: Int = 1,
+    val settingsOptions: AiModelOptions = AiModelOptions(),
+    val aiSettings: AiSettings = AiSettings(),
+    val settingsDraft: AiSettings = AiSettings(),
+    val settingsLoading: Boolean = false,
+    val settingsSaving: Boolean = false,
+    val settingsError: String? = null,
+    val settingsSavedMessage: String? = null,
+    val appearanceMode: AppearanceMode = AppearanceMode.System,
 ) {
     val dateLabels: List<String>
         get() = usageDays.map { it.label }
@@ -76,6 +88,16 @@ data class TimeboxxingScreenState(
             EntryMode.Invoice -> "Create invoice"
         }
 
+    val isAmaConfigured: Boolean
+        get() = aiSettings.hasConfiguredAiSecret()
+
+    val visibleNavigationSections: List<TimeboxxingSection>
+        get() = if (isAmaConfigured) {
+            TimeboxxingSection.entries
+        } else {
+            TimeboxxingSection.entries.filterNot { it == TimeboxxingSection.Ama }
+        }
+
     fun projectFor(projectId: String): Project =
         projects.firstOrNull { it.id == projectId } ?: projects.first()
 
@@ -92,6 +114,7 @@ data class TimeboxxingScreenState(
 enum class TimeboxxingSection {
     Overview,
     Ama,
+    Settings,
 }
 
 enum class WorkspacePane {
@@ -133,11 +156,26 @@ sealed interface TimeboxxingAction {
     data class AmaIndexStatusSucceeded(val status: AmaIndexStatus) : TimeboxxingAction
     data class AmaIndexStatusFailed(val message: String) : TimeboxxingAction
     data object ClearAmaChat : TimeboxxingAction
+    data object LoadSettings : TimeboxxingAction
+    data class SettingsLoadSucceeded(val options: AiModelOptions, val settings: AiSettings) : TimeboxxingAction
+    data class SettingsLoadFailed(val message: String) : TimeboxxingAction
+    data class UpdateSettingsProvider(val provider: AiProvider) : TimeboxxingAction
+    data class UpdateOpenRouterBaseUrl(val value: String) : TimeboxxingAction
+    data class UpdateOllamaBaseUrl(val value: String) : TimeboxxingAction
+    data class UpdateOpenRouterApiKey(val value: String) : TimeboxxingAction
+    data class UpdateOllamaApiKey(val value: String) : TimeboxxingAction
+    data class UpdateSettingsEmbeddingModel(val id: Long) : TimeboxxingAction
+    data class UpdateSettingsSemanticModel(val id: Long) : TimeboxxingAction
+    data class UpdateAppearanceMode(val mode: AppearanceMode) : TimeboxxingAction
+    data object SaveSettings : TimeboxxingAction
+    data class SettingsSaveSucceeded(val settings: AiSettings) : TimeboxxingAction
+    data class SettingsSaveFailed(val message: String) : TimeboxxingAction
 }
 
 fun createInitialTimeboxxingState(
     data: TimeboxxingMockData = mockTimeboxxingData(),
     collapsedPanes: Set<WorkspacePane> = emptySet(),
+    appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
     val defaultProject = data.projects.first()
     return TimeboxxingScreenState(
@@ -156,6 +194,7 @@ fun createInitialTimeboxxingState(
         nextEntryNumber = data.initialEntries.size + 1,
         usageDays = data.usageDays,
         collapsedPanes = sanitizeCollapsedWorkspacePanes(collapsedPanes),
+        appearanceMode = appearanceMode,
     )
 }
 
@@ -164,6 +203,7 @@ fun createSidecarTimeboxxingState(
     initialNotice: String? = null,
     data: TimeboxxingMockData = mockTimeboxxingData(),
     collapsedPanes: Set<WorkspacePane> = emptySet(),
+    appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
     val defaultProject = data.projects.first()
     val safeUsageDays = usageDays.ifEmpty { data.usageDays }
@@ -183,6 +223,7 @@ fun createSidecarTimeboxxingState(
         nextEntryNumber = 1,
         usageDays = safeUsageDays,
         collapsedPanes = sanitizeCollapsedWorkspacePanes(collapsedPanes),
+        appearanceMode = appearanceMode,
     )
 }
 
@@ -191,11 +232,20 @@ fun reduceTimeboxxingState(
     action: TimeboxxingAction,
 ): TimeboxxingScreenState =
     when (action) {
-        is TimeboxxingAction.SelectSection -> state.copy(
-            selectedSection = action.section,
-            amaError = if (action.section == TimeboxxingSection.Ama) state.amaError else null,
-            notice = if (action.section == TimeboxxingSection.Overview) state.notice else null,
-        )
+        is TimeboxxingAction.SelectSection -> {
+            val selectedSection = if (action.section == TimeboxxingSection.Ama && !state.isAmaConfigured) {
+                TimeboxxingSection.Settings
+            } else {
+                action.section
+            }
+            state.copy(
+                selectedSection = selectedSection,
+                amaError = if (selectedSection == TimeboxxingSection.Ama) state.amaError else null,
+                notice = if (selectedSection == TimeboxxingSection.Overview) state.notice else null,
+                settingsError = if (selectedSection == TimeboxxingSection.Settings) state.settingsError else null,
+                settingsSavedMessage = if (selectedSection == TimeboxxingSection.Settings) state.settingsSavedMessage else null,
+            )
+        }
 
         is TimeboxxingAction.MoveDate -> moveDate(state, action.delta)
 
@@ -372,6 +422,7 @@ fun reduceTimeboxxingState(
                 content = action.answer.answer,
                 model = action.answer.model,
                 sources = action.answer.sources,
+                artifacts = action.answer.artifacts,
             )
             state.copy(
                 amaMessages = state.amaMessages + message,
@@ -405,6 +456,115 @@ fun reduceTimeboxxingState(
             amaIndexStatus = state.amaIndexStatus,
             nextAmaMessageNumber = 1,
         )
+
+        TimeboxxingAction.LoadSettings -> state.copy(
+            settingsLoading = true,
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.SettingsLoadSucceeded -> {
+            val settings = sanitizeAiSettings(action.settings, action.options)
+            state.copy(
+                selectedSection = selectVisibleSectionAfterSettingsChange(state.selectedSection, settings),
+                settingsOptions = action.options,
+                aiSettings = settings,
+                settingsDraft = settings,
+                settingsLoading = false,
+                settingsSaving = false,
+                settingsError = null,
+            )
+        }
+
+        is TimeboxxingAction.SettingsLoadFailed -> state.copy(
+            settingsLoading = false,
+            settingsSaving = false,
+            settingsError = action.message,
+        )
+
+        is TimeboxxingAction.UpdateSettingsProvider -> state.copy(
+            settingsDraft = sanitizeAiSettings(state.settingsDraft.copy(provider = action.provider), state.settingsOptions),
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateOpenRouterBaseUrl -> state.copy(
+            settingsDraft = state.settingsDraft.copy(openRouterBaseUrl = action.value),
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateOllamaBaseUrl -> state.copy(
+            settingsDraft = state.settingsDraft.copy(ollamaBaseUrl = action.value),
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateOpenRouterApiKey -> state.copy(
+            settingsDraft = state.settingsDraft.copy(openRouterApiKey = action.value),
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateOllamaApiKey -> state.copy(
+            settingsDraft = state.settingsDraft.copy(ollamaApiKey = action.value),
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateSettingsEmbeddingModel -> state.copy(
+            settingsDraft = state.settingsDraft.copy(embeddingModelId = action.id),
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateSettingsSemanticModel -> state.copy(
+            settingsDraft = state.settingsDraft.copy(semanticModelId = action.id),
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateAppearanceMode -> state.copy(
+            appearanceMode = action.mode,
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        TimeboxxingAction.SaveSettings -> state.copy(
+            settingsSaving = true,
+            settingsError = null,
+            settingsSavedMessage = null,
+        )
+
+        is TimeboxxingAction.SettingsSaveSucceeded -> {
+            val settings = sanitizeAiSettings(action.settings, state.settingsOptions)
+            state.copy(
+                selectedSection = selectVisibleSectionAfterSettingsChange(state.selectedSection, settings),
+                aiSettings = settings,
+                settingsDraft = settings,
+                settingsSaving = false,
+                settingsError = null,
+                settingsSavedMessage = "Settings saved. Restarting sidecar...",
+            )
+        }
+
+        is TimeboxxingAction.SettingsSaveFailed -> state.copy(
+            settingsSaving = false,
+            settingsError = action.message,
+        )
+    }
+
+private fun AiSettings.hasConfiguredAiSecret(): Boolean =
+    openRouterSecretExists || ollamaSecretExists
+
+private fun selectVisibleSectionAfterSettingsChange(
+    selectedSection: TimeboxxingSection,
+    settings: AiSettings,
+): TimeboxxingSection =
+    if (selectedSection == TimeboxxingSection.Ama && !settings.hasConfiguredAiSecret()) {
+        TimeboxxingSection.Settings
+    } else {
+        selectedSection
     }
 
 fun sanitizeCollapsedWorkspacePanes(panes: Set<WorkspacePane>): Set<WorkspacePane> {
@@ -414,6 +574,24 @@ fun sanitizeCollapsedWorkspacePanes(panes: Set<WorkspacePane>): Set<WorkspacePan
     } else {
         validPanes
     }
+}
+
+private fun sanitizeAiSettings(settings: AiSettings, options: AiModelOptions): AiSettings {
+    val embeddingModels = options.embeddingModels.filter { it.supports(settings.provider) }
+    val semanticModels = options.semanticModels.filter { it.supports(settings.provider) }
+    val embeddingModelID = settings.embeddingModelId
+        .takeIf { id -> embeddingModels.any { it.id == id } }
+        ?: embeddingModels.firstOrNull()?.id
+        ?: settings.embeddingModelId
+    val semanticModelID = settings.semanticModelId
+        .takeIf { id -> semanticModels.any { it.id == id } }
+        ?: semanticModels.firstOrNull()?.id
+        ?: settings.semanticModelId
+
+    return settings.copy(
+        embeddingModelId = embeddingModelID,
+        semanticModelId = semanticModelID,
+    )
 }
 
 private fun moveDate(state: TimeboxxingScreenState, delta: Int): TimeboxxingScreenState {

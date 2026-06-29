@@ -22,7 +22,7 @@ const (
 
 func (s *Server) Ask(ctx context.Context, req *amav1.AskRequest) (*amav1.AskResponse, error) {
 	if s.answerer == nil {
-		return nil, status.Error(codes.FailedPrecondition, "AMA answerer is unavailable")
+		return nil, status.Error(codes.FailedPrecondition, s.semanticUnavailableMessage())
 	}
 
 	question := strings.TrimSpace(req.GetQuestion())
@@ -33,7 +33,7 @@ func (s *Server) Ask(ctx context.Context, req *amav1.AskRequest) (*amav1.AskResp
 	maxSources := maxSourcesFromRequest(req)
 	answer, err := s.answerer.Answer(ctx, question, maxSources)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "answer question: %v", err)
+		return nil, answerErrorStatus(err)
 	}
 	indexStatus, err := s.semanticIndexStatus(ctx)
 	if err != nil {
@@ -114,6 +114,7 @@ func answerToProto(answer *semantic.Answer, indexStatus semantic.IndexStatus) *a
 		Answer:              answer.Answer,
 		Model:               answer.Model,
 		Sources:             make([]*amav1.Source, 0, len(answer.Sources)),
+		Artifacts:           make([]*amav1.Artifact, 0, len(answer.Artifacts)),
 		SemanticIndexStatus: indexStatusToProto(indexStatus),
 	}
 	for _, source := range answer.Sources {
@@ -127,17 +128,84 @@ func answerToProto(answer *semantic.Answer, indexStatus semantic.IndexStatus) *a
 			EndedAt:           timestampOrNil(source.EndedAt),
 		})
 	}
+	for _, artifact := range answer.Artifacts {
+		if protoArtifact := artifactToProto(artifact); protoArtifact != nil {
+			resp.Artifacts = append(resp.Artifacts, protoArtifact)
+		}
+	}
 	return resp
+}
+
+func artifactToProto(artifact semantic.Artifact) *amav1.Artifact {
+	switch artifact.Type {
+	case semantic.ArtifactTypeAppUsageChart:
+		if artifact.AppUsageChart == nil {
+			return nil
+		}
+		chart := artifact.AppUsageChart
+		buckets := make([]*amav1.AppUsageBucket, 0, len(chart.Buckets))
+		for _, bucket := range chart.Buckets {
+			buckets = append(buckets, &amav1.AppUsageBucket{
+				Name:                  bucket.Name,
+				SourceType:            bucket.SourceType,
+				DurationSeconds:       bucket.DurationSeconds,
+				SessionCount:          bucket.SessionCount,
+				ApplicationIdentifier: bucket.ApplicationIdentifier,
+				ApplicationPath:       bucket.ApplicationPath,
+			})
+		}
+		return &amav1.Artifact{
+			Value: &amav1.Artifact_AppUsageChart{
+				AppUsageChart: &amav1.AppUsageChart{
+					StartedAt:            timestampOrNil(chart.StartedAt),
+					EndedAt:              timestampOrNil(chart.EndedAt),
+					Timezone:             chart.TimeZone,
+					TotalDurationSeconds: chart.TotalDurationSeconds,
+					Buckets:              buckets,
+					PeriodLabel:          chart.PeriodLabel,
+				},
+			},
+		}
+	default:
+		return nil
+	}
 }
 
 func (s *Server) semanticIndexStatus(ctx context.Context) (semantic.IndexStatus, error) {
 	if s.indexStatus == nil {
 		return semantic.IndexStatus{
 			State:   semantic.IndexStateUnavailable,
-			Message: "Semantic index is unavailable.",
+			Message: s.semanticUnavailableMessage(),
 		}, nil
 	}
 	return s.indexStatus.Status(ctx)
+}
+
+func (s *Server) semanticUnavailableMessage() string {
+	if s != nil && strings.TrimSpace(s.unavailableReason) != "" {
+		return s.unavailableReason
+	}
+	return "Semantic index is unavailable."
+}
+
+func answerErrorStatus(err error) error {
+	message, ok := semantic.AIRequestUserMessage(err)
+	if !ok {
+		return status.Error(codes.Internal, "AMA could not answer right now. Please try again in a moment.")
+	}
+
+	code := codes.Internal
+	if requestCode, ok := semantic.AIRequestStatusCode(err); ok {
+		switch requestCode {
+		case 401, 402, 400, 404:
+			code = codes.FailedPrecondition
+		case 429:
+			code = codes.ResourceExhausted
+		case 502, 503, 529:
+			code = codes.Unavailable
+		}
+	}
+	return status.Error(code, message)
 }
 
 func indexStatusToProto(status semantic.IndexStatus) *amav1.SemanticIndexStatus {

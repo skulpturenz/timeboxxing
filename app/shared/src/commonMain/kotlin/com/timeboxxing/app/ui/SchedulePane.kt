@@ -69,6 +69,72 @@ private val TimelineTimeLabelWidth = 72.dp
 private val TimelineRuleGap = 12.dp
 private val TimelineGridLineThickness = 1.dp
 
+class SchedulePaneScrollState internal constructor(
+    internal val listState: LazyListState,
+    internal val autoScrollState: SchedulePaneAutoScrollState = SchedulePaneAutoScrollState(),
+)
+
+@Composable
+fun rememberSchedulePaneScrollState(): SchedulePaneScrollState {
+    val listState = rememberLazyListState()
+    return remember(listState) { SchedulePaneScrollState(listState) }
+}
+
+internal class SchedulePaneAutoScrollState {
+    private var handledInitialScrollKey: ScheduleInitialScrollKey? = null
+    private var handledFocusedEntryScrollKey: ScheduleFocusedEntryScrollKey? = null
+
+    fun shouldHandleInitialScroll(
+        dayStartedAtEpochMillis: Long,
+        zoomMinutes: Int,
+        targetDp: Float,
+    ): Boolean {
+        val key = ScheduleInitialScrollKey(
+            dayStartedAtEpochMillis = dayStartedAtEpochMillis,
+            zoomMinutes = zoomMinutes,
+            targetDp = targetDp,
+        )
+        if (handledInitialScrollKey == key) return false
+
+        handledInitialScrollKey = key
+        return true
+    }
+
+    fun shouldHandleFocusedEntryScroll(
+        entryId: String,
+        startMinute: Int,
+        sourceUsageIds: Set<String>,
+        zoomMinutes: Int,
+        targetDp: Float,
+    ): Boolean {
+        val key = ScheduleFocusedEntryScrollKey(
+            entryId = entryId,
+            startMinute = startMinute,
+            sourceUsageIds = sourceUsageIds,
+            zoomMinutes = zoomMinutes,
+            targetDp = targetDp,
+        )
+        if (handledFocusedEntryScrollKey == key) return false
+
+        handledFocusedEntryScrollKey = key
+        return true
+    }
+}
+
+internal data class ScheduleInitialScrollKey(
+    val dayStartedAtEpochMillis: Long,
+    val zoomMinutes: Int,
+    val targetDp: Float,
+)
+
+internal data class ScheduleFocusedEntryScrollKey(
+    val entryId: String,
+    val startMinute: Int,
+    val sourceUsageIds: Set<String>,
+    val zoomMinutes: Int,
+    val targetDp: Float,
+)
+
 @Composable
 fun SchedulePane(
     state: TimeboxxingScreenState,
@@ -76,6 +142,7 @@ fun SchedulePane(
     onUsageClick: (String) -> Unit,
     onClearSelection: () -> Unit,
     onCreateEntry: () -> Unit,
+    scrollState: SchedulePaneScrollState = rememberSchedulePaneScrollState(),
     modifier: Modifier = Modifier,
     headerAction: @Composable (() -> Unit)? = null,
 ) {
@@ -93,7 +160,7 @@ fun SchedulePane(
             zoomMinutes = state.zoomMinutes,
         )
     }
-    val listState = rememberLazyListState()
+    val listState = scrollState.listState
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     var scrollViewportHeightPx by remember { mutableIntStateOf(0) }
@@ -123,7 +190,8 @@ fun SchedulePane(
     }
 
     LaunchedEffect(
-        state.dateLabel,
+        scrollState,
+        state.selectedDay.startedAtEpochMillis,
         state.zoomMinutes,
         scrollViewportHeightPx,
         initialTimelineTargetDp,
@@ -131,7 +199,12 @@ fun SchedulePane(
         if (
             state.scheduleFocusEntryId == null &&
             scrollViewportHeightPx > 0 &&
-            initialTimelineTargetDp != null
+            initialTimelineTargetDp != null &&
+            scrollState.autoScrollState.shouldHandleInitialScroll(
+                dayStartedAtEpochMillis = state.selectedDay.startedAtEpochMillis,
+                zoomMinutes = state.zoomMinutes,
+                targetDp = initialTimelineTargetDp,
+            )
         ) {
             scrollTimelineToDp(
                 listState = listState,
@@ -205,6 +278,7 @@ fun SchedulePane(
                     .onSizeChanged { scrollViewportHeightPx = it.height },
             ) {
                 LaunchedEffect(
+                    scrollState,
                     focusedEntry?.id,
                     focusedEntry?.startMinute,
                     focusedEntry?.sourceUsageIds,
@@ -215,14 +289,25 @@ fun SchedulePane(
                     if (scrollViewportHeightPx > 0) {
                         focusedEntry?.let { entry ->
                             val viewportHeightDp = with(density) { scrollViewportHeightPx.toDp().value }
+                            val targetDp = timelineEntryScrollDp(
+                                grid = timelineGrid,
+                                entry = entry,
+                                viewportHeightDp = viewportHeightDp,
+                            )
+                            if (!scrollState.autoScrollState.shouldHandleFocusedEntryScroll(
+                                    entryId = entry.id,
+                                    startMinute = entry.startMinute,
+                                    sourceUsageIds = entry.sourceUsageIds,
+                                    zoomMinutes = state.zoomMinutes,
+                                    targetDp = targetDp,
+                                )
+                            ) {
+                                return@let
+                            }
                             scrollTimelineToDp(
                                 listState = listState,
                                 grid = timelineGrid,
-                                targetDp = timelineEntryScrollDp(
-                                    grid = timelineGrid,
-                                    entry = entry,
-                                    viewportHeightDp = viewportHeightDp,
-                                ),
+                                targetDp = targetDp,
                                 density = density,
                                 animated = true,
                             )

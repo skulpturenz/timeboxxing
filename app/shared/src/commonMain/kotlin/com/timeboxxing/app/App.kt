@@ -11,10 +11,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontFamily
 import com.timeboxxing.app.data.AmaRepository
+import com.timeboxxing.app.data.SettingsRepository
 import com.timeboxxing.app.data.StaticUsageHistoryRepository
 import com.timeboxxing.app.data.StaticAmaRepository
+import com.timeboxxing.app.data.StaticSettingsRepository
 import com.timeboxxing.app.data.UsageHistoryRepository
 import com.timeboxxing.app.data.mockTimeboxxingData
+import com.timeboxxing.app.model.AppearanceMode
 import com.timeboxxing.app.state.TimeboxxingAction
 import com.timeboxxing.app.state.TimeboxxingScreenState
 import com.timeboxxing.app.state.TimeboxxingSection
@@ -35,24 +38,28 @@ fun App(
     darkTheme: Boolean = isSystemInDarkTheme(),
     usageHistoryRepository: UsageHistoryRepository = StaticUsageHistoryRepository(mockTimeboxxingData().usageEvents),
     amaRepository: AmaRepository = StaticAmaRepository(),
+    settingsRepository: SettingsRepository = StaticSettingsRepository(),
     usageIconLoader: UsageIconLoader = NoOpUsageIconLoader,
     initialState: TimeboxxingScreenState = createInitialTimeboxxingState(),
     onStateChange: (TimeboxxingScreenState) -> Unit = {},
     noticeActionLabel: String? = null,
     onNoticeAction: (() -> Unit)? = null,
     overlay: @Composable (() -> Unit)? = null,
+    appearanceMode: AppearanceMode = AppearanceMode.System,
 ) {
     TimeboxxingApp(
         fontFamily = fontFamily,
         darkTheme = darkTheme,
         usageHistoryRepository = usageHistoryRepository,
         amaRepository = amaRepository,
+        settingsRepository = settingsRepository,
         usageIconLoader = usageIconLoader,
         initialState = initialState,
         onStateChange = onStateChange,
         noticeActionLabel = noticeActionLabel,
         onNoticeAction = onNoticeAction,
         overlay = overlay,
+        appearanceMode = appearanceMode,
     )
 }
 
@@ -68,16 +75,49 @@ fun TimeboxxingApp(
     darkTheme: Boolean = isSystemInDarkTheme(),
     usageHistoryRepository: UsageHistoryRepository = StaticUsageHistoryRepository(mockTimeboxxingData().usageEvents),
     amaRepository: AmaRepository = StaticAmaRepository(),
+    settingsRepository: SettingsRepository = StaticSettingsRepository(),
     usageIconLoader: UsageIconLoader = NoOpUsageIconLoader,
     initialState: TimeboxxingScreenState = createInitialTimeboxxingState(),
     onStateChange: (TimeboxxingScreenState) -> Unit = {},
     noticeActionLabel: String? = null,
     onNoticeAction: (() -> Unit)? = null,
     overlay: @Composable (() -> Unit)? = null,
+    appearanceMode: AppearanceMode = AppearanceMode.System,
 ) {
     var state by remember { mutableStateOf(initialState) }
+    LaunchedEffect(appearanceMode) {
+        if (state.appearanceMode != appearanceMode) {
+            val nextState = state.copy(appearanceMode = appearanceMode)
+            state = nextState
+            onStateChange(nextState)
+        }
+    }
     val appScope = rememberCoroutineScope()
     val selectedDay = state.selectedDay
+
+    suspend fun loadSettings(showLoading: Boolean) {
+        if (showLoading) {
+            state = reduceTimeboxxingState(state, TimeboxxingAction.LoadSettings)
+        }
+        val loaded = runCatching {
+            settingsRepository.listModelOptions() to settingsRepository.getAiSettings()
+        }
+        state = loaded.fold(
+            onSuccess = { (options, settings) ->
+                reduceTimeboxxingState(state, TimeboxxingAction.SettingsLoadSucceeded(options, settings))
+            },
+            onFailure = { error ->
+                if (showLoading || state.selectedSection == TimeboxxingSection.Settings) {
+                    reduceTimeboxxingState(
+                        state,
+                        TimeboxxingAction.SettingsLoadFailed(error.message ?: "Settings are unavailable."),
+                    )
+                } else {
+                    state
+                }
+            },
+        )
+    }
 
     LaunchedEffect(usageHistoryRepository, selectedDay.startedAtEpochMillis) {
         state = reduceTimeboxxingState(state, TimeboxxingAction.LoadUsage)
@@ -138,6 +178,16 @@ fun TimeboxxingApp(
         }
     }
 
+    LaunchedEffect(settingsRepository) {
+        loadSettings(showLoading = false)
+    }
+
+    LaunchedEffect(settingsRepository, state.selectedSection) {
+        if (state.selectedSection == TimeboxxingSection.Settings) {
+            loadSettings(showLoading = true)
+        }
+    }
+
     TbTheme(
         fontFamily = fontFamily,
         darkTheme = darkTheme,
@@ -157,6 +207,14 @@ fun TimeboxxingApp(
                 } else {
                     null
                 }
+                val settingsToSave = if (
+                    action == TimeboxxingAction.SaveSettings &&
+                    !state.settingsSaving
+                ) {
+                    state.settingsDraft
+                } else {
+                    null
+                }
                 val nextState = reduceTimeboxxingState(state, action)
                 state = nextState
                 onStateChange(nextState)
@@ -169,6 +227,22 @@ fun TimeboxxingApp(
                                 reduceTimeboxxingState(
                                     state,
                                     TimeboxxingAction.AmaAnswerFailed(error.message ?: "AMA is unavailable."),
+                                )
+                            },
+                        )
+                        state = resolvedState
+                        onStateChange(resolvedState)
+                    }
+                }
+                if (settingsToSave != null) {
+                    appScope.launch {
+                        val saved = runCatching { settingsRepository.saveAiSettings(settingsToSave) }
+                        val resolvedState = saved.fold(
+                            onSuccess = { reduceTimeboxxingState(state, TimeboxxingAction.SettingsSaveSucceeded(it)) },
+                            onFailure = { error ->
+                                reduceTimeboxxingState(
+                                    state,
+                                    TimeboxxingAction.SettingsSaveFailed(error.message ?: "Settings could not be saved."),
                                 )
                             },
                         )

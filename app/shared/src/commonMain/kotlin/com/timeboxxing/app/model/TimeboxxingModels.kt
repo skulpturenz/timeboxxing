@@ -17,6 +17,12 @@ enum class EntryMode {
     Invoice,
 }
 
+enum class AppearanceMode {
+    System,
+    Light,
+    Dark,
+}
+
 enum class AmaMessageRole {
     User,
     Assistant,
@@ -85,6 +91,26 @@ data class AmaSource(
     val distance: Double,
 )
 
+sealed interface AmaArtifact
+
+data class AmaAppUsageChart(
+    val periodLabel: String,
+    val startedAtEpochMillis: Long?,
+    val endedAtEpochMillis: Long?,
+    val timeZone: String,
+    val totalDurationSeconds: Long,
+    val buckets: List<AmaAppUsageBucket>,
+) : AmaArtifact
+
+data class AmaAppUsageBucket(
+    val name: String,
+    val sourceType: String,
+    val durationSeconds: Long,
+    val sessionCount: Long,
+    val applicationIdentifier: String,
+    val applicationPath: String,
+)
+
 enum class AmaIndexState {
     Unknown,
     Ready,
@@ -106,6 +132,7 @@ data class AmaAnswer(
     val answer: String,
     val model: String,
     val sources: List<AmaSource>,
+    val artifacts: List<AmaArtifact> = emptyList(),
     val indexStatus: AmaIndexStatus? = null,
 )
 
@@ -115,6 +142,42 @@ data class AmaMessage(
     val content: String,
     val model: String? = null,
     val sources: List<AmaSource> = emptyList(),
+    val artifacts: List<AmaArtifact> = emptyList(),
+)
+
+enum class AiProvider {
+    OpenRouter,
+    Ollama,
+}
+
+data class AiModelOption(
+    val id: Long,
+    val openRouterSlug: String,
+    val ollamaSlug: String,
+    val label: String,
+) {
+    fun supports(provider: AiProvider): Boolean =
+        when (provider) {
+            AiProvider.OpenRouter -> openRouterSlug.isNotBlank()
+            AiProvider.Ollama -> ollamaSlug.isNotBlank()
+        }
+}
+
+data class AiModelOptions(
+    val embeddingModels: List<AiModelOption> = emptyList(),
+    val semanticModels: List<AiModelOption> = emptyList(),
+)
+
+data class AiSettings(
+    val provider: AiProvider = AiProvider.OpenRouter,
+    val openRouterBaseUrl: String = "https://openrouter.ai/api/v1",
+    val ollamaBaseUrl: String = "http://127.0.0.1:11434",
+    val embeddingModelId: Long = 1,
+    val semanticModelId: Long = 1,
+    val openRouterApiKey: String = "",
+    val ollamaApiKey: String = "",
+    val openRouterSecretExists: Boolean = false,
+    val ollamaSecretExists: Boolean = false,
 )
 
 data class TimeboxxingMockData(

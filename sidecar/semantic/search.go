@@ -60,8 +60,9 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 
 	candidateCount := candidateSourceCount(k)
 	rows, err := s.queries.SearchSemanticDocuments(ctx, queries.SearchSemanticDocumentsParams{
-		Embedding: encoded,
-		K:         sql.NullInt64{Int64: candidateCount, Valid: true},
+		Embedding:      encoded,
+		EmbeddingModel: s.embedder.Model(),
+		K:              sql.NullInt64{Int64: candidateCount, Valid: true},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("search semantic documents: %w", err)

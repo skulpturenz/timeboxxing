@@ -56,7 +56,9 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.QuestionAnswer
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Settings
 import com.timeboxxing.app.data.currentCalendarDate
+import com.timeboxxing.app.model.AmaAppUsageChart
 import com.timeboxxing.app.model.AmaMessage
 import com.timeboxxing.app.model.AmaMessageRole
 import com.timeboxxing.app.model.AmaIndexState
@@ -111,12 +113,14 @@ fun TimeboxxingScreen(
             contentWidth >= 860.dp -> WorkspaceLayout.Medium
             else -> WorkspaceLayout.Compact
         }
+        val scheduleScrollState = rememberSchedulePaneScrollState()
 
         Row(
             modifier = Modifier.fillMaxSize(),
         ) {
             AppNavigationPane(
                 selectedSection = state.selectedSection,
+                sections = state.visibleNavigationSections,
                 compact = !navigationWide,
                 onAction = onAction,
                 modifier = Modifier
@@ -146,13 +150,19 @@ fun TimeboxxingScreen(
                         }
 
                         when (layout) {
-                            WorkspaceLayout.Wide -> WideWorkspace(state, onAction, usageIconLoader)
-                            WorkspaceLayout.Medium -> MediumWorkspace(state, onAction, usageIconLoader)
-                            WorkspaceLayout.Compact -> CompactWorkspace(state, onAction, usageIconLoader)
+                            WorkspaceLayout.Wide -> WideWorkspace(state, onAction, usageIconLoader, scheduleScrollState)
+                            WorkspaceLayout.Medium -> MediumWorkspace(state, onAction, usageIconLoader, scheduleScrollState)
+                            WorkspaceLayout.Compact -> CompactWorkspace(state, onAction, usageIconLoader, scheduleScrollState)
                         }
                     }
 
                     TimeboxxingSection.Ama -> AmaPane(
+                        state = state,
+                        onAction = onAction,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+
+                    TimeboxxingSection.Settings -> SettingsPane(
                         state = state,
                         onAction = onAction,
                         modifier = Modifier.fillMaxSize(),
@@ -166,6 +176,7 @@ fun TimeboxxingScreen(
 @Composable
 private fun AppNavigationPane(
     selectedSection: TimeboxxingSection,
+    sections: List<TimeboxxingSection>,
     compact: Boolean,
     onAction: (TimeboxxingAction) -> Unit,
     modifier: Modifier = Modifier,
@@ -200,7 +211,7 @@ private fun AppNavigationPane(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        TimeboxxingSection.entries.forEach { section ->
+        sections.forEach { section ->
             AppNavigationItem(
                 section = section,
                 selected = section == selectedSection,
@@ -614,6 +625,7 @@ private fun WideWorkspace(
     state: TimeboxxingScreenState,
     onAction: (TimeboxxingAction) -> Unit,
     usageIconLoader: UsageIconLoader,
+    scheduleScrollState: SchedulePaneScrollState,
 ) {
     val onlyProjectsExpanded = WorkspacePane.UsageSchedule in state.collapsedPanes &&
         WorkspacePane.TimeEntries in state.collapsedPanes &&
@@ -636,6 +648,7 @@ private fun WideWorkspace(
                 onUsageClick = { onAction(TimeboxxingAction.ToggleUsageSelection(it)) },
                 onClearSelection = { onAction(TimeboxxingAction.ClearUsageSelection) },
                 onCreateEntry = { onAction(TimeboxxingAction.AddDraftEntry) },
+                scrollState = scheduleScrollState,
                 modifier = paneModifier,
                 headerAction = headerAction,
             )
@@ -681,6 +694,7 @@ private fun MediumWorkspace(
     state: TimeboxxingScreenState,
     onAction: (TimeboxxingAction) -> Unit,
     usageIconLoader: UsageIconLoader,
+    scheduleScrollState: SchedulePaneScrollState,
 ) {
     val autoExpandedUsage = (
         WorkspacePane.UsageSchedule in state.collapsedPanes &&
@@ -709,6 +723,7 @@ private fun MediumWorkspace(
                 onUsageClick = { onAction(TimeboxxingAction.ToggleUsageSelection(it)) },
                 onClearSelection = { onAction(TimeboxxingAction.ClearUsageSelection) },
                 onCreateEntry = { onAction(TimeboxxingAction.AddDraftEntry) },
+                scrollState = scheduleScrollState,
                 modifier = paneModifier,
                 headerAction = headerAction,
             )
@@ -738,6 +753,7 @@ private fun CompactWorkspace(
     state: TimeboxxingScreenState,
     onAction: (TimeboxxingAction) -> Unit,
     usageIconLoader: UsageIconLoader,
+    scheduleScrollState: SchedulePaneScrollState,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Usage", "Entries")
@@ -759,6 +775,7 @@ private fun CompactWorkspace(
                 onUsageClick = { onAction(TimeboxxingAction.ToggleUsageSelection(it)) },
                 onClearSelection = { onAction(TimeboxxingAction.ClearUsageSelection) },
                 onCreateEntry = { onAction(TimeboxxingAction.AddDraftEntry) },
+                scrollState = scheduleScrollState,
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -953,10 +970,118 @@ private fun AmaMessageRow(message: AmaMessage) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                if (!isUser && message.artifacts.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        message.artifacts.forEach { artifact ->
+                            when (artifact) {
+                                is AmaAppUsageChart -> AmaAppUsageChartCard(artifact)
+                            }
+                        }
+                    }
+                }
                 if (message.sources.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         message.sources.take(3).forEach { source ->
                             AmaSourceCard(source)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaAppUsageChartCard(chart: AmaAppUsageChart) {
+    val maxSeconds = chart.buckets.maxOfOrNull { it.durationSeconds }?.coerceAtLeast(1) ?: 1
+    TbSurface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(TbTheme.radii.card),
+        color = TbTheme.colors.groupedSurface,
+        border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    TbText(
+                        text = "Most Used Apps",
+                        style = TbTheme.typography.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    TbText(
+                        text = chart.periodLabel.ifBlank { "Selected period" },
+                        style = TbTheme.typography.caption,
+                        color = TbTheme.colors.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                TbText(
+                    text = "${formatUsageChartDuration(chart.totalDurationSeconds)} captured",
+                    style = TbTheme.typography.caption,
+                    color = TbTheme.colors.tertiaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            if (chart.buckets.isEmpty()) {
+                TbText(
+                    text = "No app usage found",
+                    style = TbTheme.typography.bodySmall,
+                    color = TbTheme.colors.secondaryText,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    chart.buckets.forEach { bucket ->
+                        val fraction = (bucket.durationSeconds.toFloat() / maxSeconds.toFloat()).coerceIn(0.04f, 1f)
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TbText(
+                                    modifier = Modifier.weight(1f),
+                                    text = bucket.name.ifBlank { "Unknown application" },
+                                    style = TbTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                TbText(
+                                    text = "${formatUsageChartDuration(bucket.durationSeconds)} • ${formatUsageChartPercent(bucket.durationSeconds, chart.totalDurationSeconds)}",
+                                    style = TbTheme.typography.caption,
+                                    color = TbTheme.colors.secondaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(TbTheme.colors.controlFill),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(fraction)
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(TbTheme.colors.accent),
+                                )
+                            }
                         }
                     }
                 }
@@ -1215,13 +1340,36 @@ private val TimeboxxingSection.label: String
     get() = when (this) {
         TimeboxxingSection.Overview -> "Overview"
         TimeboxxingSection.Ama -> "AMA"
+        TimeboxxingSection.Settings -> "Settings"
     }
 
 private val TimeboxxingSection.icon: ImageVector
     get() = when (this) {
         TimeboxxingSection.Overview -> Icons.Rounded.Dashboard
         TimeboxxingSection.Ama -> Icons.Rounded.QuestionAnswer
+        TimeboxxingSection.Settings -> Icons.Rounded.Settings
     }
+
+private fun formatUsageChartDuration(seconds: Long): String {
+    val minutes = (seconds.coerceAtLeast(0) / 60).toInt()
+    if (minutes <= 0) {
+        return "<1m"
+    }
+    val hours = minutes / 60
+    val remainder = minutes % 60
+    return when {
+        hours == 0 -> "${remainder}m"
+        remainder == 0 -> "${hours}h"
+        else -> "${hours}h ${remainder}m"
+    }
+}
+
+private fun formatUsageChartPercent(seconds: Long, totalSeconds: Long): String {
+    if (seconds <= 0 || totalSeconds <= 0) {
+        return "0%"
+    }
+    return "${((seconds.toDouble() / totalSeconds.toDouble()) * 100.0).roundToInt()}%"
+}
 
 private fun Double.formatDistance(): String =
     ((this * 1000.0).roundToInt() / 1000.0).toString()

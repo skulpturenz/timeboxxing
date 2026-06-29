@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	amav1 "github.com/skulpturenz/timeboxxing/sidecar/gen/ama/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
@@ -168,6 +169,82 @@ func TestAskValidationAndErrors(t *testing.T) {
 	})
 	if _, err := server.Ask(context.Background(), &amav1.AskRequest{Question: "hello"}); status.Code(err) != codes.Internal {
 		t.Fatalf("expected internal generation error, got %v", err)
+	}
+}
+
+func TestAskMapsAIRequestErrorsToSafeGrpcStatus(t *testing.T) {
+	server := NewServer(NewServerParams{
+		Answerer: semantic.NewAnswerer(
+			&recordingSearcher{err: &semantic.AIRequestError{
+				Provider:   semantic.ProviderOpenRouter,
+				Endpoint:   "/embeddings",
+				StatusCode: 429,
+				RetryAfter: "2",
+				Message:    "Rate limit exceeded for sk-secret",
+			}},
+			&recordingGenerator{answer: "ok"},
+		),
+	})
+
+	_, err := server.Ask(context.Background(), &amav1.AskRequest{Question: "hello"})
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("expected resource exhausted, got %v", err)
+	}
+	if got := status.Convert(err).Message(); got != "OpenRouter rate limit exceeded. Try again in 2 seconds." {
+		t.Fatalf("unexpected error message %q", got)
+	}
+}
+
+func TestAnswerToProtoMapsAppUsageChartArtifact(t *testing.T) {
+	startedAt := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
+	endedAt := startedAt.Add(24 * time.Hour)
+
+	resp := answerToProto(&semantic.Answer{
+		Answer: "Chrome was your most used app.",
+		Model:  "test-model",
+		Artifacts: []semantic.Artifact{{
+			Type: semantic.ArtifactTypeAppUsageChart,
+			AppUsageChart: &semantic.AppUsageChart{
+				StartedAt:            startedAt,
+				EndedAt:              endedAt,
+				TimeZone:             "UTC",
+				TotalDurationSeconds: 3600,
+				Buckets: []semantic.AppUsageBucket{{
+					Name:            "Google Chrome",
+					SourceType:      "browser",
+					DurationSeconds: 3600,
+					SessionCount:    2,
+				}},
+			},
+		}},
+	}, semantic.IndexStatus{})
+
+	if len(resp.GetArtifacts()) != 1 {
+		t.Fatalf("expected one artifact, got %#v", resp.GetArtifacts())
+	}
+	chart := resp.GetArtifacts()[0].GetAppUsageChart()
+	if chart == nil {
+		t.Fatalf("expected app usage chart artifact, got %#v", resp.GetArtifacts()[0])
+	}
+	if chart.GetTotalDurationSeconds() != 3600 || chart.GetBuckets()[0].GetName() != "Google Chrome" {
+		t.Fatalf("unexpected chart artifact %#v", chart)
+	}
+}
+
+func TestSemanticIndexStatusIncludesUnavailableReason(t *testing.T) {
+	server := NewServer(NewServerParams{
+		UnavailableReason: "OpenRouter API key is invalid or expired.",
+	})
+
+	resp, err := server.GetSemanticIndexStatus(context.Background(), &amav1.GetSemanticIndexStatusRequest{})
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if resp.GetState() != amav1.SemanticIndexStatus_UNAVAILABLE {
+		t.Fatalf("expected unavailable state, got %v", resp.GetState())
+	}
+	if resp.GetMessage() != "OpenRouter API key is invalid or expired." {
+		t.Fatalf("unexpected unavailable message %q", resp.GetMessage())
 	}
 }
 

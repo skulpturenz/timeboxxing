@@ -15,6 +15,7 @@ WITH matches AS (
   SELECT semantic_document_id, distance
   FROM semantic_document_float32_embeddings
   WHERE embedding MATCH ?
+    AND embedding_model = ?
     AND k = ?
 )
 SELECT
@@ -32,8 +33,9 @@ ORDER BY matches.distance
 `
 
 type SearchSemanticDocumentsParams struct {
-	Embedding string
-	K         sql.NullInt64
+	Embedding      string
+	EmbeddingModel string
+	K              sql.NullInt64
 }
 
 type SearchSemanticDocumentsRow struct {
@@ -48,7 +50,7 @@ type SearchSemanticDocumentsRow struct {
 }
 
 func (q *Queries) SearchSemanticDocuments(ctx context.Context, arg SearchSemanticDocumentsParams) ([]SearchSemanticDocumentsRow, error) {
-	rows, err := q.db.QueryContext(ctx, searchSemanticDocuments, arg.Embedding, arg.K)
+	rows, err := q.db.QueryContext(ctx, searchSemanticDocuments, arg.Embedding, arg.EmbeddingModel, arg.K)
 	if err != nil {
 		return nil, err
 	}

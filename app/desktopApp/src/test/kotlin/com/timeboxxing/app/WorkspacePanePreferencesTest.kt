@@ -47,16 +47,3 @@ class WorkspacePanePreferencesTest {
         assertTrue(store.values.values.none { it.contains("Morgan", ignoreCase = true) })
     }
 }
-
-private class FakePreferenceStringStore(
-    initialValues: Map<String, String> = emptyMap(),
-) : PreferenceStringStore {
-    val values = initialValues.toMutableMap()
-
-    override fun get(key: String, defaultValue: String): String =
-        values[key] ?: defaultValue
-
-    override fun put(key: String, value: String) {
-        values[key] = value
-    }
-}

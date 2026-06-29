@@ -74,7 +74,7 @@ func (x SemanticIndexStatus_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SemanticIndexStatus_State.Descriptor instead.
 func (SemanticIndexStatus_State) EnumDescriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{4, 0}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{7, 0}
 }
 
 type AskRequest struct {
@@ -135,6 +135,7 @@ type AskResponse struct {
 	Model               string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
 	Sources             []*Source              `protobuf:"bytes,3,rep,name=sources,proto3" json:"sources,omitempty"`
 	SemanticIndexStatus *SemanticIndexStatus   `protobuf:"bytes,4,opt,name=semantic_index_status,json=semanticIndexStatus,proto3" json:"semantic_index_status,omitempty"`
+	Artifacts           []*Artifact            `protobuf:"bytes,5,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -193,6 +194,13 @@ func (x *AskResponse) GetSources() []*Source {
 func (x *AskResponse) GetSemanticIndexStatus() *SemanticIndexStatus {
 	if x != nil {
 		return x.SemanticIndexStatus
+	}
+	return nil
+}
+
+func (x *AskResponse) GetArtifacts() []*Artifact {
+	if x != nil {
+		return x.Artifacts
 	}
 	return nil
 }
@@ -289,6 +297,240 @@ func (x *Source) GetEndedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type Artifact struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Value:
+	//
+	//	*Artifact_AppUsageChart
+	Value         isArtifact_Value `protobuf_oneof:"value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Artifact) Reset() {
+	*x = Artifact{}
+	mi := &file_ama_v1_ama_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Artifact) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Artifact) ProtoMessage() {}
+
+func (x *Artifact) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Artifact.ProtoReflect.Descriptor instead.
+func (*Artifact) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Artifact) GetValue() isArtifact_Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *Artifact) GetAppUsageChart() *AppUsageChart {
+	if x != nil {
+		if x, ok := x.Value.(*Artifact_AppUsageChart); ok {
+			return x.AppUsageChart
+		}
+	}
+	return nil
+}
+
+type isArtifact_Value interface {
+	isArtifact_Value()
+}
+
+type Artifact_AppUsageChart struct {
+	AppUsageChart *AppUsageChart `protobuf:"bytes,1,opt,name=app_usage_chart,json=appUsageChart,proto3,oneof"`
+}
+
+func (*Artifact_AppUsageChart) isArtifact_Value() {}
+
+type AppUsageChart struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	StartedAt            *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	EndedAt              *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	Timezone             string                 `protobuf:"bytes,3,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	TotalDurationSeconds int64                  `protobuf:"varint,4,opt,name=total_duration_seconds,json=totalDurationSeconds,proto3" json:"total_duration_seconds,omitempty"`
+	Buckets              []*AppUsageBucket      `protobuf:"bytes,5,rep,name=buckets,proto3" json:"buckets,omitempty"`
+	PeriodLabel          string                 `protobuf:"bytes,6,opt,name=period_label,json=periodLabel,proto3" json:"period_label,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *AppUsageChart) Reset() {
+	*x = AppUsageChart{}
+	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppUsageChart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppUsageChart) ProtoMessage() {}
+
+func (x *AppUsageChart) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppUsageChart.ProtoReflect.Descriptor instead.
+func (*AppUsageChart) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *AppUsageChart) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *AppUsageChart) GetEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndedAt
+	}
+	return nil
+}
+
+func (x *AppUsageChart) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *AppUsageChart) GetTotalDurationSeconds() int64 {
+	if x != nil {
+		return x.TotalDurationSeconds
+	}
+	return 0
+}
+
+func (x *AppUsageChart) GetBuckets() []*AppUsageBucket {
+	if x != nil {
+		return x.Buckets
+	}
+	return nil
+}
+
+func (x *AppUsageChart) GetPeriodLabel() string {
+	if x != nil {
+		return x.PeriodLabel
+	}
+	return ""
+}
+
+type AppUsageBucket struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Name                  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	SourceType            string                 `protobuf:"bytes,2,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`
+	DurationSeconds       int64                  `protobuf:"varint,3,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	SessionCount          int64                  `protobuf:"varint,4,opt,name=session_count,json=sessionCount,proto3" json:"session_count,omitempty"`
+	ApplicationIdentifier string                 `protobuf:"bytes,5,opt,name=application_identifier,json=applicationIdentifier,proto3" json:"application_identifier,omitempty"`
+	ApplicationPath       string                 `protobuf:"bytes,6,opt,name=application_path,json=applicationPath,proto3" json:"application_path,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *AppUsageBucket) Reset() {
+	*x = AppUsageBucket{}
+	mi := &file_ama_v1_ama_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppUsageBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppUsageBucket) ProtoMessage() {}
+
+func (x *AppUsageBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppUsageBucket.ProtoReflect.Descriptor instead.
+func (*AppUsageBucket) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *AppUsageBucket) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AppUsageBucket) GetSourceType() string {
+	if x != nil {
+		return x.SourceType
+	}
+	return ""
+}
+
+func (x *AppUsageBucket) GetDurationSeconds() int64 {
+	if x != nil {
+		return x.DurationSeconds
+	}
+	return 0
+}
+
+func (x *AppUsageBucket) GetSessionCount() int64 {
+	if x != nil {
+		return x.SessionCount
+	}
+	return 0
+}
+
+func (x *AppUsageBucket) GetApplicationIdentifier() string {
+	if x != nil {
+		return x.ApplicationIdentifier
+	}
+	return ""
+}
+
+func (x *AppUsageBucket) GetApplicationPath() string {
+	if x != nil {
+		return x.ApplicationPath
+	}
+	return ""
+}
+
 type GetSemanticIndexStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -297,7 +539,7 @@ type GetSemanticIndexStatusRequest struct {
 
 func (x *GetSemanticIndexStatusRequest) Reset() {
 	*x = GetSemanticIndexStatusRequest{}
-	mi := &file_ama_v1_ama_proto_msgTypes[3]
+	mi := &file_ama_v1_ama_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -309,7 +551,7 @@ func (x *GetSemanticIndexStatusRequest) String() string {
 func (*GetSemanticIndexStatusRequest) ProtoMessage() {}
 
 func (x *GetSemanticIndexStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ama_v1_ama_proto_msgTypes[3]
+	mi := &file_ama_v1_ama_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -322,7 +564,7 @@ func (x *GetSemanticIndexStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSemanticIndexStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetSemanticIndexStatusRequest) Descriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{3}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{6}
 }
 
 type SemanticIndexStatus struct {
@@ -339,7 +581,7 @@ type SemanticIndexStatus struct {
 
 func (x *SemanticIndexStatus) Reset() {
 	*x = SemanticIndexStatus{}
-	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	mi := &file_ama_v1_ama_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -351,7 +593,7 @@ func (x *SemanticIndexStatus) String() string {
 func (*SemanticIndexStatus) ProtoMessage() {}
 
 func (x *SemanticIndexStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	mi := &file_ama_v1_ama_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -364,7 +606,7 @@ func (x *SemanticIndexStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SemanticIndexStatus.ProtoReflect.Descriptor instead.
 func (*SemanticIndexStatus) Descriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{4}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SemanticIndexStatus) GetState() SemanticIndexStatus_State {
@@ -418,12 +660,13 @@ const file_ama_v1_ama_proto_rawDesc = "" +
 	"AskRequest\x12\x1a\n" +
 	"\bquestion\x18\x01 \x01(\tR\bquestion\x12\x1f\n" +
 	"\vmax_sources\x18\x02 \x01(\x05R\n" +
-	"maxSources\"\xb6\x01\n" +
+	"maxSources\"\xe6\x01\n" +
 	"\vAskResponse\x12\x16\n" +
 	"\x06answer\x18\x01 \x01(\tR\x06answer\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x12(\n" +
 	"\asources\x18\x03 \x03(\v2\x0e.ama.v1.SourceR\asources\x12O\n" +
-	"\x15semantic_index_status\x18\x04 \x01(\v2\x1b.ama.v1.SemanticIndexStatusR\x13semanticIndexStatus\"\xa8\x02\n" +
+	"\x15semantic_index_status\x18\x04 \x01(\v2\x1b.ama.v1.SemanticIndexStatusR\x13semanticIndexStatus\x12.\n" +
+	"\tartifacts\x18\x05 \x03(\v2\x10.ama.v1.ArtifactR\tartifacts\"\xa8\x02\n" +
 	"\x06Source\x12.\n" +
 	"\x13transition_event_id\x18\x01 \x01(\x03R\x11transitionEventId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12\x1a\n" +
@@ -432,7 +675,26 @@ const file_ama_v1_ama_proto_rawDesc = "" +
 	"\rdocument_type\x18\x05 \x01(\tR\fdocumentType\x129\n" +
 	"\n" +
 	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\x1f\n" +
+	"\bended_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"T\n" +
+	"\bArtifact\x12?\n" +
+	"\x0fapp_usage_chart\x18\x01 \x01(\v2\x15.ama.v1.AppUsageChartH\x00R\rappUsageChartB\a\n" +
+	"\x05value\"\xa8\x02\n" +
+	"\rAppUsageChart\x129\n" +
+	"\n" +
+	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
+	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12\x1a\n" +
+	"\btimezone\x18\x03 \x01(\tR\btimezone\x124\n" +
+	"\x16total_duration_seconds\x18\x04 \x01(\x03R\x14totalDurationSeconds\x120\n" +
+	"\abuckets\x18\x05 \x03(\v2\x16.ama.v1.AppUsageBucketR\abuckets\x12!\n" +
+	"\fperiod_label\x18\x06 \x01(\tR\vperiodLabel\"\xf7\x01\n" +
+	"\x0eAppUsageBucket\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\vsource_type\x18\x02 \x01(\tR\n" +
+	"sourceType\x12)\n" +
+	"\x10duration_seconds\x18\x03 \x01(\x03R\x0fdurationSeconds\x12#\n" +
+	"\rsession_count\x18\x04 \x01(\x03R\fsessionCount\x125\n" +
+	"\x16application_identifier\x18\x05 \x01(\tR\x15applicationIdentifier\x12)\n" +
+	"\x10application_path\x18\x06 \x01(\tR\x0fapplicationPath\"\x1f\n" +
 	"\x1dGetSemanticIndexStatusRequest\"\xfc\x02\n" +
 	"\x13SemanticIndexStatus\x127\n" +
 	"\x05state\x18\x01 \x01(\x0e2!.ama.v1.SemanticIndexStatus.StateR\x05state\x122\n" +
@@ -467,31 +729,39 @@ func file_ama_v1_ama_proto_rawDescGZIP() []byte {
 }
 
 var file_ama_v1_ama_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ama_v1_ama_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_ama_v1_ama_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_ama_v1_ama_proto_goTypes = []any{
 	(SemanticIndexStatus_State)(0),        // 0: ama.v1.SemanticIndexStatus.State
 	(*AskRequest)(nil),                    // 1: ama.v1.AskRequest
 	(*AskResponse)(nil),                   // 2: ama.v1.AskResponse
 	(*Source)(nil),                        // 3: ama.v1.Source
-	(*GetSemanticIndexStatusRequest)(nil), // 4: ama.v1.GetSemanticIndexStatusRequest
-	(*SemanticIndexStatus)(nil),           // 5: ama.v1.SemanticIndexStatus
-	(*timestamppb.Timestamp)(nil),         // 6: google.protobuf.Timestamp
+	(*Artifact)(nil),                      // 4: ama.v1.Artifact
+	(*AppUsageChart)(nil),                 // 5: ama.v1.AppUsageChart
+	(*AppUsageBucket)(nil),                // 6: ama.v1.AppUsageBucket
+	(*GetSemanticIndexStatusRequest)(nil), // 7: ama.v1.GetSemanticIndexStatusRequest
+	(*SemanticIndexStatus)(nil),           // 8: ama.v1.SemanticIndexStatus
+	(*timestamppb.Timestamp)(nil),         // 9: google.protobuf.Timestamp
 }
 var file_ama_v1_ama_proto_depIdxs = []int32{
-	3, // 0: ama.v1.AskResponse.sources:type_name -> ama.v1.Source
-	5, // 1: ama.v1.AskResponse.semantic_index_status:type_name -> ama.v1.SemanticIndexStatus
-	6, // 2: ama.v1.Source.started_at:type_name -> google.protobuf.Timestamp
-	6, // 3: ama.v1.Source.ended_at:type_name -> google.protobuf.Timestamp
-	0, // 4: ama.v1.SemanticIndexStatus.state:type_name -> ama.v1.SemanticIndexStatus.State
-	1, // 5: ama.v1.AmaService.Ask:input_type -> ama.v1.AskRequest
-	4, // 6: ama.v1.AmaService.GetSemanticIndexStatus:input_type -> ama.v1.GetSemanticIndexStatusRequest
-	2, // 7: ama.v1.AmaService.Ask:output_type -> ama.v1.AskResponse
-	5, // 8: ama.v1.AmaService.GetSemanticIndexStatus:output_type -> ama.v1.SemanticIndexStatus
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	3,  // 0: ama.v1.AskResponse.sources:type_name -> ama.v1.Source
+	8,  // 1: ama.v1.AskResponse.semantic_index_status:type_name -> ama.v1.SemanticIndexStatus
+	4,  // 2: ama.v1.AskResponse.artifacts:type_name -> ama.v1.Artifact
+	9,  // 3: ama.v1.Source.started_at:type_name -> google.protobuf.Timestamp
+	9,  // 4: ama.v1.Source.ended_at:type_name -> google.protobuf.Timestamp
+	5,  // 5: ama.v1.Artifact.app_usage_chart:type_name -> ama.v1.AppUsageChart
+	9,  // 6: ama.v1.AppUsageChart.started_at:type_name -> google.protobuf.Timestamp
+	9,  // 7: ama.v1.AppUsageChart.ended_at:type_name -> google.protobuf.Timestamp
+	6,  // 8: ama.v1.AppUsageChart.buckets:type_name -> ama.v1.AppUsageBucket
+	0,  // 9: ama.v1.SemanticIndexStatus.state:type_name -> ama.v1.SemanticIndexStatus.State
+	1,  // 10: ama.v1.AmaService.Ask:input_type -> ama.v1.AskRequest
+	7,  // 11: ama.v1.AmaService.GetSemanticIndexStatus:input_type -> ama.v1.GetSemanticIndexStatusRequest
+	2,  // 12: ama.v1.AmaService.Ask:output_type -> ama.v1.AskResponse
+	8,  // 13: ama.v1.AmaService.GetSemanticIndexStatus:output_type -> ama.v1.SemanticIndexStatus
+	12, // [12:14] is the sub-list for method output_type
+	10, // [10:12] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_ama_v1_ama_proto_init() }
@@ -499,13 +769,16 @@ func file_ama_v1_ama_proto_init() {
 	if File_ama_v1_ama_proto != nil {
 		return
 	}
+	file_ama_v1_ama_proto_msgTypes[3].OneofWrappers = []any{
+		(*Artifact_AppUsageChart)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ama_v1_ama_proto_rawDesc), len(file_ama_v1_ama_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

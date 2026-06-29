@@ -20,10 +20,10 @@ type workerFakeEmbedder struct{}
 
 func (workerFakeEmbedder) Model() string { return "worker-fake-embedding" }
 
-func (workerFakeEmbedder) Dimension() int { return 2048 }
+func (workerFakeEmbedder) Dimension() int { return semantic.StoreEmbeddingDimension }
 
 func (workerFakeEmbedder) Embed(_ context.Context, input string) ([]float32, error) {
-	values := make([]float32, 2048)
+	values := make([]float32, semantic.StoreEmbeddingDimension)
 	if strings.Contains(input, "Google Chrome") {
 		values[0] = 1
 	} else {

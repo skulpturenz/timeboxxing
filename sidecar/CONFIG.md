@@ -2,11 +2,13 @@
 
 This document describes the environment variables used by `sidecar`.
 
-| Name                            | Usage                       | Description                                       |
-| ------------------------------- | --------------------------- | ------------------------------------------------- |
-| [`SIDECAR_DATABASE_DSN`]        | defaults to `test.db`       | the database data source name                     |
-| [`SIDECAR_DATABASE_ENGINE`]     | defaults to `sqlite`        | the database engine used by the sidecar           |
-| [`SIDECAR_GRPC_LISTEN_ADDRESS`] | defaults to `0.0.0.0:50051` | the host and port that the gRPC server listens on |
+| Name                            | Usage                       | Description                                                     |
+| ------------------------------- | --------------------------- | --------------------------------------------------------------- |
+| [`SIDECAR_DATABASE_DSN`]        | defaults to `test.db`       | the database data source name                                   |
+| [`SIDECAR_DATABASE_ENGINE`]     | defaults to `sqlite`        | the database engine used by the sidecar                         |
+| [`SIDECAR_GRPC_LISTEN_ADDRESS`] | defaults to `0.0.0.0:50051` | the host and port that the gRPC server listens on               |
+| [`SIDECAR_OLLAMA_API_KEY`]      | optional                    | the hosted Ollama bearer token used for semantic search and RAG |
+| [`SIDECAR_OPENROUTER_API_KEY`]  | optional                    | the OpenRouter API key used for semantic search and RAG         |
 
 > [!TIP]
 > If an environment variable is set to an empty value, `sidecar` behaves as if
@@ -58,6 +60,22 @@ addresses must be enclosed in square brackets, e.g. `[::1]:8080`.
 
 </details>
 
+## `SIDECAR_OLLAMA_API_KEY`
+
+> the hosted Ollama bearer token used for semantic search and RAG
+
+The `SIDECAR_OLLAMA_API_KEY` variable **MAY** be left undefined.
+
+⚠️ This variable is **sensitive**; its value may contain private information.
+
+## `SIDECAR_OPENROUTER_API_KEY`
+
+> the OpenRouter API key used for semantic search and RAG
+
+The `SIDECAR_OPENROUTER_API_KEY` variable **MAY** be left undefined.
+
+⚠️ This variable is **sensitive**; its value may contain private information.
+
 ---
 
 > [!NOTE]
@@ -75,3 +93,5 @@ addresses must be enclosed in square brackets, e.g. `[::1]:8080`.
 [`sidecar_database_dsn`]: #sidecar_database_dsn
 [`sidecar_database_engine`]: #sidecar_database_engine
 [`sidecar_grpc_listen_address`]: #sidecar_grpc_listen_address
+[`sidecar_ollama_api_key`]: #sidecar_ollama_api_key
+[`sidecar_openrouter_api_key`]: #sidecar_openrouter_api_key

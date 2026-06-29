@@ -6,7 +6,7 @@ import java.util.prefs.Preferences
 
 internal class WorkspacePanePreferences(
     private val store: PreferenceStringStore = JavaPreferenceStringStore(
-        Preferences.userRoot().node(WorkspacePanePreferencesNode),
+        preferencesNode(),
     ),
 ) {
     fun load(): Set<WorkspacePane> =
@@ -30,7 +30,7 @@ internal interface PreferenceStringStore {
     fun put(key: String, value: String)
 }
 
-private class JavaPreferenceStringStore(
+internal class JavaPreferenceStringStore(
     private val preferences: Preferences,
 ) : PreferenceStringStore {
     override fun get(key: String, defaultValue: String): String =
@@ -41,6 +41,9 @@ private class JavaPreferenceStringStore(
         runCatching { preferences.flush() }
     }
 }
+
+internal fun preferencesNode(): Preferences =
+    Preferences.userRoot().node(WorkspacePanePreferencesNode)
 
 private const val WorkspacePanePreferencesNode = "com.timeboxxing.app.ui"
 private const val CollapsedWorkspacePanesKey = "collapsedWorkspacePanes"

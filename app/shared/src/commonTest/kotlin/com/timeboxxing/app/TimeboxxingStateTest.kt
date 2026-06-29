@@ -2,9 +2,13 @@ package com.timeboxxing.app
 
 import androidx.compose.ui.graphics.Color
 import com.timeboxxing.app.model.AmaAnswer
+import com.timeboxxing.app.model.AmaAppUsageBucket
+import com.timeboxxing.app.model.AmaAppUsageChart
 import com.timeboxxing.app.model.AmaMessageRole
 import com.timeboxxing.app.model.AmaSource
 import com.timeboxxing.app.data.mockTimeboxxingData
+import com.timeboxxing.app.model.AiSettings
+import com.timeboxxing.app.model.AppearanceMode
 import com.timeboxxing.app.model.CalendarDate
 import com.timeboxxing.app.model.EntryMode
 import com.timeboxxing.app.model.TimeEntry
@@ -27,6 +31,7 @@ import com.timeboxxing.app.ui.timelineRowHeightDpForZoom
 import com.timeboxxing.app.ui.timelineScrollToMinuteDp
 import com.timeboxxing.app.ui.timelineSegmentsForRow
 import com.timeboxxing.app.ui.timelineIntervalMarkerOffsets
+import com.timeboxxing.app.ui.SchedulePaneAutoScrollState
 import com.timeboxxing.app.ui.TimelineScrollDirection
 import com.timeboxxing.app.ui.TbDarkColors
 import com.timeboxxing.app.ui.TbLightColors
@@ -45,8 +50,8 @@ class TimeboxxingStateTest {
     fun lightAndDarkPalettesUseDistinctSurfaces() {
         assertEquals(Color.White, TbLightColors.appBackground)
         assertEquals(Color.Black, TbDarkColors.appBackground)
-        assertEquals(Color(0xFFCFE90C), TbLightColors.accent)
-        assertEquals(Color(0xFFDDF42A), TbDarkColors.accent)
+        assertEquals(Color(0xFF00FFEE), TbLightColors.accent)
+        assertEquals(Color(0xFF00FFEE), TbDarkColors.accent)
         assertTrue(TbLightColors.appBackground != TbDarkColors.appBackground)
         assertTrue(TbLightColors.surface != TbDarkColors.surface)
         assertTrue(TbLightColors.elevatedSurface != TbDarkColors.elevatedSurface)
@@ -68,6 +73,29 @@ class TimeboxxingStateTest {
     }
 
     @Test
+    fun appearanceModeDefaultsToSystem() {
+        val initial = createInitialTimeboxxingState()
+
+        assertEquals(AppearanceMode.System, initial.appearanceMode)
+    }
+
+    @Test
+    fun updatingAppearanceModeChangesOnlyAppearanceState() {
+        val initial = createInitialTimeboxxingState().copy(
+            settingsError = "Old error",
+            settingsSavedMessage = "Saved",
+        )
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.UpdateAppearanceMode(AppearanceMode.Dark))
+
+        assertEquals(AppearanceMode.Dark, state.appearanceMode)
+        assertEquals(initial.settingsDraft, state.settingsDraft)
+        assertEquals(initial.aiSettings, state.aiSettings)
+        assertEquals(null, state.settingsError)
+        assertEquals(null, state.settingsSavedMessage)
+    }
+
+    @Test
     fun selectingUsageBuildsDraftFromUsageHistory() {
         val initial = createInitialTimeboxxingState()
 
@@ -84,8 +112,47 @@ class TimeboxxingStateTest {
     }
 
     @Test
-    fun defaultSectionIsOverviewAndCanSwitchToAma() {
+    fun defaultSettingsHideAmaNavigation() {
         val initial = createInitialTimeboxxingState()
+
+        assertFalse(initial.isAmaConfigured)
+        assertFalse(TimeboxxingSection.Ama in initial.visibleNavigationSections)
+        assertEquals(listOf(TimeboxxingSection.Overview, TimeboxxingSection.Settings), initial.visibleNavigationSections)
+    }
+
+    @Test
+    fun openRouterSecretShowsAmaNavigation() {
+        val state = createInitialTimeboxxingState().copy(
+            aiSettings = AiSettings(openRouterSecretExists = true),
+        )
+
+        assertTrue(state.isAmaConfigured)
+        assertTrue(TimeboxxingSection.Ama in state.visibleNavigationSections)
+    }
+
+    @Test
+    fun ollamaSecretShowsAmaNavigation() {
+        val state = createInitialTimeboxxingState().copy(
+            aiSettings = AiSettings(ollamaSecretExists = true),
+        )
+
+        assertTrue(state.isAmaConfigured)
+        assertTrue(TimeboxxingSection.Ama in state.visibleNavigationSections)
+    }
+
+    @Test
+    fun selectingAmaWithoutConfiguredSecretRedirectsToSettings() {
+        val initial = createInitialTimeboxxingState()
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.SelectSection(TimeboxxingSection.Ama))
+
+        assertEquals(TimeboxxingSection.Overview, initial.selectedSection)
+        assertEquals(TimeboxxingSection.Settings, state.selectedSection)
+    }
+
+    @Test
+    fun selectingAmaWithConfiguredSecretStillWorks() {
+        val initial = createAmaConfiguredState()
 
         val state = reduceTimeboxxingState(initial, TimeboxxingAction.SelectSection(TimeboxxingSection.Ama))
 
@@ -96,7 +163,7 @@ class TimeboxxingStateTest {
     @Test
     fun submittingAmaQuestionAddsUserMessageAndClearsInput() {
         val withInput = reduceTimeboxxingState(
-            createInitialTimeboxxingState(),
+            createAmaConfiguredState(),
             TimeboxxingAction.UpdateAmaInput("  What did I do today?  "),
         )
 
@@ -113,7 +180,7 @@ class TimeboxxingStateTest {
     @Test
     fun amaAnswerSuccessAddsAssistantMessageWithSources() {
         val submitted = reduceTimeboxxingState(
-            reduceTimeboxxingState(createInitialTimeboxxingState(), TimeboxxingAction.UpdateAmaInput("Question")),
+            reduceTimeboxxingState(createAmaConfiguredState(), TimeboxxingAction.UpdateAmaInput("Question")),
             TimeboxxingAction.SubmitAmaQuestion,
         )
 
@@ -134,6 +201,25 @@ class TimeboxxingStateTest {
                             distance = 0.1,
                         ),
                     ),
+                    artifacts = listOf(
+                        AmaAppUsageChart(
+                            periodLabel = "Today",
+                            startedAtEpochMillis = null,
+                            endedAtEpochMillis = null,
+                            timeZone = "UTC",
+                            totalDurationSeconds = 3600,
+                            buckets = listOf(
+                                AmaAppUsageBucket(
+                                    name = "Chrome",
+                                    sourceType = "browser",
+                                    durationSeconds = 3600,
+                                    sessionCount = 1,
+                                    applicationIdentifier = "com.google.Chrome",
+                                    applicationPath = "/Applications/Google Chrome.app",
+                                ),
+                            ),
+                        ),
+                    ),
                 ),
             ),
         )
@@ -144,12 +230,13 @@ class TimeboxxingStateTest {
         assertEquals(AmaMessageRole.Assistant, state.amaMessages.last().role)
         assertEquals("You used Chrome.", state.amaMessages.last().content)
         assertEquals(42, state.amaMessages.last().sources.first().transitionEventId)
+        assertEquals(1, state.amaMessages.last().artifacts.size)
     }
 
     @Test
     fun amaAnswerFailureKeepsQuestionAndShowsError() {
         val submitted = reduceTimeboxxingState(
-            reduceTimeboxxingState(createInitialTimeboxxingState(), TimeboxxingAction.UpdateAmaInput("Question")),
+            reduceTimeboxxingState(createAmaConfiguredState(), TimeboxxingAction.UpdateAmaInput("Question")),
             TimeboxxingAction.SubmitAmaQuestion,
         )
 
@@ -163,7 +250,7 @@ class TimeboxxingStateTest {
     @Test
     fun clearingAmaChatResetsChatState() {
         val submitted = reduceTimeboxxingState(
-            reduceTimeboxxingState(createInitialTimeboxxingState(), TimeboxxingAction.UpdateAmaInput("Question")),
+            reduceTimeboxxingState(createAmaConfiguredState(), TimeboxxingAction.UpdateAmaInput("Question")),
             TimeboxxingAction.SubmitAmaQuestion,
         )
 
@@ -520,6 +607,90 @@ class TimeboxxingStateTest {
         assertEquals("2h 5m", formatDuration(125))
         assertEquals("12:00 PM", formatClockTime(12 * 60))
         assertEquals("2:05 PM", formatClockTime(14 * 60 + 5))
+    }
+
+    @Test
+    fun scheduleInitialAutoScrollIsOneShotForSameKey() {
+        val scrollState = SchedulePaneAutoScrollState()
+
+        assertTrue(scrollState.shouldHandleInitialScroll(1L, zoomMinutes = 15, targetDp = 42f))
+        assertFalse(scrollState.shouldHandleInitialScroll(1L, zoomMinutes = 15, targetDp = 42f))
+    }
+
+    @Test
+    fun scheduleInitialAutoScrollRearmsForDifferentDay() {
+        val scrollState = SchedulePaneAutoScrollState()
+
+        assertTrue(scrollState.shouldHandleInitialScroll(1L, zoomMinutes = 15, targetDp = 42f))
+        assertTrue(scrollState.shouldHandleInitialScroll(2L, zoomMinutes = 15, targetDp = 42f))
+        assertFalse(scrollState.shouldHandleInitialScroll(2L, zoomMinutes = 15, targetDp = 42f))
+    }
+
+    @Test
+    fun scheduleInitialAutoScrollRearmsForZoomOrTargetChange() {
+        val scrollState = SchedulePaneAutoScrollState()
+
+        assertTrue(scrollState.shouldHandleInitialScroll(1L, zoomMinutes = 15, targetDp = 42f))
+        assertTrue(scrollState.shouldHandleInitialScroll(1L, zoomMinutes = 30, targetDp = 42f))
+        assertTrue(scrollState.shouldHandleInitialScroll(1L, zoomMinutes = 30, targetDp = 84f))
+        assertFalse(scrollState.shouldHandleInitialScroll(1L, zoomMinutes = 30, targetDp = 84f))
+    }
+
+    @Test
+    fun scheduleFocusedEntryAutoScrollIsOneShotForSameKey() {
+        val scrollState = SchedulePaneAutoScrollState()
+
+        assertTrue(
+            scrollState.shouldHandleFocusedEntryScroll(
+                entryId = "entry-1",
+                startMinute = 10 * 60,
+                sourceUsageIds = setOf("usage-1"),
+                zoomMinutes = 15,
+                targetDp = 120f,
+            ),
+        )
+        assertFalse(
+            scrollState.shouldHandleFocusedEntryScroll(
+                entryId = "entry-1",
+                startMinute = 10 * 60,
+                sourceUsageIds = setOf("usage-1"),
+                zoomMinutes = 15,
+                targetDp = 120f,
+            ),
+        )
+    }
+
+    @Test
+    fun scheduleFocusedEntryAutoScrollRearmsForDifferentEntry() {
+        val scrollState = SchedulePaneAutoScrollState()
+
+        assertTrue(
+            scrollState.shouldHandleFocusedEntryScroll(
+                entryId = "entry-1",
+                startMinute = 10 * 60,
+                sourceUsageIds = setOf("usage-1"),
+                zoomMinutes = 15,
+                targetDp = 120f,
+            ),
+        )
+        assertTrue(
+            scrollState.shouldHandleFocusedEntryScroll(
+                entryId = "entry-2",
+                startMinute = 11 * 60,
+                sourceUsageIds = setOf("usage-2"),
+                zoomMinutes = 15,
+                targetDp = 240f,
+            ),
+        )
+        assertFalse(
+            scrollState.shouldHandleFocusedEntryScroll(
+                entryId = "entry-2",
+                startMinute = 11 * 60,
+                sourceUsageIds = setOf("usage-2"),
+                zoomMinutes = 15,
+                targetDp = 240f,
+            ),
+        )
     }
 
     @Test
@@ -932,6 +1103,11 @@ class TimeboxxingStateTest {
 
         assertWithin(500f, timelineEntryScrollDp(grid, entry, viewportHeightDp = 600f, maxScrollDp = 500f))
     }
+
+    private fun createAmaConfiguredState() =
+        createInitialTimeboxxingState().copy(
+            aiSettings = AiSettings(openRouterSecretExists = true),
+        )
 
     private fun timeEntry(
         startMinute: Int,

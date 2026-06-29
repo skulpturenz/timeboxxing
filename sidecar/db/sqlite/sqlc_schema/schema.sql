@@ -34,10 +34,7 @@ CREATE TABLE semantic_documents (
   transition_event_id INTEGER REFERENCES transition_events(id),
   started_at TIMESTAMP,
   ended_at TIMESTAMP,
-  content TEXT NOT NULL,
-  embedding_model TEXT NOT NULL,
-  embedding_dimension INTEGER NOT NULL,
-  embedded_at TIMESTAMP
+  content TEXT NOT NULL
 );
 
 CREATE INDEX semantic_documents_type_started_idx
@@ -49,7 +46,34 @@ CREATE INDEX semantic_documents_transition_event_idx
 CREATE TABLE semantic_document_float32_embeddings (
   id INTEGER PRIMARY KEY,
   semantic_document_id INTEGER NOT NULL,
+  embedding_model TEXT NOT NULL,
+  embedding_dimension INTEGER NOT NULL,
+  embedded_at TIMESTAMP,
   embedding TEXT NOT NULL,
   k INTEGER,
   distance REAL
+);
+
+CREATE TABLE embedding_models (
+  id INTEGER PRIMARY KEY NOT NULL,
+  openrouter_slug TEXT NOT NULL,
+  ollama_slug TEXT NOT NULL,
+  label TEXT NOT NULL
+);
+
+CREATE TABLE semantic_models (
+  id INTEGER PRIMARY KEY NOT NULL,
+  openrouter_slug TEXT NOT NULL,
+  ollama_slug TEXT NOT NULL,
+  label TEXT NOT NULL
+);
+
+CREATE TABLE ai_settings (
+  id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+  provider TEXT NOT NULL CHECK (provider IN ('openrouter', 'ollama')),
+  openrouter_base_url TEXT NOT NULL,
+  ollama_base_url TEXT NOT NULL,
+  embedding_model_id INTEGER NOT NULL REFERENCES embedding_models(id),
+  semantic_model_id INTEGER NOT NULL REFERENCES semantic_models(id),
+  updated_at TIMESTAMP NOT NULL
 );

@@ -1,6 +1,7 @@
 package com.timeboxxing.app.sidecar
 
 import com.timeboxxing.app.data.GrpcAmaRepository
+import com.timeboxxing.app.data.GrpcSettingsRepository
 import com.timeboxxing.app.data.GrpcUsageHistoryRepository
 import com.timeboxxing.app.model.UsageDay
 import kotlinx.coroutines.Dispatchers
@@ -19,8 +20,11 @@ import kotlin.io.path.exists
 class SidecarProcessManager(
     private val env: Map<String, String> = System.getenv(),
 ) {
-    suspend fun start(readinessDay: UsageDay): SidecarStartResult = withContext(Dispatchers.IO) {
-        val redactor = SecretRedactor(emptyList())
+    suspend fun start(
+        readinessDay: UsageDay,
+        secrets: SidecarSecrets = SidecarSecrets(),
+    ): SidecarStartResult = withContext(Dispatchers.IO) {
+        val redactor = SecretRedactor(secrets.values())
 
         val binary = resolveSidecarBinary()
             ?: return@withContext SidecarStartResult.Failed(
@@ -37,6 +41,7 @@ class SidecarProcessManager(
                     grpcListenAddress = target,
                     databaseDsn = sidecarDatabasePath().toString(),
                     parentEnv = env,
+                    secrets = secrets,
                 )
             }
             .start()
@@ -44,6 +49,7 @@ class SidecarProcessManager(
 
         val repository = GrpcUsageHistoryRepository(target)
         val amaRepository = GrpcAmaRepository(target)
+        val settingsRepository = GrpcSettingsRepository(target)
         val deadlineNanos = System.nanoTime() + Duration.ofSeconds(15).toNanos()
         var lastError: Throwable? = null
 
@@ -51,6 +57,7 @@ class SidecarProcessManager(
             if (!process.isAlive) {
                 repository.close()
                 amaRepository.close()
+                settingsRepository.close()
                 return@withContext SidecarStartResult.Failed(
                     "Usage sidecar exited before it became ready.${logTail.messageSuffix()}",
                 )
@@ -62,6 +69,7 @@ class SidecarProcessManager(
                     SidecarConnection(
                         repository = repository,
                         amaRepository = amaRepository,
+                        settingsRepository = settingsRepository,
                         process = process,
                     ),
                 )
@@ -72,6 +80,7 @@ class SidecarProcessManager(
 
         repository.close()
         amaRepository.close()
+        settingsRepository.close()
         stopProcess(process)
         SidecarStartResult.Failed(
             "Usage sidecar did not become ready: ${redactor.redact(lastError?.message ?: "timed out")}.${logTail.messageSuffix()}",
@@ -128,13 +137,22 @@ enum class SidecarStartFailureReason {
 class SidecarConnection(
     val repository: GrpcUsageHistoryRepository,
     val amaRepository: GrpcAmaRepository,
+    val settingsRepository: GrpcSettingsRepository,
     private val process: Process,
 ) : AutoCloseable {
     override fun close() {
         repository.close()
         amaRepository.close()
+        settingsRepository.close()
         stopProcess(process)
     }
+}
+
+data class SidecarSecrets(
+    val openRouterApiKey: String = "",
+    val ollamaApiKey: String = "",
+) {
+    fun values(): List<String> = listOf(openRouterApiKey, ollamaApiKey)
 }
 
 private class ProcessLogTail(
@@ -181,13 +199,20 @@ internal fun configureSidecarEnvironment(
     grpcListenAddress: String,
     databaseDsn: String,
     parentEnv: Map<String, String>,
+    secrets: SidecarSecrets = SidecarSecrets(),
 ) {
     targetEnv["SIDECAR_GRPC_LISTEN_ADDRESS"] = grpcListenAddress
     targetEnv["SIDECAR_DATABASE_ENGINE"] = "sqlite"
     targetEnv["SIDECAR_DATABASE_DSN"] = databaseDsn
     targetEnv.remove(OpenRouterApiKeyEnvVar)
-    optionalSemanticEnvKeys.forEach { key ->
-        parentEnv[key]?.let { value -> targetEnv[key] = value }
+    targetEnv.remove(OllamaApiKeyEnvVar)
+    val openRouterApiKey = secrets.openRouterApiKey.ifBlank { parentEnv[OpenRouterApiKeyEnvVar].orEmpty() }
+    if (openRouterApiKey.isNotBlank()) {
+        targetEnv[OpenRouterApiKeyEnvVar] = openRouterApiKey
+    }
+    val ollamaApiKey = secrets.ollamaApiKey.ifBlank { parentEnv[OllamaApiKeyEnvVar].orEmpty() }
+    if (ollamaApiKey.isNotBlank()) {
+        targetEnv[OllamaApiKeyEnvVar] = ollamaApiKey
     }
 }
 
@@ -201,7 +226,7 @@ internal class SecretRedactor(
 
     fun redact(value: String): String {
         var redacted = openRouterKeyPattern.replace(value, "[REDACTED]")
-        redacted = openRouterEnvPattern.replace(redacted) { match ->
+        redacted = semanticSecretEnvPattern.replace(redacted) { match ->
             "${match.groupValues[1]}[REDACTED]"
         }
         literalSecrets.forEach { secret ->
@@ -218,14 +243,8 @@ private val sidecarExecutableName: String =
         "timeboxxing-sidecar"
     }
 
-private val optionalSemanticEnvKeys = listOf(
-    "SIDECAR_OPENROUTER_BASE_URL",
-    "SIDECAR_EMBEDDING_MODEL",
-    "SIDECAR_EMBEDDING_DIMENSION",
-    "SIDECAR_RAG_MODEL",
-)
-
 internal const val OpenRouterApiKeyEnvVar = "SIDECAR_OPENROUTER_API_KEY"
+internal const val OllamaApiKeyEnvVar = "SIDECAR_OLLAMA_API_KEY"
 
 private val openRouterKeyPattern = Regex("""sk-or-v1-[A-Za-z0-9_-]+""")
-private val openRouterEnvPattern = Regex("""(SIDECAR_OPENROUTER_API_KEY\s*=\s*)\S+""")
+private val semanticSecretEnvPattern = Regex("""((?:SIDECAR_OPENROUTER_API_KEY|SIDECAR_OLLAMA_API_KEY)\s*=\s*)\S+""")

@@ -13,13 +13,17 @@ type Querier interface {
 	CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error)
 	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
 	DeleteSemanticDocumentEmbedding(ctx context.Context, semanticDocumentID int64) error
+	GetAISettings(ctx context.Context) (GetAISettingsRow, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
-	GetSemanticIndexCounts(ctx context.Context) (GetSemanticIndexCountsRow, error)
+	GetSemanticIndexCounts(ctx context.Context, embeddingModel string) (GetSemanticIndexCountsRow, error)
 	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
 	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
-	ListMissingSemanticEventDocumentIDs(ctx context.Context, limit int64) ([]int64, error)
+	ListEmbeddingModels(ctx context.Context) ([]EmbeddingModel, error)
+	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
+	ListSemanticModels(ctx context.Context) ([]SemanticModel, error)
 	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
 	SearchSemanticDocuments(ctx context.Context, arg SearchSemanticDocumentsParams) ([]SearchSemanticDocumentsRow, error)
+	UpsertAISettings(ctx context.Context, arg UpsertAISettingsParams) error
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
 	UpsertSemanticDocument(ctx context.Context, arg UpsertSemanticDocumentParams) (int64, error)
 }

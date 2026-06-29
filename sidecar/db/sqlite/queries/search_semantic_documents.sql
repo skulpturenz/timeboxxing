@@ -3,6 +3,7 @@ WITH matches AS (
   SELECT semantic_document_id, distance
   FROM semantic_document_float32_embeddings
   WHERE embedding MATCH ?
+    AND embedding_model = ?
     AND k = ?
 )
 SELECT

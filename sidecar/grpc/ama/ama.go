@@ -11,17 +11,19 @@ import (
 type Server struct {
 	amav1.UnimplementedAmaServiceServer
 
-	answerer    *semantic.Answerer
-	backfilling BackfillCoordinator
-	indexStatus IndexStatusProvider
-	logger      *slog.Logger
+	answerer          *semantic.Answerer
+	backfilling       BackfillCoordinator
+	indexStatus       IndexStatusProvider
+	unavailableReason string
+	logger            *slog.Logger
 }
 
 type NewServerParams struct {
-	Answerer    *semantic.Answerer
-	Backfilling BackfillCoordinator
-	IndexStatus IndexStatusProvider
-	Logger      *slog.Logger
+	Answerer          *semantic.Answerer
+	Backfilling       BackfillCoordinator
+	IndexStatus       IndexStatusProvider
+	UnavailableReason string
+	Logger            *slog.Logger
 }
 
 type BackfillCoordinator interface {
@@ -39,9 +41,10 @@ func NewServer(params NewServerParams) *Server {
 		logger = slog.Default()
 	}
 	return &Server{
-		answerer:    params.Answerer,
-		backfilling: params.Backfilling,
-		indexStatus: params.IndexStatus,
-		logger:      logger,
+		answerer:          params.Answerer,
+		backfilling:       params.Backfilling,
+		indexStatus:       params.IndexStatus,
+		unavailableReason: params.UnavailableReason,
+		logger:            logger,
 	}
 }

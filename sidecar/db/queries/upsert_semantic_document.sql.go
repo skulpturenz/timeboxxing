@@ -17,34 +17,25 @@ INSERT INTO semantic_documents (
   transition_event_id,
   started_at,
   ended_at,
-  content,
-  embedding_model,
-  embedding_dimension,
-  embedded_at
+  content
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(document_key) DO UPDATE SET
   document_type = excluded.document_type,
   transition_event_id = excluded.transition_event_id,
   started_at = excluded.started_at,
   ended_at = excluded.ended_at,
-  content = excluded.content,
-  embedding_model = excluded.embedding_model,
-  embedding_dimension = excluded.embedding_dimension,
-  embedded_at = excluded.embedded_at
+  content = excluded.content
 RETURNING id
 `
 
 type UpsertSemanticDocumentParams struct {
-	DocumentKey        string
-	DocumentType       string
-	TransitionEventID  sql.NullInt64
-	StartedAt          sql.NullTime
-	EndedAt            sql.NullTime
-	Content            string
-	EmbeddingModel     string
-	EmbeddingDimension int64
-	EmbeddedAt         sql.NullTime
+	DocumentKey       string
+	DocumentType      string
+	TransitionEventID sql.NullInt64
+	StartedAt         sql.NullTime
+	EndedAt           sql.NullTime
+	Content           string
 }
 
 func (q *Queries) UpsertSemanticDocument(ctx context.Context, arg UpsertSemanticDocumentParams) (int64, error) {
@@ -55,9 +46,6 @@ func (q *Queries) UpsertSemanticDocument(ctx context.Context, arg UpsertSemantic
 		arg.StartedAt,
 		arg.EndedAt,
 		arg.Content,
-		arg.EmbeddingModel,
-		arg.EmbeddingDimension,
-		arg.EmbeddedAt,
 	)
 	var id int64
 	err := row.Scan(&id)

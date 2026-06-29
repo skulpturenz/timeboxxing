@@ -26,12 +26,13 @@ type IndexStatus struct {
 }
 
 type IndexStatusService struct {
-	querier     queries.Querier
-	backfilling *BackfillCoordinator
+	querier        queries.Querier
+	backfilling    *BackfillCoordinator
+	embeddingModel string
 }
 
-func NewIndexStatusService(querier queries.Querier, backfilling *BackfillCoordinator) *IndexStatusService {
-	return &IndexStatusService{querier: querier, backfilling: backfilling}
+func NewIndexStatusService(querier queries.Querier, backfilling *BackfillCoordinator, embeddingModel string) *IndexStatusService {
+	return &IndexStatusService{querier: querier, backfilling: backfilling, embeddingModel: embeddingModel}
 }
 
 func (s *IndexStatusService) Status(ctx context.Context) (IndexStatus, error) {
@@ -42,7 +43,7 @@ func (s *IndexStatusService) Status(ctx context.Context) (IndexStatus, error) {
 		}, nil
 	}
 
-	counts, err := s.querier.GetSemanticIndexCounts(ctx)
+	counts, err := s.querier.GetSemanticIndexCounts(ctx, s.embeddingModel)
 	if err != nil {
 		return IndexStatus{}, fmt.Errorf("get semantic index counts: %w", err)
 	}

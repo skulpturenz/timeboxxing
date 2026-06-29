@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 )
 
 const semanticBackfillDelay = 100 * time.Millisecond
 
 type MissingTransitionEventLister interface {
-	ListMissingSemanticEventDocumentIDs(ctx context.Context, limit int64) ([]int64, error)
+	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg queries.ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
 }
 
 type TransitionEventIndexer interface {
@@ -17,8 +19,9 @@ type TransitionEventIndexer interface {
 }
 
 type Backfiller struct {
-	lister  MissingTransitionEventLister
-	indexer TransitionEventIndexer
+	lister         MissingTransitionEventLister
+	indexer        TransitionEventIndexer
+	embeddingModel string
 }
 
 type BackfillResult struct {
@@ -27,8 +30,8 @@ type BackfillResult struct {
 	Failed  int
 }
 
-func NewBackfiller(lister MissingTransitionEventLister, indexer TransitionEventIndexer) *Backfiller {
-	return &Backfiller{lister: lister, indexer: indexer}
+func NewBackfiller(lister MissingTransitionEventLister, indexer TransitionEventIndexer, embeddingModel string) *Backfiller {
+	return &Backfiller{lister: lister, indexer: indexer, embeddingModel: embeddingModel}
 }
 
 func (b *Backfiller) HasMissing(ctx context.Context) (bool, error) {
@@ -36,7 +39,10 @@ func (b *Backfiller) HasMissing(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("missing transition event lister is required")
 	}
 
-	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, 1)
+	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+		EmbeddingModel: b.embeddingModel,
+		Limit:          1,
+	})
 	if err != nil {
 		return false, fmt.Errorf("list missing semantic event documents: %w", err)
 	}
@@ -54,7 +60,10 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 		return BackfillResult{}, fmt.Errorf("transition event indexer is required")
 	}
 
-	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, limit)
+	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+		EmbeddingModel: b.embeddingModel,
+		Limit:          limit,
+	})
 	if err != nil {
 		return BackfillResult{}, fmt.Errorf("list missing semantic event documents: %w", err)
 	}

@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+type AiSetting struct {
+	ID                int64
+	Provider          string
+	OpenrouterBaseUrl string
+	OllamaBaseUrl     string
+	EmbeddingModelID  int64
+	SemanticModelID   int64
+	UpdatedAt         time.Time
+}
+
 type Application struct {
 	ID                 int64
 	Name               string
@@ -16,25 +26,39 @@ type Application struct {
 	Path               sql.NullString
 }
 
+type EmbeddingModel struct {
+	ID             int64
+	OpenrouterSlug string
+	OllamaSlug     string
+	Label          string
+}
+
 type SemanticDocument struct {
-	ID                 int64
-	DocumentKey        string
-	DocumentType       string
-	TransitionEventID  sql.NullInt64
-	StartedAt          sql.NullTime
-	EndedAt            sql.NullTime
-	Content            string
-	EmbeddingModel     string
-	EmbeddingDimension int64
-	EmbeddedAt         sql.NullTime
+	ID                int64
+	DocumentKey       string
+	DocumentType      string
+	TransitionEventID sql.NullInt64
+	StartedAt         sql.NullTime
+	EndedAt           sql.NullTime
+	Content           string
 }
 
 type SemanticDocumentFloat32Embedding struct {
 	ID                 int64
 	SemanticDocumentID int64
+	EmbeddingModel     string
+	EmbeddingDimension int64
+	EmbeddedAt         sql.NullTime
 	Embedding          string
 	K                  sql.NullInt64
 	Distance           sql.NullFloat64
+}
+
+type SemanticModel struct {
+	ID             int64
+	OpenrouterSlug string
+	OllamaSlug     string
+	Label          string
 }
 
 type TransitionEvent struct {

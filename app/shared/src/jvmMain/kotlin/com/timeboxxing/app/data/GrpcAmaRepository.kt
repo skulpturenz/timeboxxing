@@ -1,9 +1,13 @@
 package com.timeboxxing.app.data
 
 import com.timeboxxing.app.model.AmaAnswer
+import com.timeboxxing.app.model.AmaAppUsageBucket
+import com.timeboxxing.app.model.AmaAppUsageChart
+import com.timeboxxing.app.model.AmaArtifact
 import com.timeboxxing.app.model.AmaIndexState
 import com.timeboxxing.app.model.AmaIndexStatus
 import com.timeboxxing.app.model.AmaSource
+import com.timeboxxing.sidecar.ama.v1.Artifact
 import com.timeboxxing.sidecar.ama.v1.AmaServiceGrpcKt
 import com.timeboxxing.sidecar.ama.v1.AskRequest
 import com.timeboxxing.sidecar.ama.v1.AskResponse
@@ -78,8 +82,34 @@ internal fun AskResponse.toAmaAnswer(): AmaAnswer =
                 distance = source.distance,
             )
         },
+        artifacts = artifactsList.mapNotNull { it.toAmaArtifact() },
         indexStatus = if (hasSemanticIndexStatus()) semanticIndexStatus.toAmaIndexStatus() else null,
     )
+
+internal fun Artifact.toAmaArtifact(): AmaArtifact? =
+    when {
+        hasAppUsageChart() -> {
+            val chart = appUsageChart
+            AmaAppUsageChart(
+                periodLabel = chart.periodLabel,
+                startedAtEpochMillis = if (chart.hasStartedAt()) chart.startedAt.toEpochMillis() else null,
+                endedAtEpochMillis = if (chart.hasEndedAt()) chart.endedAt.toEpochMillis() else null,
+                timeZone = chart.timezone,
+                totalDurationSeconds = chart.totalDurationSeconds,
+                buckets = chart.bucketsList.map { bucket ->
+                    AmaAppUsageBucket(
+                        name = bucket.name,
+                        sourceType = bucket.sourceType,
+                        durationSeconds = bucket.durationSeconds,
+                        sessionCount = bucket.sessionCount,
+                        applicationIdentifier = bucket.applicationIdentifier,
+                        applicationPath = bucket.applicationPath,
+                    )
+                },
+            )
+        }
+        else -> null
+    }
 
 internal fun SemanticIndexStatus.toAmaIndexStatus(): AmaIndexStatus =
     AmaIndexStatus(
@@ -110,14 +140,35 @@ internal fun StatusException.toAmaErrorMessage(): String = status.toAmaErrorMess
 private fun Status.toAmaErrorMessage(): String =
     when (code) {
         Status.Code.DEADLINE_EXCEEDED -> "AMA is still catching up. Try again in a moment."
-        Status.Code.UNAVAILABLE -> "AMA sidecar is unavailable. Please try again in a moment."
+        Status.Code.FAILED_PRECONDITION,
+        Status.Code.RESOURCE_EXHAUSTED -> description.safeProviderMessage() ?: "AMA is not configured. Check Settings and try again."
+        Status.Code.UNAVAILABLE -> description.safeProviderMessage()
+            ?: "AMA sidecar is unavailable. Please try again in a moment."
         Status.Code.INTERNAL -> {
-            val description = description.orEmpty().lowercase()
-            if ("openrouter" in description || "embedding" in description || "semantic" in description) {
-                "Semantic model unavailable. Please try again in a moment."
-            } else {
-                "AMA could not answer right now. Please try again in a moment."
-            }
+            description.safeProviderMessage()
+                ?: description.safeAmaMessage()
+                ?: "AMA could not answer right now. Please try again in a moment."
         }
         else -> "AMA could not answer right now. Please try again in a moment."
     }
+
+private fun String?.safeProviderMessage(): String? {
+    val message = this?.trim().orEmpty()
+    if (message.isBlank()) return null
+    val safePrefixes = listOf(
+        "OpenRouter ",
+        "Ollama ",
+        "Selected OpenRouter ",
+        "Selected Ollama ",
+    )
+    return message.takeIf { safePrefixes.any(message::startsWith) }
+}
+
+private fun String?.safeAmaMessage(): String? {
+    val message = this?.trim().orEmpty()
+    if (message.isBlank()) return null
+    return message.takeIf {
+        it == "AMA could not answer right now. Please try again in a moment." ||
+            it == "Semantic index is unavailable."
+    }
+}

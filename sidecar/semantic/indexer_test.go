@@ -17,10 +17,10 @@ type fakeEmbedder struct{}
 
 func (fakeEmbedder) Model() string { return "fake-embedding" }
 
-func (fakeEmbedder) Dimension() int { return 2048 }
+func (fakeEmbedder) Dimension() int { return StoreEmbeddingDimension }
 
 func (fakeEmbedder) Embed(_ context.Context, input string) ([]float32, error) {
-	values := make([]float32, 2048)
+	values := make([]float32, StoreEmbeddingDimension)
 	if strings.Contains(input, "Google Chrome") || strings.Contains(input, "browser") {
 		values[0] = 1
 	} else {
@@ -33,7 +33,7 @@ type dimensionMismatchEmbedder struct{}
 
 func (dimensionMismatchEmbedder) Model() string { return "bad-embedding" }
 
-func (dimensionMismatchEmbedder) Dimension() int { return 2048 }
+func (dimensionMismatchEmbedder) Dimension() int { return StoreEmbeddingDimension }
 
 func (dimensionMismatchEmbedder) Embed(context.Context, string) ([]float32, error) {
 	return make([]float32, 3), nil
@@ -43,7 +43,7 @@ type failingEmbedder struct{}
 
 func (failingEmbedder) Model() string { return "failing-embedding" }
 
-func (failingEmbedder) Dimension() int { return 2048 }
+func (failingEmbedder) Dimension() int { return StoreEmbeddingDimension }
 
 func (failingEmbedder) Embed(context.Context, string) ([]float32, error) {
 	return nil, fmt.Errorf("embed failed")

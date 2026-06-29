@@ -23,6 +23,7 @@ SELECT
     JOIN semantic_document_float32_embeddings
       ON semantic_document_float32_embeddings.semantic_document_id = semantic_documents.id
     WHERE semantic_documents.document_type = 'event'
+      AND semantic_document_float32_embeddings.embedding_model = ?
   ) AS embedded_event_count
 `
 
@@ -32,8 +33,8 @@ type GetSemanticIndexCountsRow struct {
 	EmbeddedEventCount  int64
 }
 
-func (q *Queries) GetSemanticIndexCounts(ctx context.Context) (GetSemanticIndexCountsRow, error) {
-	row := q.db.QueryRowContext(ctx, getSemanticIndexCounts)
+func (q *Queries) GetSemanticIndexCounts(ctx context.Context, embeddingModel string) (GetSemanticIndexCountsRow, error) {
+	row := q.db.QueryRowContext(ctx, getSemanticIndexCounts, embeddingModel)
 	var i GetSemanticIndexCountsRow
 	err := row.Scan(&i.CompletedEventCount, &i.IndexedEventCount, &i.EmbeddedEventCount)
 	return i, err

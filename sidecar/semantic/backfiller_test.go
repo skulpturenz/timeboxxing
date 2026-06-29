@@ -8,7 +8,23 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 )
+
+type modelKeyEmbedder struct {
+	model string
+}
+
+func (e modelKeyEmbedder) Model() string { return e.model }
+
+func (modelKeyEmbedder) Dimension() int { return StoreEmbeddingDimension }
+
+func (modelKeyEmbedder) Embed(context.Context, string) ([]float32, error) {
+	values := make([]float32, StoreEmbeddingDimension)
+	values[0] = 1
+	return values, nil
+}
 
 func TestListMissingSemanticEventDocumentIDsFindsMissingDocumentsAndEmbeddings(t *testing.T) {
 	ctx := context.Background()
@@ -30,7 +46,10 @@ func TestListMissingSemanticEventDocumentIDsFindsMissingDocumentsAndEmbeddings(t
 		t.Fatalf("delete embedding: %v", err)
 	}
 
-	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, 10)
+	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+		EmbeddingModel: fakeEmbedder{}.Model(),
+		Limit:          10,
+	})
 	if err != nil {
 		t.Fatalf("list missing semantic event document ids: %v", err)
 	}
@@ -52,7 +71,7 @@ func TestBackfillerIndexesMissingTransitionEvents(t *testing.T) {
 		t.Fatalf("index first event: %v", err)
 	}
 
-	result, err := NewBackfiller(database.ReadQuerier, indexer).BackfillMissing(ctx, 10)
+	result, err := NewBackfiller(database.ReadQuerier, indexer, fakeEmbedder{}.Model()).BackfillMissing(ctx, 10)
 	if err != nil {
 		t.Fatalf("backfill missing transition events: %v", err)
 	}
@@ -67,7 +86,10 @@ func TestBackfillerIndexesMissingTransitionEvents(t *testing.T) {
 		t.Fatalf("expected two semantic event embeddings, got %d", count)
 	}
 
-	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, 10)
+	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+		EmbeddingModel: fakeEmbedder{}.Model(),
+		Limit:          10,
+	})
 	if err != nil {
 		t.Fatalf("list missing semantic event document ids: %v", err)
 	}
@@ -79,10 +101,66 @@ func TestBackfillerIndexesMissingTransitionEvents(t *testing.T) {
 	}
 }
 
+func TestBackfillerTreatsEmbeddingModelChangesAsMissing(t *testing.T) {
+	ctx := context.Background()
+	database := newSemanticTestDatabase(t, ctx)
+	firstModel := modelKeyEmbedder{model: "embedding-model-a"}
+	secondModel := modelKeyEmbedder{model: "embedding-model-b"}
+
+	eventID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
+	if _, err := NewIndexer(database.WriteConn, database.ReadQuerier, firstModel).IndexTransitionEvent(ctx, eventID); err != nil {
+		t.Fatalf("index first model: %v", err)
+	}
+
+	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+		EmbeddingModel: secondModel.Model(),
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatalf("list missing for second model: %v", err)
+	}
+	if !reflect.DeepEqual(ids, []int64{eventID}) {
+		t.Fatalf("expected event to be missing for second model, got %v", ids)
+	}
+
+	result, err := NewBackfiller(
+		database.ReadQuerier,
+		NewIndexer(database.WriteConn, database.ReadQuerier, secondModel),
+		secondModel.Model(),
+	).BackfillMissing(ctx, 10)
+	if err != nil {
+		t.Fatalf("backfill second model: %v", err)
+	}
+	if result != (BackfillResult{Checked: 1, Indexed: 1}) {
+		t.Fatalf("unexpected backfill result: %+v", result)
+	}
+	ids, err = database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+		EmbeddingModel: secondModel.Model(),
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatalf("list missing after second model backfill: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("expected no missing ids for second model after backfill, got %v", ids)
+	}
+
+	ids, err = database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+		EmbeddingModel: firstModel.Model(),
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatalf("list missing after old model replacement: %v", err)
+	}
+	if !reflect.DeepEqual(ids, []int64{eventID}) {
+		t.Fatalf("expected old model embedding to be replaced, got missing ids %v", ids)
+	}
+}
+
 func TestBackfillerHasMissing(t *testing.T) {
 	ctx := context.Background()
 
-	hasMissing, err := NewBackfiller(staticMissingTransitionEventLister{ids: []int64{42}}, nil).HasMissing(ctx)
+	hasMissing, err := NewBackfiller(staticMissingTransitionEventLister{ids: []int64{42}}, nil, fakeEmbedder{}.Model()).HasMissing(ctx)
 	if err != nil {
 		t.Fatalf("has missing: %v", err)
 	}
@@ -90,7 +168,7 @@ func TestBackfillerHasMissing(t *testing.T) {
 		t.Fatal("expected missing transition event documents")
 	}
 
-	hasMissing, err = NewBackfiller(staticMissingTransitionEventLister{}, nil).HasMissing(ctx)
+	hasMissing, err = NewBackfiller(staticMissingTransitionEventLister{}, nil, fakeEmbedder{}.Model()).HasMissing(ctx)
 	if err != nil {
 		t.Fatalf("has missing empty: %v", err)
 	}
@@ -102,7 +180,7 @@ func TestBackfillerHasMissing(t *testing.T) {
 func TestBackfillerContinuesAfterIndexFailure(t *testing.T) {
 	ctx := context.Background()
 	indexer := &recordingBackfillIndexer{failID: 2}
-	result, err := NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1, 2, 3}}, indexer).BackfillMissing(ctx, 10)
+	result, err := NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1, 2, 3}}, indexer, fakeEmbedder{}.Model()).BackfillMissing(ctx, 10)
 	if err != nil {
 		t.Fatalf("backfill missing transition events: %v", err)
 	}
@@ -126,7 +204,7 @@ func TestBackfillCoordinatorRunsOneBackfillAtATime(t *testing.T) {
 	}
 	coordinator := NewBackfillCoordinator(
 		ctx,
-		NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1}}, indexer),
+		NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1}}, indexer, fakeEmbedder{}.Model()),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 
@@ -164,7 +242,7 @@ type staticMissingTransitionEventLister struct {
 	err error
 }
 
-func (s staticMissingTransitionEventLister) ListMissingSemanticEventDocumentIDs(context.Context, int64) ([]int64, error) {
+func (s staticMissingTransitionEventLister) ListMissingSemanticEventDocumentIDs(context.Context, queries.ListMissingSemanticEventDocumentIDsParams) ([]int64, error) {
 	return s.ids, s.err
 }
 

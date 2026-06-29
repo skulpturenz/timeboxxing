@@ -21,6 +21,7 @@ sourceSets {
         proto {
             srcDir("../../sidecar/proto")
             include("ama/**/*.proto")
+            include("settings/**/*.proto")
             include("usage/**/*.proto")
             exclude("transitions/**/*.proto")
         }
