@@ -61,7 +61,7 @@ func (c *BackfillCoordinator) Start(limit int64) bool {
 		result, err := c.backfiller.BackfillMissing(c.ctx, limit)
 		lastError := ""
 		if err != nil {
-			lastError = err.Error()
+			lastError = safeBackfillStatusMessage(err)
 			c.logger.ErrorContext(c.ctx, "semantic backfill failed", "error", err)
 		} else {
 			c.logger.InfoContext(c.ctx, "semantic backfill completed",
@@ -92,4 +92,14 @@ func (c *BackfillCoordinator) Status() BackfillStatus {
 		LastResult: c.lastResult,
 		LastError:  c.lastError,
 	}
+}
+
+func safeBackfillStatusMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if message, ok := AIRequestUserMessage(err); ok {
+		return message
+	}
+	return "Semantic indexing failed. Check sidecar logs."
 }

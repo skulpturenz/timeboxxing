@@ -69,9 +69,13 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 	}
 
 	result := BackfillResult{Checked: len(ids)}
+	var firstErr error
 	for index, id := range ids {
 		if _, err := b.indexer.IndexTransitionEvent(ctx, id); err != nil {
 			result.Failed++
+			if firstErr == nil {
+				firstErr = err
+			}
 		} else {
 			result.Indexed++
 		}
@@ -83,6 +87,9 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 			case <-time.After(semanticBackfillDelay):
 			}
 		}
+	}
+	if result.Failed > 0 {
+		return result, fmt.Errorf("semantic backfill failed for %d of %d checked events: %w", result.Failed, result.Checked, firstErr)
 	}
 
 	return result, nil

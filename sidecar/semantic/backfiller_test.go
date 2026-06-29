@@ -181,8 +181,8 @@ func TestBackfillerContinuesAfterIndexFailure(t *testing.T) {
 	ctx := context.Background()
 	indexer := &recordingBackfillIndexer{failID: 2}
 	result, err := NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1, 2, 3}}, indexer, fakeEmbedder{}.Model()).BackfillMissing(ctx, 10)
-	if err != nil {
-		t.Fatalf("backfill missing transition events: %v", err)
+	if err == nil {
+		t.Fatal("expected partial backfill error")
 	}
 
 	if result != (BackfillResult{Checked: 3, Indexed: 2, Failed: 1}) {
@@ -191,6 +191,40 @@ func TestBackfillerContinuesAfterIndexFailure(t *testing.T) {
 	wantIndexedIDs := []int64{1, 2, 3}
 	if !reflect.DeepEqual(indexer.ids, wantIndexedIDs) {
 		t.Fatalf("expected attempted ids %v, got %v", wantIndexedIDs, indexer.ids)
+	}
+}
+
+func TestBackfillCoordinatorStoresPartialFailure(t *testing.T) {
+	ctx := context.Background()
+	coordinator := NewBackfillCoordinator(
+		ctx,
+		NewBackfiller(
+			staticMissingTransitionEventLister{ids: []int64{1, 2, 3}},
+			&recordingBackfillIndexer{failID: 2},
+			fakeEmbedder{}.Model(),
+		),
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+
+	if !coordinator.Start(10) {
+		t.Fatal("expected backfill to start")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		status := coordinator.Status()
+		if !status.Running {
+			if status.LastResult != (BackfillResult{Checked: 3, Indexed: 2, Failed: 1}) {
+				t.Fatalf("unexpected final status: %+v", status)
+			}
+			if status.LastError != "Semantic indexing failed. Check sidecar logs." {
+				t.Fatalf("unexpected last error %q", status.LastError)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for backfill completion: %+v", status)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

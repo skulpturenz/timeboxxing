@@ -248,6 +248,76 @@ func TestSemanticIndexStatusIncludesUnavailableReason(t *testing.T) {
 	}
 }
 
+func TestSemanticIndexStatusPreservesCountsWhenAnsweringUnavailable(t *testing.T) {
+	server := NewServer(NewServerParams{
+		IndexStatus: &recordingIndexStatusProvider{status: semantic.IndexStatus{
+			State:               semantic.IndexStateReady,
+			CompletedEventCount: 10,
+			IndexedEventCount:   8,
+			PendingEventCount:   2,
+			Message:             "Semantic index is ready.",
+		}},
+		UnavailableReason: "OpenRouter provider is temporarily unavailable.",
+	})
+
+	resp, err := server.GetSemanticIndexStatus(context.Background(), &amav1.GetSemanticIndexStatusRequest{})
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if resp.GetState() != amav1.SemanticIndexStatus_UNAVAILABLE {
+		t.Fatalf("expected unavailable state, got %v", resp.GetState())
+	}
+	if resp.GetMessage() != "OpenRouter provider is temporarily unavailable." {
+		t.Fatalf("unexpected unavailable message %q", resp.GetMessage())
+	}
+	if resp.GetCompletedEventCount() != 10 || resp.GetIndexedEventCount() != 8 || resp.GetPendingEventCount() != 2 {
+		t.Fatalf("expected counts to be preserved, got %+v", resp)
+	}
+}
+
+func TestSemanticIndexStatusProviderErrorReturnsUnavailableStatus(t *testing.T) {
+	server := NewServer(NewServerParams{
+		IndexStatus: &recordingIndexStatusProvider{err: fmt.Errorf("sqlite status failed")},
+	})
+
+	resp, err := server.GetSemanticIndexStatus(context.Background(), &amav1.GetSemanticIndexStatusRequest{})
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if resp.GetState() != amav1.SemanticIndexStatus_UNAVAILABLE {
+		t.Fatalf("expected unavailable state, got %v", resp.GetState())
+	}
+	if resp.GetMessage() != "Semantic index status is unavailable." {
+		t.Fatalf("unexpected unavailable message %q", resp.GetMessage())
+	}
+}
+
+func TestAskSurvivesSemanticIndexStatusProviderError(t *testing.T) {
+	searcher := &recordingSearcher{
+		results: []semantic.SearchResult{
+			{TransitionEventID: 42, Content: "Application: Calendar", Distance: 0.125},
+		},
+	}
+	server := NewServer(NewServerParams{
+		Answerer:    semantic.NewAnswerer(searcher, &recordingGenerator{answer: "You used Calendar."}),
+		IndexStatus: &recordingIndexStatusProvider{err: fmt.Errorf("sqlite status failed")},
+	})
+
+	resp, err := server.Ask(context.Background(), &amav1.AskRequest{Question: "What did I do today?"})
+	if err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	if resp.GetAnswer() != "You used Calendar." {
+		t.Fatalf("unexpected answer %q", resp.GetAnswer())
+	}
+	if resp.GetSemanticIndexStatus().GetState() != amav1.SemanticIndexStatus_UNAVAILABLE {
+		t.Fatalf("expected unavailable attached status, got %v", resp.GetSemanticIndexStatus().GetState())
+	}
+	if resp.GetSemanticIndexStatus().GetMessage() != "Semantic index status is unavailable." {
+		t.Fatalf("unexpected attached status message %q", resp.GetSemanticIndexStatus().GetMessage())
+	}
+}
+
 type recordingSearcher struct {
 	query   string
 	k       int64
@@ -289,4 +359,13 @@ func (r *recordingAmaBackfillCoordinator) Start(limit int64) bool {
 	r.startCalls++
 	r.limit = limit
 	return true
+}
+
+type recordingIndexStatusProvider struct {
+	status semantic.IndexStatus
+	err    error
+}
+
+func (r *recordingIndexStatusProvider) Status(context.Context) (semantic.IndexStatus, error) {
+	return r.status, r.err
 }

@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.Color
 import com.timeboxxing.app.model.AmaAnswer
 import com.timeboxxing.app.model.AmaAppUsageBucket
 import com.timeboxxing.app.model.AmaAppUsageChart
+import com.timeboxxing.app.model.AmaIndexState
+import com.timeboxxing.app.model.AmaIndexStatus
 import com.timeboxxing.app.model.AmaMessageRole
 import com.timeboxxing.app.model.AmaSource
 import com.timeboxxing.app.data.mockTimeboxxingData
@@ -245,6 +247,35 @@ class TimeboxxingStateTest {
         assertFalse(state.amaLoading)
         assertEquals("Sidecar unavailable", state.amaError)
         assertEquals(1, state.amaMessages.size)
+    }
+
+    @Test
+    fun amaIndexStatusFailureShowsUnavailableBadgeWithoutAnswerError() {
+        val ready = reduceTimeboxxingState(
+            createAmaConfiguredState(),
+            TimeboxxingAction.AmaIndexStatusSucceeded(
+                AmaIndexStatus(
+                    state = AmaIndexState.Ready,
+                    completedEventCount = 10L,
+                    indexedEventCount = 8L,
+                    pendingEventCount = 2L,
+                    backfillRunning = false,
+                    message = "Semantic index is ready.",
+                ),
+            ),
+        )
+
+        val state = reduceTimeboxxingState(
+            ready,
+            TimeboxxingAction.AmaIndexStatusFailed("Semantic index status is unavailable."),
+        )
+
+        assertEquals(null, state.amaError)
+        assertEquals(AmaIndexState.Unavailable, state.amaIndexStatus?.state)
+        assertEquals("Semantic index status is unavailable.", state.amaIndexStatus?.message)
+        assertEquals(10L, state.amaIndexStatus?.completedEventCount)
+        assertEquals(8L, state.amaIndexStatus?.indexedEventCount)
+        assertEquals(2L, state.amaIndexStatus?.pendingEventCount)
     }
 
     @Test

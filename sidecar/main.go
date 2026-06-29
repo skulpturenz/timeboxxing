@@ -125,13 +125,15 @@ func main() {
 		services.indexStatus = semanticRuntime.indexStatus
 		services.indexer = semanticRuntime.indexer
 	}
-	if semanticRuntime != nil {
+	if services.answerer != nil && services.backfilling != nil {
 		logger.InfoContext(ctx, "semantic indexing enabled",
 			"embedding_model", semanticRuntime.embeddingModel,
 			"embedding_dimension", semantic.StoreEmbeddingDimension,
 		)
 		logger.InfoContext(ctx, "RAG answering enabled", "rag_model", semanticRuntime.ragModel)
 		semanticRuntime.backfilling.Start(startupSemanticBackfillLimit)
+	} else if services.indexStatus != nil {
+		logger.WarnContext(ctx, "semantic index status enabled but answering disabled", "reason", semanticUnavailableReason)
 	} else {
 		logger.WarnContext(ctx, "semantic indexing disabled until AI settings are configured")
 	}
@@ -245,13 +247,22 @@ func newSemanticServices(ctx context.Context, database *db.Database, logger *slo
 	if err != nil {
 		return nil, err
 	}
+	embeddingModel := semantic.ProviderModelKey(settings.Provider, embeddingSlug)
+	unavailableIndexStatus := semantic.NewIndexStatusService(database.ReadQuerier, nil, embeddingModel)
 
 	embedder, generator, err := buildAIClients(settings, embeddingSlug, semanticSlug)
 	if err != nil {
-		return nil, err
+		return &semanticServices{
+			indexStatus:    unavailableIndexStatus,
+			embeddingModel: embeddingModel,
+		}, err
 	}
 	if err := semantic.CheckEmbedderHealth(ctx, embedder); err != nil {
-		return nil, err
+		return &semanticServices{
+			indexStatus:    unavailableIndexStatus,
+			embeddingModel: embedder.Model(),
+			ragModel:       generator.Model(),
+		}, err
 	}
 
 	indexer := semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder)

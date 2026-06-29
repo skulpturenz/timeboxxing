@@ -37,7 +37,8 @@ func (s *Server) Ask(ctx context.Context, req *amav1.AskRequest) (*amav1.AskResp
 	}
 	indexStatus, err := s.semanticIndexStatus(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "get semantic index status: %v", err)
+		s.logger.WarnContext(ctx, "semantic index status unavailable while answering", "error", err)
+		indexStatus = semanticIndexStatusUnavailable()
 	}
 	if answer != nil && len(answer.Sources) == 0 && s.backfilling != nil {
 		switch indexStatus.State {
@@ -87,7 +88,8 @@ func (s *Server) Ask(ctx context.Context, req *amav1.AskRequest) (*amav1.AskResp
 func (s *Server) GetSemanticIndexStatus(ctx context.Context, _ *amav1.GetSemanticIndexStatusRequest) (*amav1.SemanticIndexStatus, error) {
 	indexStatus, err := s.semanticIndexStatus(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "get semantic index status: %v", err)
+		s.logger.WarnContext(ctx, "semantic index status unavailable", "error", err)
+		indexStatus = semanticIndexStatusUnavailable()
 	}
 	return indexStatusToProto(indexStatus), nil
 }
@@ -178,7 +180,15 @@ func (s *Server) semanticIndexStatus(ctx context.Context) (semantic.IndexStatus,
 			Message: s.semanticUnavailableMessage(),
 		}, nil
 	}
-	return s.indexStatus.Status(ctx)
+	indexStatus, err := s.indexStatus.Status(ctx)
+	if err != nil {
+		return semantic.IndexStatus{}, err
+	}
+	if s.answerer == nil && strings.TrimSpace(s.unavailableReason) != "" {
+		indexStatus.State = semantic.IndexStateUnavailable
+		indexStatus.Message = s.semanticUnavailableMessage()
+	}
+	return indexStatus, nil
 }
 
 func (s *Server) semanticUnavailableMessage() string {
@@ -186,6 +196,13 @@ func (s *Server) semanticUnavailableMessage() string {
 		return s.unavailableReason
 	}
 	return "Semantic index is unavailable."
+}
+
+func semanticIndexStatusUnavailable() semantic.IndexStatus {
+	return semantic.IndexStatus{
+		State:   semantic.IndexStateUnavailable,
+		Message: "Semantic index status is unavailable.",
+	}
 }
 
 func answerErrorStatus(err error) error {

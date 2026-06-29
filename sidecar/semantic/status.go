@@ -48,8 +48,11 @@ func (s *IndexStatusService) Status(ctx context.Context) (IndexStatus, error) {
 		return IndexStatus{}, fmt.Errorf("get semantic index counts: %w", err)
 	}
 	running := false
+	lastError := ""
 	if s.backfilling != nil {
-		running = s.backfilling.Status().Running
+		backfillStatus := s.backfilling.Status()
+		running = backfillStatus.Running
+		lastError = backfillStatus.LastError
 	}
 
 	indexed := counts.IndexedEventCount
@@ -69,6 +72,9 @@ func (s *IndexStatusService) Status(ctx context.Context) (IndexStatus, error) {
 	}
 
 	switch {
+	case lastError != "":
+		status.State = IndexStateUnavailable
+		status.Message = lastError
 	case counts.CompletedEventCount == 0:
 		status.State = IndexStateEmpty
 		status.Message = "No completed usage events yet."

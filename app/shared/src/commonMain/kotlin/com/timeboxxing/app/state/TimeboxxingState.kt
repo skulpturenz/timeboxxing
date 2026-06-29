@@ -3,6 +3,7 @@ package com.timeboxxing.app.state
 import com.timeboxxing.app.data.mockTimeboxxingData
 import com.timeboxxing.app.data.usageDayForCalendarDate
 import com.timeboxxing.app.model.AmaAnswer
+import com.timeboxxing.app.model.AmaIndexState
 import com.timeboxxing.app.model.AmaIndexStatus
 import com.timeboxxing.app.model.AmaMessage
 import com.timeboxxing.app.model.AmaMessageRole
@@ -444,8 +445,15 @@ fun reduceTimeboxxingState(
         )
 
         is TimeboxxingAction.AmaIndexStatusFailed -> state.copy(
-            amaIndexStatus = state.amaIndexStatus,
-            amaError = action.message,
+            amaIndexStatus = AmaIndexStatus(
+                state = AmaIndexState.Unavailable,
+                completedEventCount = state.amaIndexStatus?.completedEventCount ?: 0,
+                indexedEventCount = state.amaIndexStatus?.indexedEventCount ?: 0,
+                pendingEventCount = state.amaIndexStatus?.pendingEventCount ?: 0,
+                backfillRunning = false,
+                message = action.message,
+            ),
+            amaError = null,
         )
 
         TimeboxxingAction.ClearAmaChat -> state.copy(
