@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
@@ -69,6 +69,7 @@ import kotlin.time.ExperimentalTime
 private val TimelineTimeLabelWidth = 72.dp
 private val TimelineRuleGap = 12.dp
 private val TimelineGridLineThickness = 1.dp
+private const val TimelineEndBoundaryHeightDp = 32f
 internal const val TimelineEventLayerZIndex = 0f
 internal const val TimelineNowMarkerLayerZIndex = 1f
 
@@ -171,10 +172,9 @@ fun SchedulePane(
     val coroutineScope = rememberCoroutineScope()
     var scrollViewportHeightPx by remember { mutableIntStateOf(0) }
     val viewportHeightDp = with(density) { scrollViewportHeightPx.toDp().value }
-    val viewportTopDp by remember(listState, timelineGrid, density) {
+    val viewportTopDp by remember(listState, density) {
         derivedStateOf {
-            listState.firstVisibleItemIndex * timelineGrid.rowHeightDp +
-                    with(density) { listState.firstVisibleItemScrollOffset.toDp().value }
+            with(density) { listState.firstVisibleItemScrollOffset.toDp().value }
         }
     }
     val nowOffsetDp = nowMinute?.let { minute -> timelineMinuteOffsetDp(timelineGrid, minute) }
@@ -326,6 +326,8 @@ fun SchedulePane(
                 TimelineGridView(
                     grid = timelineGrid,
                     nowMinute = nowMinute,
+                    viewportTopDp = viewportTopDp,
+                    viewportHeightDp = viewportHeightDp,
                     selectedUsageIds = state.selectedUsageIds,
                     assignedUsageIds = assignedUsageIds,
                     usageIconLoader = usageIconLoader,
@@ -512,6 +514,8 @@ private fun SelectionActionBar(
 private fun TimelineGridView(
     grid: TimelineGrid,
     nowMinute: Int?,
+    viewportTopDp: Float,
+    viewportHeightDp: Float,
     selectedUsageIds: Set<String>,
     assignedUsageIds: Set<String>,
     usageIconLoader: UsageIconLoader,
@@ -522,121 +526,184 @@ private fun TimelineGridView(
         modifier = Modifier.fillMaxSize(),
         state = listState,
     ) {
-        items(
-            items = grid.intervalRows,
-            key = { row -> row.minute },
-        ) { row ->
-            TimelineIntervalRow(
+        item(key = "timeline-content") {
+            TimelineContentSurface(
                 grid = grid,
-                row = row,
                 nowMinute = nowMinute,
+                viewportTopDp = viewportTopDp,
+                viewportHeightDp = viewportHeightDp,
                 selectedUsageIds = selectedUsageIds,
                 assignedUsageIds = assignedUsageIds,
                 usageIconLoader = usageIconLoader,
                 onUsageClick = onUsageClick,
             )
         }
-        item(key = "timeline-end") {
-            TimelineEndBoundaryRow(row = grid.rows.last())
-        }
     }
 }
 
 @Composable
-private fun TimelineIntervalRow(
+private fun TimelineContentSurface(
     grid: TimelineGrid,
-    row: TimelineRow,
     nowMinute: Int?,
+    viewportTopDp: Float,
+    viewportHeightDp: Float,
     selectedUsageIds: Set<String>,
     assignedUsageIds: Set<String>,
     usageIconLoader: UsageIconLoader,
     onUsageClick: (String) -> Unit,
 ) {
-    val rowEndMinute = row.minute + grid.zoomMinutes
-    val segments = remember(grid, row.minute) { timelineSegmentsForRow(grid, row) }
+    val placements = remember(grid, viewportTopDp, viewportHeightDp) {
+        timelinePlacementsInViewport(
+            grid = grid,
+            viewportTopDp = viewportTopDp,
+            viewportHeightDp = viewportHeightDp,
+        )
+    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(grid.rowHeightDp.dp),
+            .height((grid.contentHeightDp + TimelineEndBoundaryHeightDp).dp)
+            .clipToBounds(),
     ) {
-        TimelineGridLine(
-            minute = row.minute,
-            emphasized = row.minute == grid.visibleStartMinute || row.minute % 60 == 0,
-        )
+        TimelineMinuteMarkersCanvas(grid = grid)
 
-        TimelineIntervalMarkers(
-            rowStartMinute = row.minute,
-            rowEndMinute = rowEndMinute,
-            dpPerMinute = grid.dpPerMinute,
-        )
-
-        segments.forEach { segment ->
-            val event = segment.placement.event
-            TimelineEventSegmentRow(
-                grid = grid,
-                segment = segment,
-                selected = event.id in selectedUsageIds,
-                assigned = event.id in assignedUsageIds,
-                usageIconLoader = usageIconLoader,
-                onClick = if (event.isActive || event.sourceType == UsageSourceType.Idle) {
-                    null
-                } else {
-                    { onUsageClick(event.id) }
-                },
+        grid.rows.forEach { row ->
+            TimelineGridLineRow(
+                row = row,
+                emphasized = row.minute == grid.visibleStartMinute ||
+                    row.minute == grid.visibleEndMinute ||
+                    row.minute % 60 == 0,
             )
         }
 
-        nowMinute?.takeIf { it in row.minute until rowEndMinute }?.let { minute ->
-            NowMarker(offsetDp = (minute - row.minute) * grid.dpPerMinute)
+        placements.forEach { placement ->
+            TimelineEventPlacementRow(
+                grid = grid,
+                placement = placement,
+                selectedUsageIds = selectedUsageIds,
+                assignedUsageIds = assignedUsageIds,
+                usageIconLoader = usageIconLoader,
+                onUsageClick = onUsageClick,
+            )
         }
+
+        nowMinute
+            ?.let { minute -> timelineMinuteOffsetDp(grid, minute) }
+            ?.takeIf { offsetDp ->
+                offsetDp >= viewportTopDp &&
+                    offsetDp <= viewportTopDp + viewportHeightDp
+            }
+            ?.let { offsetDp -> NowMarker(offsetDp = offsetDp) }
     }
 }
 
 @Composable
-private fun TimelineEndBoundaryRow(row: TimelineRow) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(32.dp),
-    ) {
-        TimelineGridLine(
-            minute = row.minute,
-            emphasized = true,
-        )
-    }
-}
-
-@Composable
-private fun TimelineIntervalMarkers(
-    rowStartMinute: Int,
-    rowEndMinute: Int,
-    dpPerMinute: Float,
+private fun TimelineMinuteMarkersCanvas(
+    grid: TimelineGrid,
 ) {
     val lineColor = TbTheme.colors.separator
-    val offsets = remember(rowStartMinute, rowEndMinute, dpPerMinute) {
-        timelineIntervalMarkerOffsets(
-            rowStartMinute = rowStartMinute,
-            rowEndMinute = rowEndMinute,
-            dpPerMinute = dpPerMinute,
+    val markerOffsetsDp = remember(grid) { timelineMinuteMarkerOffsetsDp(grid) }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(grid.contentHeightDp.dp),
+    ) {
+        val startX = TimelineTimeLabelWidth.toPx() + TimelineRuleGap.toPx()
+        val lineHeight = TimelineGridLineThickness.toPx()
+        markerOffsetsDp.forEach { offsetDp ->
+            val y = offsetDp.dp.toPx()
+            drawLine(
+                color = lineColor,
+                start = Offset(startX, y),
+                end = Offset(size.width, y),
+                strokeWidth = lineHeight,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimelineGridLineRow(
+    row: TimelineRow,
+    emphasized: Boolean,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .offset(y = row.offsetDp.dp),
+    ) {
+        TimelineGridLine(
+            minute = row.minute,
+            emphasized = emphasized,
+        )
+    }
+}
+
+@Composable
+private fun TimelineEventPlacementRow(
+    grid: TimelineGrid,
+    placement: TimelineEventPlacement,
+    selectedUsageIds: Set<String>,
+    assignedUsageIds: Set<String>,
+    usageIconLoader: UsageIconLoader,
+    onUsageClick: (String) -> Unit,
+) {
+    val event = placement.event
+    val segment = remember(placement) {
+        TimelineEventSegment(
+            placement = placement,
+            row = TimelineRow(
+                minute = placement.startMinute,
+                offsetDp = placement.displayTopDp,
+            ),
+            offsetDp = 0f,
+            heightDp = placement.heightDp,
+            startsEvent = true,
+            endsEvent = true,
         )
     }
 
-    offsets.forEach { offsetDp ->
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .offset(y = placement.displayTopDp.dp)
+            .height(placement.heightDp.dp)
+            .zIndex(TimelineEventLayerZIndex),
+        horizontalArrangement = Arrangement.spacedBy(TimelineRuleGap),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Spacer(modifier = Modifier.width(TimelineTimeLabelWidth))
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .offset(y = offsetDp.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(TimelineRuleGap),
+                .weight(1f)
+                .fillMaxHeight(),
+            horizontalArrangement = Arrangement.spacedBy(grid.laneGapDp.dp),
         ) {
-            Spacer(modifier = Modifier.width(TimelineTimeLabelWidth))
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(TimelineGridLineThickness)
-                    .background(lineColor),
-            )
+            repeat(placement.laneCount) { laneIndex ->
+                if (laneIndex == placement.laneIndex) {
+                    UsageEventCard(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        segment = segment,
+                        selected = event.id in selectedUsageIds,
+                        assigned = event.id in assignedUsageIds,
+                        usageIconLoader = usageIconLoader,
+                        onClick = if (event.isActive || event.sourceType == UsageSourceType.Idle) {
+                            null
+                        } else {
+                            { onUsageClick(event.id) }
+                        },
+                    )
+                } else {
+                    Spacer(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
+                }
+            }
         }
     }
 }
@@ -694,55 +761,6 @@ private fun NowMarker(offsetDp: Float) {
                     .height(2.dp)
                     .background(TbTheme.colors.accent.copy(alpha = 0.74f)),
             )
-        }
-    }
-}
-
-@Composable
-private fun TimelineEventSegmentRow(
-    grid: TimelineGrid,
-    segment: TimelineEventSegment,
-    selected: Boolean,
-    assigned: Boolean,
-    usageIconLoader: UsageIconLoader,
-    onClick: (() -> Unit)?,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .offset(y = segment.offsetDp.dp)
-            .height(segment.heightDp.dp)
-            .zIndex(TimelineEventLayerZIndex),
-        horizontalArrangement = Arrangement.spacedBy(TimelineRuleGap),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Spacer(modifier = Modifier.width(TimelineTimeLabelWidth))
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
-            horizontalArrangement = Arrangement.spacedBy(grid.laneGapDp.dp),
-        ) {
-            repeat(segment.placement.laneCount) { laneIndex ->
-                if (laneIndex == segment.placement.laneIndex) {
-                    UsageEventCard(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        segment = segment,
-                        selected = selected,
-                        assigned = assigned,
-                        usageIconLoader = usageIconLoader,
-                        onClick = onClick,
-                    )
-                } else {
-                    Spacer(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                    )
-                }
-            }
         }
     }
 }
@@ -1158,18 +1176,17 @@ private suspend fun scrollTimelineToDp(
 ) {
     if (grid.intervalRows.isEmpty()) return
 
-    val maxTargetDp = (grid.contentHeightDp - 0.001f).coerceAtLeast(0f)
-    val clampedTargetDp = targetDp.coerceIn(0f, maxTargetDp)
-    val rowIndex = (clampedTargetDp / grid.rowHeightDp)
-        .toInt()
-        .coerceIn(0, grid.intervalRows.lastIndex)
-    val rowOffsetDp = clampedTargetDp - rowIndex * grid.rowHeightDp
-    val rowOffsetPx = with(density) { rowOffsetDp.dp.roundToPx() }
+    val clampedTargetDp = timelineSingleItemScrollTargetDp(
+        grid = grid,
+        targetDp = targetDp,
+        bottomPaddingDp = TimelineEndBoundaryHeightDp,
+    )
+    val scrollOffsetPx = with(density) { clampedTargetDp.dp.roundToPx() }
 
     if (animated) {
-        listState.animateScrollToItem(rowIndex, rowOffsetPx)
+        listState.animateScrollToItem(0, scrollOffsetPx)
     } else {
-        listState.scrollToItem(rowIndex, rowOffsetPx)
+        listState.scrollToItem(0, scrollOffsetPx)
     }
 }
 

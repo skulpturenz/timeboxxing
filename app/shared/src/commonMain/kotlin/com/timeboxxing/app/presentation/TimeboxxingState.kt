@@ -27,6 +27,8 @@ private const val DeletedProjectColorArgb: Long = 0xFF8A8D80
 private const val NoProjectColorArgb: Long = 0xFF6E7F80
 private const val InvalidDraftProjectNotice = "Choose an existing project or No project."
 private const val AddEntryBeforeExportNotice = "Add an entry before exporting."
+private const val UsageDayMinutes = 24 * 60
+private const val SidecarUsageIdPrefix = "sidecar-"
 
 data class TimeboxxingScreenState(
     val selectedSection: TimeboxxingSection,
@@ -241,7 +243,7 @@ fun createInitialTimeboxxingState(
         dateIndex = data.usageDays.indexOfFirst { it.label == "Thursday, May 1, 2025" }.takeIf { it >= 0 } ?: 0,
         zoomMinutes = 15,
         projects = data.projects,
-        usageEvents = data.usageEvents,
+        usageEvents = normalizeUsageEvents(data.usageEvents),
         usageLoading = false,
         entries = data.initialEntries,
         scheduleFocusEntryId = null,
@@ -831,11 +833,95 @@ private fun mergeUsageEvent(
 }
 
 private fun normalizeUsageEvents(events: List<UsageEvent>): List<UsageEvent> {
-    val completed = events.filterNot { it.isActive }
+    val rawCompleted = events.filterNot { it.isActive }
+    val completed = linearizedCompletedUsageEvents(rawCompleted)
     val active = events.lastOrNull { it.isActive }
-        ?.takeUnless { activeEvent -> completed.any { activeEvent.matchesCompletedUsage(it) } }
+        ?.takeUnless { activeEvent -> rawCompleted.any { activeEvent.matchesCompletedUsage(it) } }
     return (completed + listOfNotNull(active)).sortedBy { it.startMinute }
 }
+
+private data class OrderedUsageEvent(
+    val event: UsageEvent,
+    val inputIndex: Int,
+    val reportOrder: Long,
+)
+
+private fun linearizedCompletedUsageEvents(events: List<UsageEvent>): List<UsageEvent> {
+    if (events.isEmpty()) return emptyList()
+
+    val orderedEvents = events
+        .mapIndexed { index, event ->
+            OrderedUsageEvent(
+                event = event,
+                inputIndex = index,
+                reportOrder = event.reportOrder(index),
+            )
+        }
+        .sortedWith(
+            compareBy<OrderedUsageEvent> { it.reportOrder }
+                .thenBy { it.inputIndex },
+        )
+        .fold(linkedMapOf<String, OrderedUsageEvent>()) { latestById, orderedEvent ->
+            latestById[orderedEvent.event.id] = orderedEvent
+            latestById
+        }
+        .values
+        .sortedWith(
+            compareBy<OrderedUsageEvent> { it.reportOrder }
+                .thenBy { it.inputIndex },
+        )
+
+    val minuteOwners = arrayOfNulls<OrderedUsageEvent>(UsageDayMinutes)
+    orderedEvents.forEach { orderedEvent ->
+        val event = orderedEvent.event
+        val startMinute = event.startMinute.coerceIn(0, UsageDayMinutes)
+        val endMinute = (event.startMinute + event.durationMinutes).coerceIn(0, UsageDayMinutes)
+        if (endMinute <= startMinute) return@forEach
+
+        for (minute in startMinute until endMinute) {
+            minuteOwners[minute] = orderedEvent
+        }
+    }
+
+    val emittedUsageIds = mutableSetOf<String>()
+    val linearEvents = mutableListOf<UsageEvent>()
+    var minute = 0
+    while (minute < UsageDayMinutes) {
+        val owner = minuteOwners[minute]
+        if (owner == null || owner.event.id in emittedUsageIds) {
+            minute += 1
+            continue
+        }
+
+        val startMinute = minute
+        var endMinute = minute + 1
+        while (
+            endMinute < UsageDayMinutes &&
+            minuteOwners[endMinute]?.event?.id == owner.event.id
+        ) {
+            endMinute += 1
+        }
+
+        emittedUsageIds += owner.event.id
+        linearEvents += owner.event.copy(
+            startMinute = startMinute,
+            durationMinutes = endMinute - startMinute,
+        )
+        minute = endMinute
+    }
+
+    return linearEvents.sortedWith(
+        compareBy<UsageEvent> { it.startMinute }
+            .thenBy { it.id },
+    )
+}
+
+private fun UsageEvent.reportOrder(inputIndex: Int): Long =
+    if (id.startsWith(SidecarUsageIdPrefix)) {
+        id.removePrefix(SidecarUsageIdPrefix).toLongOrNull() ?: inputIndex.toLong()
+    } else {
+        inputIndex.toLong()
+    }
 
 private fun UsageEvent.matchesCompletedUsage(completed: UsageEvent): Boolean =
     isActive &&

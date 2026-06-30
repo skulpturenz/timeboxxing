@@ -844,6 +844,64 @@ class TimeboxxingReducerTest {
     }
 
     @Test
+    fun usageLoadLinearizesOverlappingSidecarEventsByReportOrder() {
+        val initial = createInitialTimeboxxingState()
+        val day = initial.selectedDay
+        val older = usageEvent(
+            id = "sidecar-10",
+            startMinute = 10 * 60,
+            durationMinutes = 10,
+        )
+        val newer = usageEvent(
+            id = "sidecar-11",
+            startMinute = 10 * 60 + 3,
+            durationMinutes = 2,
+        )
+
+        val loaded = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.UsageLoadSucceeded(day.startedAtEpochMillis, listOf(newer, older)),
+        )
+        val selected = reduceTimeboxxingState(loaded, TimeboxxingAction.ToggleUsageSelection("sidecar-10"))
+
+        assertEquals(listOf("sidecar-10", "sidecar-11"), loaded.usageEvents.map { it.id })
+        assertEquals(10 * 60, loaded.usageEvents[0].startMinute)
+        assertEquals(3, loaded.usageEvents[0].durationMinutes)
+        assertEquals(10 * 60 + 3, loaded.usageEvents[1].startMinute)
+        assertEquals(2, loaded.usageEvents[1].durationMinutes)
+        assertEquals(5, loaded.capturedMinutes)
+        assertEquals(1, loaded.usageEvents.count { it.id == "sidecar-10" })
+        assertEquals(3, selected.selectedUsageMinutes)
+        assertEquals(3, selected.draft.durationMinutes)
+    }
+
+    @Test
+    fun usageLoadUsesInputOrderForNonSidecarOverlapResolution() {
+        val initial = createInitialTimeboxxingState()
+        val day = initial.selectedDay
+        val first = usageEvent(
+            id = "first",
+            startMinute = 11 * 60,
+            durationMinutes = 8,
+        )
+        val second = usageEvent(
+            id = "second",
+            startMinute = 11 * 60 + 5,
+            durationMinutes = 4,
+        )
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.UsageLoadSucceeded(day.startedAtEpochMillis, listOf(first, second)),
+        )
+
+        assertEquals(listOf("first", "second"), state.usageEvents.map { it.id })
+        assertEquals(5, state.usageEvents.first { it.id == "first" }.durationMinutes)
+        assertEquals(11 * 60 + 5, state.usageEvents.first { it.id == "second" }.startMinute)
+        assertEquals(4, state.usageEvents.first { it.id == "second" }.durationMinutes)
+    }
+
+    @Test
     fun staleUsageLoadDoesNotReplaceCurrentDay() {
         val initial = createInitialTimeboxxingState()
         val moved = reduceTimeboxxingState(initial, TimeboxxingAction.MoveDate(1))

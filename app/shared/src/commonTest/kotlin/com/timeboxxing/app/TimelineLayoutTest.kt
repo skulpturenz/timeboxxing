@@ -26,11 +26,14 @@ import com.timeboxxing.app.ui.timelineFirstEventScrollDp
 import com.timeboxxing.app.ui.timelineDpPerMinuteForZoom
 import com.timeboxxing.app.ui.timelineEntryScrollDp
 import com.timeboxxing.app.ui.timelineMinuteOffsetDp
+import com.timeboxxing.app.ui.timelineMinuteMarkerOffsetsDp
 import com.timeboxxing.app.ui.timelineNowScrollDirection
+import com.timeboxxing.app.ui.timelinePlacementsInViewport
 import com.timeboxxing.app.ui.timelineRowHeightDpForZoom
 import com.timeboxxing.app.ui.scheduleTimelineUsageEvents
 import com.timeboxxing.app.ui.timelineScrollToMinuteDp
 import com.timeboxxing.app.ui.timelineSegmentsForRow
+import com.timeboxxing.app.ui.timelineSingleItemScrollTargetDp
 import com.timeboxxing.app.ui.timelineIntervalMarkerOffsets
 import com.timeboxxing.app.ui.SchedulePaneAutoScrollState
 import com.timeboxxing.app.ui.TimelineScrollDirection
@@ -159,13 +162,13 @@ class TimelineLayoutTest {
     }
 
     @Test
-    fun timelineIntervalMarkerOffsetsUseFiveMinuteCadenceWithoutBoundaryDuplicates() {
+    fun timelineIntervalMarkerOffsetsUseOneMinuteCadenceWithoutBoundaryDuplicates() {
         val rowStartMinute = 8 * 60
         val cases = listOf(
-            60 to listOf(5f, 10f, 15f, 20f, 25f, 30f, 35f, 40f, 45f, 50f, 55f),
-            30 to listOf(5f, 10f, 15f, 20f, 25f),
-            15 to listOf(5f, 10f),
-            10 to listOf(5f),
+            60 to (1 until 60).map { it.toFloat() },
+            30 to (1 until 30).map { it.toFloat() },
+            15 to (1 until 15).map { it.toFloat() },
+            10 to (1 until 10).map { it.toFloat() },
         )
 
         cases.forEach { (zoomMinutes, expectedOffsets) ->
@@ -178,6 +181,39 @@ class TimelineLayoutTest {
                 ),
             )
         }
+    }
+
+    @Test
+    fun timelineMinuteMarkerOffsetsUseScaledDpForOneMinuteCadence() {
+        val grid = buildTimelineGrid(
+            events = emptyList(),
+            zoomMinutes = 15,
+        )
+        val offsets = timelineMinuteMarkerOffsetsDp(grid)
+        val firstRowOffsets = offsets.takeWhile { offsetDp -> offsetDp < grid.rowHeightDp }
+
+        assertEquals(14, firstRowOffsets.size)
+        firstRowOffsets.forEachIndexed { index, offsetDp ->
+            assertWithin((index + 1) * grid.dpPerMinute, offsetDp)
+        }
+        assertWithin(16 * grid.dpPerMinute, offsets[14])
+    }
+
+    @Test
+    fun timelineMinuteMarkerOffsetsCoverFullDayWithoutBoundaryDuplicates() {
+        val grid = buildTimelineGrid(
+            events = emptyList(),
+            zoomMinutes = 15,
+        )
+        val offsets = timelineMinuteMarkerOffsetsDp(grid)
+        val expectedCount = (grid.visibleStartMinute + 1 until grid.visibleEndMinute)
+            .count { minute -> minute % grid.zoomMinutes != 0 }
+
+        assertEquals(expectedCount, offsets.size)
+        grid.rows.drop(1).dropLast(1).forEach { row ->
+            assertFalse(offsets.any { offsetDp -> abs(offsetDp - row.offsetDp) < 0.001f })
+        }
+        assertWithin((grid.visibleEndMinute - 1) * grid.dpPerMinute, offsets.last())
     }
 
     @Test
@@ -353,7 +389,7 @@ class TimelineLayoutTest {
     }
 
     @Test
-    fun timelineOverlappingEventsUseHorizontalLanesWithoutMovingTime() {
+    fun timelineEventsUseOneLaneWithoutMovingTime() {
         val events = listOf(
             usageEvent(id = "first", startMinute = 11 * 60, durationMinutes = 10),
             usageEvent(id = "second", startMinute = 11 * 60 + 5, durationMinutes = 10),
@@ -368,9 +404,51 @@ class TimelineLayoutTest {
         assertWithin(first.timeTopDp, first.displayTopDp)
         assertWithin(second.timeTopDp, second.displayTopDp)
         assertEquals(0, first.laneIndex)
-        assertEquals(1, second.laneIndex)
-        assertEquals(2, first.laneCount)
-        assertEquals(2, second.laneCount)
+        assertEquals(0, second.laneIndex)
+        assertEquals(1, first.laneCount)
+        assertEquals(1, second.laneCount)
+    }
+
+    @Test
+    fun timelineViewportReturnsOnePlacementForCrossRowEvent() {
+        val event = usageEvent(
+            id = "cross-row",
+            startMinute = 10 * 60 + 50,
+            durationMinutes = 20,
+        )
+        val grid = buildTimelineGrid(
+            events = listOf(event),
+            zoomMinutes = 15,
+        )
+        val viewportTopDp = (10 * 60 + 45) * grid.dpPerMinute
+        val visiblePlacements = timelinePlacementsInViewport(
+            grid = grid,
+            viewportTopDp = viewportTopDp,
+            viewportHeightDp = grid.rowHeightDp * 2,
+        )
+
+        assertEquals(listOf("cross-row"), visiblePlacements.map { it.event.id })
+    }
+
+    @Test
+    fun timelineViewportKeepsPartiallyVisiblePlacements() {
+        val event = usageEvent(
+            id = "partially-visible",
+            startMinute = 10 * 60,
+            durationMinutes = 10,
+        )
+        val grid = buildTimelineGrid(
+            events = listOf(event),
+            zoomMinutes = 15,
+        )
+        val placement = grid.placements.single()
+        val visiblePlacements = timelinePlacementsInViewport(
+            grid = grid,
+            viewportTopDp = placement.displayTopDp + 5 * grid.dpPerMinute,
+            viewportHeightDp = grid.dpPerMinute,
+        )
+
+        assertEquals(listOf("partially-visible"), visiblePlacements.map { it.event.id })
     }
 
     @Test
@@ -482,6 +560,31 @@ class TimelineLayoutTest {
             (grid.contentHeightDp + 24f - 600f).coerceAtLeast(0f),
             timelineScrollToMinuteDp(grid, 24 * 60, viewportHeightDp = 600f),
         )
+    }
+
+    @Test
+    fun timelineSingleItemScrollTargetClampsToContentBounds() {
+        val grid = buildTimelineGrid(
+            events = emptyList(),
+            zoomMinutes = 15,
+        )
+
+        assertWithin(0f, timelineSingleItemScrollTargetDp(grid, -120f))
+        assertWithin(120f, timelineSingleItemScrollTargetDp(grid, 120f))
+        assertWithin(
+            grid.contentHeightDp + 32f - 0.001f,
+            timelineSingleItemScrollTargetDp(grid, grid.contentHeightDp + 400f),
+        )
+    }
+
+    @Test
+    fun timelineNowMarkerOffsetUsesMinutePosition() {
+        val grid = buildTimelineGrid(
+            events = emptyList(),
+            zoomMinutes = 30,
+        )
+
+        assertWithin(9 * 60 * grid.dpPerMinute, timelineMinuteOffsetDp(grid, 9 * 60))
     }
 
     @Test

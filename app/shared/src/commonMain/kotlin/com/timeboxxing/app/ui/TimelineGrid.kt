@@ -135,7 +135,7 @@ fun timelineIntervalMarkerOffsets(
     rowStartMinute: Int,
     rowEndMinute: Int,
     dpPerMinute: Float,
-    stepMinutes: Int = 5,
+    stepMinutes: Int = 1,
 ): List<Float> {
     if (rowEndMinute <= rowStartMinute || stepMinutes <= 0 || dpPerMinute <= 0f) {
         return emptyList()
@@ -144,6 +144,21 @@ fun timelineIntervalMarkerOffsets(
     return generateSequence(rowStartMinute + stepMinutes) { minute -> minute + stepMinutes }
         .takeWhile { minute -> minute < rowEndMinute }
         .map { minute -> (minute - rowStartMinute) * dpPerMinute }
+        .toList()
+}
+
+fun timelineMinuteMarkerOffsetsDp(
+    grid: TimelineGrid,
+): List<Float> {
+    if (grid.visibleEndMinute <= grid.visibleStartMinute || grid.dpPerMinute <= 0f) {
+        return emptyList()
+    }
+
+    val boundaryMinutes = grid.rows.map { row -> row.minute }.toSet()
+    return generateSequence(grid.visibleStartMinute + 1) { minute -> minute + 1 }
+        .takeWhile { minute -> minute < grid.visibleEndMinute }
+        .filterNot { minute -> minute in boundaryMinutes }
+        .map { minute -> timelineMinuteOffsetDp(grid, minute) }
         .toList()
 }
 
@@ -176,6 +191,15 @@ fun timelineScrollToMinuteDp(
     return (minuteOffsetDp - viewportHeightDp / 2f).coerceIn(0f, resolvedMaxScrollDp)
 }
 
+fun timelineSingleItemScrollTargetDp(
+    grid: TimelineGrid,
+    targetDp: Float,
+    bottomPaddingDp: Float = 32f,
+): Float {
+    val maxTargetDp = (grid.contentHeightDp + bottomPaddingDp - 0.001f).coerceAtLeast(0f)
+    return targetDp.coerceIn(0f, maxTargetDp)
+}
+
 fun timelineNowScrollDirection(
     nowOffsetDp: Float,
     viewportTopDp: Float,
@@ -189,6 +213,20 @@ fun timelineNowScrollDirection(
         nowOffsetDp < viewportTopDp + threshold -> TimelineScrollDirection.Up
         nowOffsetDp > viewportBottomDp - threshold -> TimelineScrollDirection.Down
         else -> null
+    }
+}
+
+fun timelinePlacementsInViewport(
+    grid: TimelineGrid,
+    viewportTopDp: Float,
+    viewportHeightDp: Float,
+): List<TimelineEventPlacement> {
+    if (viewportHeightDp <= 0f) return emptyList()
+
+    val viewportBottomDp = viewportTopDp + viewportHeightDp
+    return grid.placements.filter { placement ->
+        placement.displayTopDp < viewportBottomDp &&
+            placement.displayTopDp + placement.heightDp > viewportTopDp
     }
 }
 
@@ -218,11 +256,6 @@ private data class TimelineInterval(
     val endMinute: Int,
 )
 
-private data class ActiveTimelineInterval(
-    val endMinute: Int,
-    val laneIndex: Int,
-)
-
 private fun normalizeTimelineZoomMinutes(zoomMinutes: Int): Int =
     when {
         zoomMinutes <= 10 -> 10
@@ -235,7 +268,7 @@ private fun resolveTimelineEventPlacements(
     events: List<UsageEvent>,
     dpPerMinute: Float,
 ): List<TimelineEventPlacement> {
-    val intervals = events.mapNotNull { event ->
+    return events.mapNotNull { event ->
         val startMinute = event.startMinute.coerceIn(0, TimelineDayMinutes)
         val endMinute = (event.startMinute + event.durationMinutes).coerceIn(0, TimelineDayMinutes)
         if (endMinute <= startMinute) return@mapNotNull null
@@ -248,53 +281,7 @@ private fun resolveTimelineEventPlacements(
         compareBy<TimelineInterval> { it.startMinute }
             .thenBy { it.endMinute }
             .thenBy { it.event.id },
-    )
-
-    val placements = mutableListOf<TimelineEventPlacement>()
-    var index = 0
-    while (index < intervals.size) {
-        val group = mutableListOf<TimelineInterval>()
-        var groupEndMinute = intervals[index].endMinute
-        while (index < intervals.size && intervals[index].startMinute < groupEndMinute) {
-            val interval = intervals[index]
-            group += interval
-            groupEndMinute = maxOf(groupEndMinute, interval.endMinute)
-            index += 1
-        }
-        placements += assignTimelineLanes(group, dpPerMinute)
-    }
-
-    return placements.sortedWith(
-        compareBy<TimelineEventPlacement> { it.timeTopDp }
-            .thenBy { it.laneIndex }
-            .thenBy { it.event.id },
-    )
-}
-
-private fun assignTimelineLanes(
-    intervals: List<TimelineInterval>,
-    dpPerMinute: Float,
-): List<TimelineEventPlacement> {
-    val active = mutableListOf<ActiveTimelineInterval>()
-    val assigned = mutableListOf<Pair<TimelineInterval, Int>>()
-    var laneCount = 0
-
-    intervals.forEach { interval ->
-        active.removeAll { it.endMinute <= interval.startMinute }
-        val usedLanes = active.map { it.laneIndex }.toSet()
-        var laneIndex = 0
-        while (laneIndex in usedLanes) {
-            laneIndex += 1
-        }
-        active += ActiveTimelineInterval(
-            endMinute = interval.endMinute,
-            laneIndex = laneIndex,
-        )
-        assigned += interval to laneIndex
-        laneCount = maxOf(laneCount, laneIndex + 1)
-    }
-
-    return assigned.map { (interval, laneIndex) ->
+    ).map { interval ->
         val timeTopDp = interval.startMinute * dpPerMinute
         TimelineEventPlacement(
             event = interval.event,
@@ -303,8 +290,8 @@ private fun assignTimelineLanes(
             timeTopDp = timeTopDp,
             displayTopDp = timeTopDp,
             heightDp = (interval.endMinute - interval.startMinute) * dpPerMinute,
-            laneIndex = laneIndex,
-            laneCount = laneCount,
+            laneIndex = 0,
+            laneCount = 1,
         )
     }
 }
