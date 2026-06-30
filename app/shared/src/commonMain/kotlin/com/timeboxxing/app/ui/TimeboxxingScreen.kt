@@ -1,17 +1,13 @@
 package com.timeboxxing.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
@@ -51,13 +47,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -66,9 +57,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -79,6 +68,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -142,35 +132,26 @@ internal enum class OverviewPaneMotionDirection {
     Restore,
 }
 
-private data class PendingOverviewPaneGenieCue(
+private data class OverviewPaneMotion(
     val id: Int,
     val pane: OverviewPane,
     val direction: OverviewPaneMotionDirection,
-    val sourceBounds: Rect,
-)
-
-internal data class OverviewPaneGenieCue(
-    val id: Int,
-    val pane: OverviewPane,
-    val direction: OverviewPaneMotionDirection,
-    val startBounds: Rect,
-    val endBounds: Rect,
+    val fromSnapshot: OverviewPaneLayoutSnapshot,
+    val toSnapshot: OverviewPaneLayoutSnapshot,
 )
 
 private val WideWorkspaceMinContentWidth = 1120.dp
 private val ProjectPaneWidth = 280.dp
 private const val OverviewPaneAnimationMillis = 220
-private const val OverviewPaneGenieMillis = 820
+private const val OverviewPaneDockMillis = 220
 private const val OverviewPaneTrayPulseMillis = 620L
 private const val NoticeToastAnimationMillis = 180
 private const val NoticeToastVisibleMillis = 4_000L
-private const val MinimizedPaneWeight = 0.0001f
-private const val OverviewPaneGenieTrayScale = 0.86f
 private val OverviewPaneTrayIconSize = 32.dp
 private val OverviewPaneTraySpacing = 8.dp
 private val OverviewPaneTrayPaddingStart = 24.dp
 private val OverviewPaneTrayPaddingBottom = 24.dp
-private val OverviewPaneGenieEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+private val OverviewPaneDockEasing = CubicBezierEasing(0.18f, 0f, 0.12f, 1f)
 private val AmaComposerDoubleEscapeWindow = 700.milliseconds
 
 @Composable
@@ -929,229 +910,57 @@ private fun WideWorkspace(
     onMinimizePane: (OverviewPane) -> Unit,
     onRestorePane: (OverviewPane) -> Unit,
 ) {
-    var pendingGenieCue by remember { mutableStateOf<PendingOverviewPaneGenieCue?>(null) }
-    var activeGenieCue by remember { mutableStateOf<OverviewPaneGenieCue?>(null) }
+    var activeMotion by remember { mutableStateOf<OverviewPaneMotion?>(null) }
+    var motionProgress by remember { mutableStateOf(1f) }
     var pulsingTrayPane by remember { mutableStateOf<OverviewPane?>(null) }
-    var restoringLayoutPane by remember { mutableStateOf<OverviewPane?>(null) }
-    var nextGenieCueId by remember { mutableStateOf(0) }
-    var workspaceBounds by remember { mutableStateOf<Rect?>(null) }
-    var paneBounds by remember { mutableStateOf(emptyMap<OverviewPane, Rect>()) }
-    var trayIconBounds by remember { mutableStateOf(emptyMap<OverviewPane, Rect>()) }
+    var nextMotionSequence by remember { mutableStateOf(0) }
     val density = LocalDensity.current
-    val trayMetrics = with(density) {
-        OverviewPaneTrayMetrics(
-            iconSizePx = OverviewPaneTrayIconSize.toPx(),
-            iconSpacingPx = OverviewPaneTraySpacing.toPx(),
-            startPaddingPx = OverviewPaneTrayPaddingStart.toPx(),
-            bottomPaddingPx = OverviewPaneTrayPaddingBottom.toPx(),
-        )
-    }
     val projectPaneWidthPx = with(density) { ProjectPaneWidth.toPx() }
     val dividerWidthPx = with(density) { Dp.Hairline.toPx().coerceAtLeast(1f) }
-    val layoutMinimizedPanes = overviewPaneLayoutMinimizedPanes(
-        minimizedPanes = minimizedPanes,
-        restoringPane = restoringLayoutPane,
-    )
-    val visiblePanes = OverviewPane.entries.filterNot { it in layoutMinimizedPanes }
-    val canMinimize = visiblePanes.size > 1
-    val usageVisible = OverviewPane.UsageSchedule !in layoutMinimizedPanes
-    val entriesVisible = OverviewPane.TimeEntries !in layoutMinimizedPanes
-    val projectsVisible = OverviewPane.Projects !in layoutMinimizedPanes
-    val genieHiddenPane = activeGenieCue?.pane ?: pendingGenieCue?.pane
-    val usageWeight by animateFloatAsState(
-        targetValue = if (usageVisible) 0.98f else MinimizedPaneWeight,
-        animationSpec = tween(OverviewPaneAnimationMillis),
-        label = "usage-pane-weight",
-    )
-    val entriesWeight by animateFloatAsState(
-        targetValue = if (entriesVisible) 1.05f else MinimizedPaneWeight,
-        animationSpec = tween(OverviewPaneAnimationMillis),
-        label = "entries-pane-weight",
-    )
-    val projectsWidth by animateDpAsState(
-        targetValue = if (projectsVisible) ProjectPaneWidth else 0.dp,
-        animationSpec = tween(OverviewPaneAnimationMillis),
-        label = "projects-pane-width",
-    )
 
-    fun nextCueId(): Int {
-        val id = nextGenieCueId
-        nextGenieCueId += 1
+    fun nextMotionId(): Int {
+        val id = nextMotionSequence
+        nextMotionSequence += 1
         return id
     }
 
-    fun updatePaneBounds(pane: OverviewPane, bounds: Rect) {
-        if (paneBounds[pane] != bounds) {
-            paneBounds = paneBounds + (pane to bounds)
-        }
-    }
-
-    fun updateTrayIconBounds(pane: OverviewPane, bounds: Rect) {
-        if (trayIconBounds[pane] != bounds) {
-            trayIconBounds = trayIconBounds + (pane to bounds)
-        }
-    }
-
-    fun minimizePane(pane: OverviewPane) {
-        if (!canMinimize) {
-            return
-        }
-        val sourceBounds = paneBounds[pane]
-        if (sourceBounds != null) {
-            val id = nextCueId()
-            val workspace = workspaceBounds
-            val targetBounds = workspace?.let {
-                overviewPaneTrayIconBounds(
-                    workspaceBounds = it,
-                    minimizedPanes = minimizedPanes + pane,
-                    pane = pane,
-                    metrics = trayMetrics,
-                )
-            }
-            if (workspace != null && targetBounds != null) {
-                activeGenieCue = buildOverviewPaneGenieCue(
-                    id = id,
-                    pane = pane,
-                    direction = OverviewPaneMotionDirection.Minimize,
-                    sourceBounds = sourceBounds,
-                    targetBounds = targetBounds,
-                    workspaceBounds = workspace,
-                    trayScale = OverviewPaneGenieTrayScale,
-                )
-                pendingGenieCue = null
-            } else {
-                pendingGenieCue = PendingOverviewPaneGenieCue(
-                    id = id,
-                    pane = pane,
-                    direction = OverviewPaneMotionDirection.Minimize,
-                    sourceBounds = sourceBounds,
-                )
-            }
-        }
-        onMinimizePane(pane)
-    }
-
-    fun restorePane(pane: OverviewPane) {
-        val sourceBounds = trayIconBounds[pane]
-        if (sourceBounds != null) {
-            val id = nextCueId()
-            val workspace = workspaceBounds
-            val targetBounds = workspace?.let {
-                overviewPaneExpandedBounds(
-                    workspaceBounds = it,
-                    minimizedPanes = minimizedPanes - pane,
-                    pane = pane,
-                    projectPaneWidthPx = projectPaneWidthPx,
-                    dividerWidthPx = dividerWidthPx,
-                )
-            } ?: paneBounds[pane]
-            if (workspace != null && targetBounds != null) {
-                restoringLayoutPane = pane
-                activeGenieCue = buildOverviewPaneGenieCue(
-                    id = id,
-                    pane = pane,
-                    direction = OverviewPaneMotionDirection.Restore,
-                    sourceBounds = sourceBounds,
-                    targetBounds = targetBounds,
-                    workspaceBounds = workspace,
-                    trayScale = OverviewPaneGenieTrayScale,
-                )
-                pendingGenieCue = null
-            } else {
-                pendingGenieCue = PendingOverviewPaneGenieCue(
-                    id = id,
-                    pane = pane,
-                    direction = OverviewPaneMotionDirection.Restore,
-                    sourceBounds = sourceBounds,
-                )
-            }
-        } else {
-            onRestorePane(pane)
-        }
-        if (pulsingTrayPane == pane) {
-            pulsingTrayPane = null
-        }
-    }
-
-    fun finishGenieCue(cue: OverviewPaneGenieCue) {
-        if (activeGenieCue?.id != cue.id) {
-            return
-        }
-        activeGenieCue = null
-        when (cue.direction) {
-            OverviewPaneMotionDirection.Minimize -> pulsingTrayPane = cue.pane
-            OverviewPaneMotionDirection.Restore -> {
-                onRestorePane(cue.pane)
-            }
-        }
-    }
-
-    LaunchedEffect(
-        pendingGenieCue,
-        paneBounds,
-        trayIconBounds,
-        workspaceBounds,
-        layoutMinimizedPanes,
-        trayMetrics,
-        projectPaneWidthPx,
-        dividerWidthPx,
-    ) {
-        val pending = pendingGenieCue ?: return@LaunchedEffect
-        val workspace = workspaceBounds ?: return@LaunchedEffect
-        val targetBounds = when (pending.direction) {
-            OverviewPaneMotionDirection.Minimize -> overviewPaneTrayIconBounds(
-                workspaceBounds = workspace,
-                minimizedPanes = minimizedPanes,
-                pane = pending.pane,
-                metrics = trayMetrics,
-            )
-            OverviewPaneMotionDirection.Restore -> overviewPaneExpandedBounds(
-                workspaceBounds = workspace,
-                minimizedPanes = layoutMinimizedPanes - pending.pane,
-                pane = pending.pane,
-                projectPaneWidthPx = projectPaneWidthPx,
-                dividerWidthPx = dividerWidthPx,
-            ) ?: paneBounds[pending.pane]
-        } ?: return@LaunchedEffect
-
-        if (pending.direction == OverviewPaneMotionDirection.Restore) {
-            restoringLayoutPane = pending.pane
-        }
-        activeGenieCue = buildOverviewPaneGenieCue(
-            id = pending.id,
-            pane = pending.pane,
-            direction = pending.direction,
-            sourceBounds = pending.sourceBounds,
-            targetBounds = targetBounds,
-            workspaceBounds = workspace,
-            trayScale = OverviewPaneGenieTrayScale,
+    fun snapshotFor(workspaceBounds: Rect, panes: Set<OverviewPane>): OverviewPaneLayoutSnapshot =
+        overviewPaneLayoutSnapshot(
+            workspaceBounds = workspaceBounds,
+            minimizedPanes = panes,
+            projectPaneWidthPx = projectPaneWidthPx,
+            dividerWidthPx = dividerWidthPx,
         )
-        pendingGenieCue = null
-    }
 
-    LaunchedEffect(pendingGenieCue?.id) {
-        val pending = pendingGenieCue ?: return@LaunchedEffect
-        delay(OverviewPaneAnimationMillis.toLong() + 140L)
-        if (pendingGenieCue?.id == pending.id) {
-            pendingGenieCue = null
-            if (pending.direction == OverviewPaneMotionDirection.Restore && restoringLayoutPane == pending.pane) {
-                restoringLayoutPane = null
+    fun finishMotion(motion: OverviewPaneMotion) {
+        if (activeMotion?.id != motion.id) {
+            return
+        }
+        motionProgress = 1f
+        when (motion.direction) {
+            OverviewPaneMotionDirection.Minimize -> {
+                activeMotion = null
+                pulsingTrayPane = motion.pane
             }
+            OverviewPaneMotionDirection.Restore -> activeMotion = null
         }
     }
 
-    LaunchedEffect(activeGenieCue?.id) {
-        val active = activeGenieCue ?: return@LaunchedEffect
-        delay(OverviewPaneGenieMillis.toLong() + 120L)
-        if (activeGenieCue?.id == active.id) {
-            finishGenieCue(active)
+    LaunchedEffect(activeMotion?.id) {
+        val motion = activeMotion ?: return@LaunchedEffect
+        val progress = Animatable(0f)
+        motionProgress = 0f
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = OverviewPaneDockMillis,
+                easing = OverviewPaneDockEasing,
+            ),
+        ) {
+            motionProgress = value
         }
-    }
-
-    LaunchedEffect(minimizedPanes, restoringLayoutPane) {
-        val pane = restoringLayoutPane ?: return@LaunchedEffect
-        if (pane !in minimizedPanes) {
-            restoringLayoutPane = null
+        if (activeMotion?.id == motion.id) {
+            finishMotion(motion)
         }
     }
 
@@ -1162,424 +971,225 @@ private fun WideWorkspace(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { coordinates ->
-                workspaceBounds = coordinates.boundsInRoot()
-            },
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .animateContentSize(animationSpec = tween(OverviewPaneAnimationMillis)),
-        ) {
-            AnimatedOverviewPane(
-                visible = usageVisible,
-                contentVisible = genieHiddenPane != OverviewPane.UsageSchedule,
-                modifier = Modifier
-                    .weight(usageWeight)
-                    .fillMaxHeight()
-                    .recordOverviewBounds { bounds ->
-                        updatePaneBounds(OverviewPane.UsageSchedule, bounds)
-                    },
-            ) {
-                SchedulePane(
-                    state = state,
-                    usageIconLoader = usageIconLoader,
-                    onUsageClick = { onAction(TimeboxxingAction.ToggleUsageSelection(it)) },
-                    onClearSelection = { onAction(TimeboxxingAction.ClearUsageSelection) },
-                    onCreateEntry = { onAction(TimeboxxingAction.AddDraftEntry) },
-                    scrollState = scheduleScrollState,
-                    modifier = Modifier.fillMaxSize(),
-                    headerAction = if (canMinimize) {
-                        {
-                            OverviewPaneMinimizeButton(
-                                pane = OverviewPane.UsageSchedule,
-                                onClick = { minimizePane(OverviewPane.UsageSchedule) },
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                )
-            }
-            if (usageVisible && (entriesVisible || projectsVisible)) {
-                TbVerticalDivider()
-            }
-            AnimatedOverviewPane(
-                visible = entriesVisible,
-                contentVisible = genieHiddenPane != OverviewPane.TimeEntries,
-                modifier = Modifier
-                    .weight(entriesWeight)
-                    .fillMaxHeight()
-                    .recordOverviewBounds { bounds ->
-                        updatePaneBounds(OverviewPane.TimeEntries, bounds)
-                    },
-            ) {
-                EntryBuilderPane(
-                    state = state,
-                    onAction = onAction,
-                    showInlineSummary = false,
-                    modifier = Modifier.fillMaxSize(),
-                    headerAction = if (canMinimize) {
-                        {
-                            OverviewPaneMinimizeButton(
-                                pane = OverviewPane.TimeEntries,
-                                onClick = { minimizePane(OverviewPane.TimeEntries) },
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                )
-            }
-            if (entriesVisible && projectsVisible) {
-                TbVerticalDivider()
-            }
-            AnimatedOverviewPane(
-                visible = projectsVisible,
-                contentVisible = genieHiddenPane != OverviewPane.Projects,
-                modifier = (if (projectsVisible && visiblePanes.size == 1) {
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                } else {
-                    Modifier
-                        .width(projectsWidth)
-                        .fillMaxHeight()
-                }).recordOverviewBounds { bounds ->
-                    updatePaneBounds(OverviewPane.Projects, bounds)
-                },
-            ) {
-                ProjectSummaryRail(
-                    state = state,
-                    onAction = onAction,
-                    modifier = Modifier.fillMaxSize(),
-                    headerAction = if (canMinimize) {
-                        {
-                            OverviewPaneMinimizeButton(
-                                pane = OverviewPane.Projects,
-                                onClick = { minimizePane(OverviewPane.Projects) },
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
-
-        OverviewPaneGenieOverlay(
-            cue = activeGenieCue,
-            state = state,
-            usageIconLoader = usageIconLoader,
-            onFinished = ::finishGenieCue,
-            modifier = Modifier
-                .matchParentSize()
-                .zIndex(2f),
+        val workspaceBounds = Rect(
+            left = 0f,
+            top = 0f,
+            right = with(density) { maxWidth.toPx() },
+            bottom = with(density) { maxHeight.toPx() },
         )
-
-        MinimizedOverviewPaneTray(
-            visiblePanes = minimizedPanes,
-            pulsingPane = pulsingTrayPane,
-            onTrayIconBoundsChanged = ::updateTrayIconBounds,
-            onRestorePane = ::restorePane,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(
-                    start = OverviewPaneTrayPaddingStart,
-                    bottom = OverviewPaneTrayPaddingBottom,
-                )
-                .zIndex(3f),
-        )
-    }
-}
-
-@Composable
-private fun AnimatedOverviewPane(
-    visible: Boolean,
-    contentVisible: Boolean,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter = fadeIn(animationSpec = tween(OverviewPaneAnimationMillis)) +
-            expandHorizontally(
-                animationSpec = tween(OverviewPaneAnimationMillis),
-                expandFrom = Alignment.Start,
-                clip = true,
-            ),
-        exit = fadeOut(animationSpec = tween(OverviewPaneAnimationMillis)) +
-            shrinkHorizontally(
-                animationSpec = tween(OverviewPaneAnimationMillis),
-                shrinkTowards = Alignment.Start,
-                clip = true,
-            ),
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (contentVisible) {
-                content()
-            }
-        }
-    }
-}
-
-@Composable
-private fun OverviewPaneGenieOverlay(
-    cue: OverviewPaneGenieCue?,
-    state: TimeboxxingScreenState,
-    usageIconLoader: UsageIconLoader,
-    onFinished: (OverviewPaneGenieCue) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val currentCue = cue ?: return
-    val progress = remember(currentCue.id) { Animatable(0f) }
-    val density = LocalDensity.current
-    val baseBounds = when (currentCue.direction) {
-        OverviewPaneMotionDirection.Minimize -> currentCue.startBounds
-        OverviewPaneMotionDirection.Restore -> currentCue.endBounds
-    }
-
-    LaunchedEffect(currentCue.id) {
-        progress.snapTo(0f)
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = OverviewPaneGenieMillis,
-                easing = OverviewPaneGenieEasing,
-            ),
-        )
-        onFinished(currentCue)
-    }
-
-    Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        x = baseBounds.left.roundToInt(),
-                        y = baseBounds.top.roundToInt(),
-                    )
-                }
-                .size(
-                    width = with(density) { baseBounds.width.toDp() },
-                    height = with(density) { baseBounds.height.toDp() },
-                )
-                .overviewPaneGenieTransform(
-                    cue = currentCue,
-                    baseBounds = baseBounds,
-                    progress = progress.value,
-                    shape = RoundedCornerShape(TbTheme.radii.card),
-                    highlightColor = TbTheme.colors.accent,
-                )
-                .pointerInput(currentCue.id) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent().changes.forEach { it.consume() }
-                        }
-                    }
-                },
-        ) {
-            OverviewPaneProxyContent(
-                pane = currentCue.pane,
-                state = state,
-                usageIconLoader = usageIconLoader,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun OverviewPaneProxyContent(
-    pane: OverviewPane,
-    state: TimeboxxingScreenState,
-    usageIconLoader: UsageIconLoader,
-    modifier: Modifier = Modifier,
-) {
-    when (pane) {
-        OverviewPane.UsageSchedule -> SchedulePane(
-            state = state,
-            usageIconLoader = usageIconLoader,
-            onUsageClick = {},
-            onClearSelection = {},
-            onCreateEntry = {},
-            scrollState = rememberSchedulePaneScrollState(),
-            modifier = modifier,
-        )
-        OverviewPane.TimeEntries -> EntryBuilderPane(
-            state = state,
-            onAction = {},
-            showInlineSummary = false,
-            modifier = modifier,
-        )
-        OverviewPane.Projects -> ProjectSummaryRail(
-            state = state,
-            onAction = {},
-            modifier = modifier,
-        )
-    }
-}
-
-private fun Modifier.overviewPaneGenieTransform(
-    cue: OverviewPaneGenieCue,
-    baseBounds: Rect,
-    progress: Float,
-    shape: RoundedCornerShape,
-    highlightColor: Color,
-): Modifier =
-    drawWithContent {
-        if (baseBounds.width <= 0f || baseBounds.height <= 0f) {
-            drawContent()
-            return@drawWithContent
-        }
-
-        val rawProgress = progress.coerceIn(0f, 1f)
-        val genieProgress = when (cue.direction) {
-            OverviewPaneMotionDirection.Minimize -> rawProgress
-            OverviewPaneMotionDirection.Restore -> 1f - rawProgress
-        }
-        val pullPoint = when (cue.direction) {
-            OverviewPaneMotionDirection.Minimize -> cue.endBounds.center
-            OverviewPaneMotionDirection.Restore -> cue.startBounds.center
-        }
-        val localPullX = pullPoint.x - baseBounds.left
-        val localPullY = pullPoint.y - baseBounds.top
-        val path = overviewPaneGenieClipPath(
-            width = size.width,
-            height = size.height,
-            pullX = localPullX,
-            pullY = localPullY,
-            progress = genieProgress,
-        )
-        val highlightAlpha = genieHighlightAlpha(rawProgress)
-
-        clipPath(path) {
-            this@drawWithContent.drawContent()
-        }
-        drawPath(
-            path = path,
-            color = highlightColor.copy(alpha = highlightAlpha * 0.06f),
-        )
-        drawPath(
-            path = path,
-            color = highlightColor.copy(alpha = highlightAlpha * 0.2f),
-            style = Stroke(width = 1.4.dp.toPx()),
-        )
-    }.graphicsLayer {
-        if (baseBounds.width <= 0f || baseBounds.height <= 0f) {
-            return@graphicsLayer
-        }
-
-        val transform = overviewPaneGenieTransformValues(
-            cue = cue,
-            baseBounds = baseBounds,
-            progress = progress,
-        )
-        transformOrigin = TransformOrigin(transform.originXFraction, transform.originYFraction)
-        translationX = transform.translationX
-        translationY = transform.translationY
-        scaleX = transform.scaleX
-        scaleY = transform.scaleY
-        alpha = transform.alpha
-        this.shape = shape
-        clip = true
-    }
-
-private fun overviewPaneGenieClipPath(
-    width: Float,
-    height: Float,
-    pullX: Float,
-    pullY: Float,
-    progress: Float,
-): Path {
-    val bend = stagedProgress(progress, 0.02f, 0.86f)
-    val waist = stagedProgress(progress, 0.12f, 1f)
-    val pullsTowardBottom = pullY >= height / 2f
-    val pullsLeft = pullX < width / 2f
-    val targetWidth = (width * lerpFloat(0.84f, 0.08f, waist)).coerceAtLeast(20f.coerceAtMost(width))
-    val targetHalfWidth = targetWidth / 2f
-    val targetLeft = pullX - targetHalfWidth
-    val targetRight = pullX + targetHalfWidth
-    val nearEdgeInset = width * 0.012f * bend * bend
-    val farEdgeInset = width * 0.075f * bend * bend
-    val controlPull = lerpFloat(0.22f, 0.96f, bend)
-    val nearControlPull = (controlPull * 0.74f).coerceIn(0f, 1f)
-    val farControlPull = (controlPull * 1.08f).coerceIn(0f, 1f)
-
-    return Path().apply {
-        if (pullsTowardBottom) {
-            val topLeft = if (pullsLeft) nearEdgeInset else farEdgeInset
-            val topRight = width - if (pullsLeft) farEdgeInset else nearEdgeInset
-            val bottomLeft = lerpFloat(0f, targetLeft, bend)
-            val bottomRight = lerpFloat(width, targetRight, bend)
-            val leftPull = if (pullsLeft) nearControlPull else farControlPull
-            val rightPull = if (pullsLeft) farControlPull else nearControlPull
-
-            moveTo(topLeft, 0f)
-            lineTo(topRight, 0f)
-            cubicTo(
-                lerpFloat(width, bottomRight, rightPull * 0.58f),
-                height * 0.28f,
-                lerpFloat(width, bottomRight, rightPull),
-                height * 0.78f,
-                bottomRight,
-                height,
-            )
-            lineTo(bottomLeft, height)
-            cubicTo(
-                lerpFloat(0f, bottomLeft, leftPull),
-                height * 0.78f,
-                lerpFloat(0f, bottomLeft, leftPull * 0.58f),
-                height * 0.28f,
-                topLeft,
-                0f,
+        val currentSnapshot = snapshotFor(workspaceBounds, minimizedPanes)
+        val active = activeMotion
+        val renderedSnapshot = if (active != null) {
+            overviewPaneMotionLayoutSnapshot(
+                from = active.fromSnapshot,
+                to = active.toSnapshot,
+                activePane = active.pane,
+                direction = active.direction,
+                progress = motionProgress,
+                dividerWidthPx = dividerWidthPx,
             )
         } else {
-            val topLeft = lerpFloat(0f, targetLeft, bend)
-            val topRight = lerpFloat(width, targetRight, bend)
-            val bottomLeft = if (pullsLeft) nearEdgeInset else farEdgeInset
-            val bottomRight = width - if (pullsLeft) farEdgeInset else nearEdgeInset
-            val leftPull = if (pullsLeft) nearControlPull else farControlPull
-            val rightPull = if (pullsLeft) farControlPull else nearControlPull
+            currentSnapshot
+        }
+        val layoutReady = workspaceBounds.width > 0f && workspaceBounds.height > 0f
+        val controlsEnabled = active == null && layoutReady
+        val canMinimize = controlsEnabled && currentSnapshot.paneBounds.size > 1
 
-            moveTo(topLeft, 0f)
-            lineTo(topRight, 0f)
-            cubicTo(
-                lerpFloat(width, bottomRight, 1f - rightPull),
-                height * 0.22f,
-                lerpFloat(width, bottomRight, 0.58f),
-                height * 0.72f,
-                bottomRight,
-                height,
+        fun minimizePane(pane: OverviewPane) {
+            if (!canMinimize) {
+                return
+            }
+            if (currentSnapshot.paneBounds[pane] == null) {
+                return
+            }
+            val targetMinimizedPanes = minimizedPanes + pane
+            val targetSnapshot = snapshotFor(workspaceBounds, targetMinimizedPanes)
+            val id = nextMotionId()
+            motionProgress = 0f
+            activeMotion = OverviewPaneMotion(
+                id = id,
+                pane = pane,
+                direction = OverviewPaneMotionDirection.Minimize,
+                fromSnapshot = currentSnapshot,
+                toSnapshot = targetSnapshot,
             )
-            lineTo(bottomLeft, height)
-            cubicTo(
-                lerpFloat(0f, bottomLeft, 0.58f),
-                height * 0.72f,
-                lerpFloat(0f, bottomLeft, 1f - leftPull),
-                height * 0.22f,
-                topLeft,
-                0f,
+            onMinimizePane(pane)
+        }
+
+        fun restorePane(pane: OverviewPane) {
+            if (!layoutReady || pane !in minimizedPanes) {
+                return
+            }
+            if (active != null) {
+                activeMotion = null
+                motionProgress = 1f
+                onRestorePane(pane)
+                return
+            }
+            val targetMinimizedPanes = minimizedPanes - pane
+            val targetSnapshot = snapshotFor(workspaceBounds, targetMinimizedPanes)
+            if (targetSnapshot.paneBounds[pane] == null) {
+                return
+            }
+            val id = nextMotionId()
+            if (pulsingTrayPane == pane) {
+                pulsingTrayPane = null
+            }
+            motionProgress = 0f
+            activeMotion = OverviewPaneMotion(
+                id = id,
+                pane = pane,
+                direction = OverviewPaneMotionDirection.Restore,
+                fromSnapshot = currentSnapshot,
+                toSnapshot = targetSnapshot,
+            )
+            onRestorePane(pane)
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            OverviewPane.entries.forEach { pane ->
+                val bounds = renderedSnapshot.paneBounds[pane] ?: return@forEach
+                PositionedOverviewPane(
+                    pane = pane,
+                    bounds = bounds,
+                    state = state,
+                    usageIconLoader = usageIconLoader,
+                    scheduleScrollState = scheduleScrollState,
+                    onAction = onAction,
+                    canMinimize = canMinimize,
+                    motionDirection = active?.direction?.takeIf { active.pane == pane },
+                    motionProgress = motionProgress,
+                    onMinimizePane = { minimizePane(pane) },
+                )
+            }
+
+            renderedSnapshot.dividerBounds.values.forEach { bounds ->
+                TbVerticalDivider(
+                    modifier = Modifier
+                        .overviewPaneBounds(bounds)
+                        .zIndex(1f),
+                )
+            }
+
+            MinimizedOverviewPaneTray(
+                visiblePanes = if (active?.direction == OverviewPaneMotionDirection.Restore) {
+                    minimizedPanes + active.pane
+                } else {
+                    minimizedPanes
+                },
+                pulsingPane = pulsingTrayPane,
+                enabled = layoutReady,
+                onRestorePane = ::restorePane,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(
+                        start = OverviewPaneTrayPaddingStart,
+                        bottom = OverviewPaneTrayPaddingBottom,
+                    )
+                    .zIndex(3f),
             )
         }
-        close()
     }
 }
 
-private fun Modifier.recordOverviewBounds(onBoundsChanged: (Rect) -> Unit): Modifier =
-    onGloballyPositioned { coordinates ->
-        if (coordinates.size.width > 0 && coordinates.size.height > 0) {
-            onBoundsChanged(coordinates.boundsInRoot())
-        }
+@Composable
+private fun PositionedOverviewPane(
+    pane: OverviewPane,
+    bounds: Rect,
+    state: TimeboxxingScreenState,
+    usageIconLoader: UsageIconLoader,
+    scheduleScrollState: SchedulePaneScrollState,
+    onAction: (TimeboxxingAction) -> Unit,
+    canMinimize: Boolean,
+    motionDirection: OverviewPaneMotionDirection?,
+    motionProgress: Float,
+    onMinimizePane: () -> Unit,
+) {
+    if (bounds.width <= 0f || bounds.height <= 0f) {
+        return
     }
 
-private fun genieHighlightAlpha(fraction: Float): Float =
-    stagedProgress(fraction, 0.12f, 0.34f) *
-        (1f - stagedProgress(fraction, 0.62f, 0.9f))
+    val dockOffsetY = with(LocalDensity.current) { 8.dp.toPx() }
+    val dockTransform = motionDirection?.let {
+        overviewPaneDockTransformValues(
+            direction = it,
+            progress = motionProgress,
+            offsetPx = dockOffsetY,
+        )
+    }
+    val motionShape = RoundedCornerShape(TbTheme.radii.card)
+
+    Box(
+        modifier = Modifier
+            .overviewPaneBounds(bounds)
+            .zIndex(if (dockTransform != null) 2f else 0f)
+            .graphicsLayer {
+                if (dockTransform != null) {
+                    alpha = dockTransform.alpha
+                    scaleX = dockTransform.scale
+                    scaleY = dockTransform.scale
+                    translationY = dockTransform.translationY
+                    shape = motionShape
+                    clip = true
+                }
+            },
+    ) {
+        val headerAction: (@Composable () -> Unit)? = if (canMinimize) {
+            {
+                OverviewPaneMinimizeButton(
+                    pane = pane,
+                    onClick = onMinimizePane,
+                )
+            }
+        } else {
+            null
+        }
+
+        when (pane) {
+            OverviewPane.UsageSchedule -> SchedulePane(
+                state = state,
+                usageIconLoader = usageIconLoader,
+                onUsageClick = { onAction(TimeboxxingAction.ToggleUsageSelection(it)) },
+                onClearSelection = { onAction(TimeboxxingAction.ClearUsageSelection) },
+                onCreateEntry = { onAction(TimeboxxingAction.AddDraftEntry) },
+                scrollState = scheduleScrollState,
+                modifier = Modifier.fillMaxSize(),
+                headerAction = headerAction,
+            )
+            OverviewPane.TimeEntries -> EntryBuilderPane(
+                state = state,
+                onAction = onAction,
+                showInlineSummary = false,
+                modifier = Modifier.fillMaxSize(),
+                headerAction = headerAction,
+            )
+            OverviewPane.Projects -> ProjectSummaryRail(
+                state = state,
+                onAction = onAction,
+                modifier = Modifier.fillMaxSize(),
+                headerAction = headerAction,
+            )
+        }
+    }
+}
+
+private fun Modifier.overviewPaneBounds(bounds: Rect): Modifier =
+    layout { measurable, _ ->
+        val width = bounds.width.roundToInt().coerceAtLeast(0)
+        val height = bounds.height.roundToInt().coerceAtLeast(0)
+        val placeable = measurable.measure(Constraints.fixed(width, height))
+        layout(width, height) {
+            placeable.place(0, 0)
+        }
+    }.offset {
+        IntOffset(
+            x = bounds.left.roundToInt(),
+            y = bounds.top.roundToInt(),
+        )
+    }
 
 @Composable
 private fun OverviewPaneMinimizeButton(
@@ -1598,7 +1208,7 @@ private fun OverviewPaneMinimizeButton(
 private fun MinimizedOverviewPaneTray(
     visiblePanes: Set<OverviewPane>,
     pulsingPane: OverviewPane?,
-    onTrayIconBoundsChanged: (OverviewPane, Rect) -> Unit,
+    enabled: Boolean,
     onRestorePane: (OverviewPane) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1614,17 +1224,17 @@ private fun MinimizedOverviewPaneTray(
         OverviewPane.entries.forEach { pane ->
             val isPulsing = pulsingPane == pane
             val pulseScale by animateFloatAsState(
-                targetValue = if (isPulsing) 1.1f else 1f,
+                targetValue = if (isPulsing) 1.14f else 1f,
                 animationSpec = tween(OverviewPaneTrayPulseMillis.toInt()),
                 label = "${pane.name}-tray-pulse",
             )
             val ringScale by animateFloatAsState(
-                targetValue = if (isPulsing) 1.36f else 0.82f,
+                targetValue = if (isPulsing) 1.52f else 0.82f,
                 animationSpec = tween(OverviewPaneTrayPulseMillis.toInt()),
                 label = "${pane.name}-tray-ring-scale",
             )
             val ringAlpha by animateFloatAsState(
-                targetValue = if (isPulsing) 0.28f else 0f,
+                targetValue = if (isPulsing) 0.44f else 0f,
                 animationSpec = tween(OverviewPaneTrayPulseMillis.toInt()),
                 label = "${pane.name}-tray-ring-alpha",
             )
@@ -1653,16 +1263,13 @@ private fun MinimizedOverviewPaneTray(
                                 scaleY = ringScale
                         },
                         shape = RoundedCornerShape(TbTheme.radii.pill),
-                        color = TbTheme.colors.accent.copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, TbTheme.colors.accent.copy(alpha = 0.28f)),
+                        color = TbTheme.colors.accent.copy(alpha = 0.22f),
+                        border = BorderStroke(1.dp, TbTheme.colors.accent.copy(alpha = 0.58f)),
                         contentAlignment = Alignment.Center,
                     ) {}
                     Box(
                         modifier = Modifier
                             .size(OverviewPaneTrayIconSize)
-                            .recordOverviewBounds { bounds ->
-                                onTrayIconBoundsChanged(pane, bounds)
-                            }
                             .graphicsLayer {
                                 scaleX = pulseScale
                                 scaleY = pulseScale
@@ -1672,6 +1279,7 @@ private fun MinimizedOverviewPaneTray(
                             icon = pane.icon,
                             contentDescription = "Restore ${pane.label}",
                             onClick = { onRestorePane(pane) },
+                            enabled = enabled,
                             variant = TbButtonVariant.Secondary,
                         )
                     }
