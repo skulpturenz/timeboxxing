@@ -271,6 +271,8 @@ fun SchedulePane(
                     modifier = Modifier.padding(top = 12.dp),
                     selectedCount = selectedCount,
                     selectedMinutes = state.selectedUsageMinutes,
+                    canCreateEntry = !state.entrySaving &&
+                        (state.draft.projectId.isBlank() || state.projects.any { it.id == state.draft.projectId }),
                     onClearSelection = onClearSelection,
                     onCreateEntry = onCreateEntry,
                 )
@@ -334,7 +336,7 @@ fun SchedulePane(
                 if (timelineGrid.placements.isEmpty() && nowMinute == null) {
                     ScheduleStateMessage(
                         loading = state.usageLoading,
-                        unavailable = state.notice != null,
+                        unavailable = false,
                         modifier = Modifier.align(Alignment.Center),
                     )
                 }
@@ -451,6 +453,7 @@ private fun StatusMetric(
 private fun SelectionActionBar(
     selectedCount: Int,
     selectedMinutes: Int,
+    canCreateEntry: Boolean,
     onClearSelection: () -> Unit,
     onCreateEntry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -488,7 +491,10 @@ private fun SelectionActionBar(
                 onClick = onClearSelection,
                 variant = TbButtonVariant.Ghost,
             )
-            TbButton(onClick = onCreateEntry) {
+            TbButton(
+                onClick = onCreateEntry,
+                enabled = canCreateEntry,
+            ) {
                 TbIcon(
                     imageVector = Icons.Rounded.Add,
                     contentDescription = null,

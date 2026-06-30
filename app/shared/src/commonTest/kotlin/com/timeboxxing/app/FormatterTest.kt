@@ -12,7 +12,6 @@ import com.timeboxxing.data.mock.mockTimeboxxingData
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.CalendarDate
-import com.timeboxxing.domain.model.EntryMode
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.model.UsageSourceType

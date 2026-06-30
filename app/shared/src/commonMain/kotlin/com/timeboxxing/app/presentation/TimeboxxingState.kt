@@ -13,9 +13,9 @@ import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.CalendarDate
 import com.timeboxxing.domain.model.EntryDraft
-import com.timeboxxing.domain.model.EntryMode
 import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
+import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.TimeboxxingMockData
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
@@ -23,15 +23,23 @@ import com.timeboxxing.domain.model.UsageSourceType
 import com.timeboxxing.domain.model.formatDuration
 import com.timeboxxing.domain.model.plusDays
 
+private const val DeletedProjectColorArgb: Long = 0xFF8A8D80
+private const val NoProjectColorArgb: Long = 0xFF6E7F80
+private const val InvalidDraftProjectNotice = "Choose an existing project or No project."
+private const val AddEntryBeforeExportNotice = "Add an entry before exporting."
+
 data class TimeboxxingScreenState(
     val selectedSection: TimeboxxingSection,
     val dateIndex: Int,
     val zoomMinutes: Int,
-    val mode: EntryMode,
     val projects: List<Project>,
     val usageEvents: List<UsageEvent>,
     val usageLoading: Boolean,
     val entries: List<TimeEntry>,
+    val entriesLoading: Boolean = false,
+    val entrySaving: Boolean = false,
+    val deletingEntryIds: Set<String> = emptySet(),
+    val timesheetExporting: Boolean = false,
     val scheduleFocusEntryId: String?,
     val selectedUsageIds: Set<String>,
     val draft: EntryDraft,
@@ -88,12 +96,6 @@ data class TimeboxxingScreenState(
                 .sumOf { it.durationMinutes }
         }
 
-    val primaryActionLabel: String
-        get() = when (mode) {
-            EntryMode.Timesheet -> "Create timesheet"
-            EntryMode.Invoice -> "Create invoice"
-        }
-
     val isAmaConfigured: Boolean
         get() = aiSettings.hasConfiguredAiSecret()
 
@@ -110,7 +112,24 @@ data class TimeboxxingScreenState(
         }
 
     fun projectFor(projectId: String): Project =
-        projects.firstOrNull { it.id == projectId } ?: projects.first()
+        if (projectId.isBlank()) {
+            Project(
+                id = "",
+                name = "No project",
+                client = "",
+                colorArgb = NoProjectColorArgb,
+                hourlyRateCents = 0,
+            )
+        } else {
+            projects.firstOrNull { it.id == projectId }
+            ?: Project(
+                id = projectId,
+                name = "Deleted project",
+                client = "",
+                colorArgb = DeletedProjectColorArgb,
+                hourlyRateCents = 0,
+            )
+        }
 
     fun minutesForProject(projectId: String): Int =
         entries.filter { it.projectId == projectId }.sumOf { it.durationMinutes }
@@ -134,7 +153,6 @@ sealed interface TimeboxxingAction {
     data class MoveDate(val delta: Int) : TimeboxxingAction
     data class SelectDate(val date: CalendarDate) : TimeboxxingAction
     data class ChangeZoom(val minutes: Int) : TimeboxxingAction
-    data class ChangeMode(val mode: EntryMode) : TimeboxxingAction
     data object LoadUsage : TimeboxxingAction
     data class UsageLoadSucceeded(val dayStartedAtEpochMillis: Long, val events: List<UsageEvent>) : TimeboxxingAction
     data class UsageLoadFailed(val dayStartedAtEpochMillis: Long, val message: String) : TimeboxxingAction
@@ -148,10 +166,47 @@ sealed interface TimeboxxingAction {
     data class UpdateDraftStart(val startMinute: Int) : TimeboxxingAction
     data class UpdateDraftDuration(val durationMinutes: Int) : TimeboxxingAction
     data class UpdateDraftBillable(val billable: Boolean) : TimeboxxingAction
+    data object LoadProjects : TimeboxxingAction
+    data class ProjectsLoadSucceeded(val projects: List<Project>) : TimeboxxingAction
+    data class ProjectsLoadFailed(val message: String) : TimeboxxingAction
+    data class CreateProject(val name: String, val colorArgb: Long) : TimeboxxingAction
+    data class CreateProjectSucceeded(val project: Project) : TimeboxxingAction
+    data class CreateProjectFailed(val message: String) : TimeboxxingAction
+    data class DeleteProject(val projectId: String) : TimeboxxingAction
+    data class DeleteProjectSucceeded(val projectId: String) : TimeboxxingAction
+    data class DeleteProjectFailed(val message: String) : TimeboxxingAction
+    data object LoadTimesheetEntries : TimeboxxingAction
+    data class TimesheetEntriesLoadSucceeded(
+        val dayStartedAtEpochMillis: Long,
+        val entries: List<TimeEntry>,
+    ) : TimeboxxingAction
+    data class TimesheetEntriesLoadFailed(
+        val dayStartedAtEpochMillis: Long,
+        val message: String,
+    ) : TimeboxxingAction
     data object AddDraftEntry : TimeboxxingAction
+    data class AddDraftEntrySucceeded(
+        val dayStartedAtEpochMillis: Long,
+        val entry: TimeEntry,
+    ) : TimeboxxingAction
+    data class AddDraftEntryFailed(val message: String) : TimeboxxingAction
     data class DuplicateEntry(val entryId: String) : TimeboxxingAction
+    data class DuplicateEntrySucceeded(
+        val dayStartedAtEpochMillis: Long,
+        val sourceTitle: String,
+        val entry: TimeEntry,
+    ) : TimeboxxingAction
+    data class DuplicateEntryFailed(val message: String) : TimeboxxingAction
     data class DeleteEntry(val entryId: String) : TimeboxxingAction
-    data object ConfirmPrimaryAction : TimeboxxingAction
+    data class DeleteEntrySucceeded(val entryId: String) : TimeboxxingAction
+    data class DeleteEntryFailed(
+        val entryId: String,
+        val message: String,
+    ) : TimeboxxingAction
+    data class ExportTimesheet(val format: TimesheetExportFormat) : TimeboxxingAction
+    data class ExportTimesheetSucceeded(val fileName: String) : TimeboxxingAction
+    data object ExportTimesheetCanceled : TimeboxxingAction
+    data class ExportTimesheetFailed(val message: String) : TimeboxxingAction
     data object DismissNotice : TimeboxxingAction
     data class UpdateAmaInput(val input: String) : TimeboxxingAction
     data object SubmitAmaQuestion : TimeboxxingAction
@@ -180,19 +235,18 @@ fun createInitialTimeboxxingState(
     data: TimeboxxingMockData = mockTimeboxxingData(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
-    val defaultProject = data.projects.first()
+    val defaultProjectId = data.projects.firstOrNull()?.id.orEmpty()
     return TimeboxxingScreenState(
         selectedSection = TimeboxxingSection.Overview,
         dateIndex = data.usageDays.indexOfFirst { it.label == "Thursday, May 1, 2025" }.takeIf { it >= 0 } ?: 0,
         zoomMinutes = 15,
-        mode = EntryMode.Timesheet,
         projects = data.projects,
         usageEvents = data.usageEvents,
         usageLoading = false,
         entries = data.initialEntries,
         scheduleFocusEntryId = null,
         selectedUsageIds = emptySet(),
-        draft = blankDraft(defaultProject.id),
+        draft = blankDraft(defaultProjectId),
         notice = null,
         nextEntryNumber = data.initialEntries.size + 1,
         usageDays = data.usageDays,
@@ -206,20 +260,19 @@ fun createSidecarTimeboxxingState(
     data: TimeboxxingMockData = mockTimeboxxingData(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
-    val defaultProject = data.projects.first()
+    val defaultProjectId = data.projects.firstOrNull()?.id.orEmpty()
     val safeUsageDays = usageDays.ifEmpty { data.usageDays }
     return TimeboxxingScreenState(
         selectedSection = TimeboxxingSection.Overview,
         dateIndex = (safeUsageDays.size / 2).coerceAtMost(safeUsageDays.lastIndex),
         zoomMinutes = 15,
-        mode = EntryMode.Timesheet,
         projects = data.projects,
         usageEvents = emptyList(),
         usageLoading = true,
         entries = emptyList(),
         scheduleFocusEntryId = null,
         selectedUsageIds = emptySet(),
-        draft = blankDraft(defaultProject.id),
+        draft = blankDraft(defaultProjectId),
         notice = initialNotice,
         nextEntryNumber = 1,
         usageDays = safeUsageDays,
@@ -253,12 +306,6 @@ fun reduceTimeboxxingState(
 
         is TimeboxxingAction.ChangeZoom -> state.copy(
             zoomMinutes = action.minutes.coerceIn(5, 60),
-            notice = null,
-        )
-
-        is TimeboxxingAction.ChangeMode -> state.copy(
-            mode = action.mode,
-            scheduleFocusEntryId = null,
             notice = null,
         )
 
@@ -378,19 +425,115 @@ fun reduceTimeboxxingState(
             notice = null,
         )
 
-        TimeboxxingAction.AddDraftEntry -> addEntryFromDraft(state)
+        TimeboxxingAction.LoadProjects -> state.copy(notice = null)
 
-        is TimeboxxingAction.DuplicateEntry -> duplicateEntry(state, action.entryId)
+        is TimeboxxingAction.ProjectsLoadSucceeded -> projectsLoaded(state, action.projects)
 
-        is TimeboxxingAction.DeleteEntry -> state.copy(
+        is TimeboxxingAction.ProjectsLoadFailed -> state.copy(notice = action.message)
+
+        is TimeboxxingAction.CreateProject -> state
+
+        is TimeboxxingAction.CreateProjectSucceeded -> createProjectSucceeded(state, action.project)
+
+        is TimeboxxingAction.CreateProjectFailed -> state.copy(notice = action.message)
+
+        is TimeboxxingAction.DeleteProject -> state
+
+        is TimeboxxingAction.DeleteProjectSucceeded -> deleteProject(state, action.projectId)
+
+        is TimeboxxingAction.DeleteProjectFailed -> state.copy(notice = action.message)
+
+        TimeboxxingAction.LoadTimesheetEntries -> state.copy(
+            entriesLoading = true,
+            entries = emptyList(),
+            scheduleFocusEntryId = null,
+            deletingEntryIds = emptySet(),
+            notice = null,
+        )
+
+        is TimeboxxingAction.TimesheetEntriesLoadSucceeded -> {
+            if (action.dayStartedAtEpochMillis != state.selectedDay.startedAtEpochMillis) {
+                state
+            } else {
+                state.copy(
+                    entries = action.entries,
+                    entriesLoading = false,
+                    scheduleFocusEntryId = null,
+                    deletingEntryIds = state.deletingEntryIds.intersect(action.entries.map { it.id }.toSet()),
+                    notice = null,
+                )
+            }
+        }
+
+        is TimeboxxingAction.TimesheetEntriesLoadFailed -> {
+            if (action.dayStartedAtEpochMillis != state.selectedDay.startedAtEpochMillis) {
+                state
+            } else {
+                state.copy(
+                    entries = emptyList(),
+                    entriesLoading = false,
+                    scheduleFocusEntryId = null,
+                    notice = action.message,
+                )
+            }
+        }
+
+        TimeboxxingAction.AddDraftEntry -> addDraftEntryStarted(state)
+
+        is TimeboxxingAction.AddDraftEntrySucceeded -> addDraftEntrySucceeded(
+            state = state,
+            dayStartedAtEpochMillis = action.dayStartedAtEpochMillis,
+            entry = action.entry,
+        )
+
+        is TimeboxxingAction.AddDraftEntryFailed -> state.copy(
+            entrySaving = false,
+            notice = action.message,
+        )
+
+        is TimeboxxingAction.DuplicateEntry -> duplicateEntryStarted(state, action.entryId)
+
+        is TimeboxxingAction.DuplicateEntrySucceeded -> duplicateEntrySucceeded(
+            state = state,
+            dayStartedAtEpochMillis = action.dayStartedAtEpochMillis,
+            sourceTitle = action.sourceTitle,
+            entry = action.entry,
+        )
+
+        is TimeboxxingAction.DuplicateEntryFailed -> state.copy(
+            entrySaving = false,
+            notice = action.message,
+        )
+
+        is TimeboxxingAction.DeleteEntry -> deleteEntryStarted(state, action.entryId)
+
+        is TimeboxxingAction.DeleteEntrySucceeded -> state.copy(
             entries = state.entries.filterNot { it.id == action.entryId },
+            deletingEntryIds = state.deletingEntryIds - action.entryId,
             scheduleFocusEntryId = null,
             notice = null,
         )
 
-        TimeboxxingAction.ConfirmPrimaryAction -> state.copy(
-            scheduleFocusEntryId = null,
-            notice = "${state.primaryActionLabel} draft ready: ${state.entries.size} entries, ${formatDuration(state.billableMinutes)} billable.",
+        is TimeboxxingAction.DeleteEntryFailed -> state.copy(
+            deletingEntryIds = state.deletingEntryIds - action.entryId,
+            notice = action.message,
+        )
+
+        is TimeboxxingAction.ExportTimesheet -> exportTimesheetStarted(state)
+
+        is TimeboxxingAction.ExportTimesheetSucceeded -> state.copy(
+            timesheetExporting = false,
+            notice = "Exported ${action.fileName}.",
+        )
+
+        TimeboxxingAction.ExportTimesheetCanceled -> state.copy(
+            timesheetExporting = false,
+            notice = null,
+        )
+
+        is TimeboxxingAction.ExportTimesheetFailed -> state.copy(
+            timesheetExporting = false,
+            notice = action.message,
         )
 
         TimeboxxingAction.DismissNotice -> state.copy(scheduleFocusEntryId = null, notice = null)
@@ -621,6 +764,11 @@ private fun TimeboxxingScreenState.copyForSelectedDate(
         dateIndex = dateIndex,
         usageEvents = emptyList(),
         usageLoading = true,
+        entries = emptyList(),
+        entriesLoading = true,
+        entrySaving = false,
+        deletingEntryIds = emptySet(),
+        timesheetExporting = false,
         scheduleFocusEntryId = null,
         selectedUsageIds = emptySet(),
         draft = blankDraft(draft.projectId),
@@ -647,7 +795,10 @@ private fun draftFromSelection(
     if (selectedEvents.isEmpty()) return blankDraft(state.draft.projectId)
 
     val firstEvent = selectedEvents.first()
-    val hintedProjectId = selectedEvents.firstNotNullOfOrNull { it.projectHintId } ?: state.draft.projectId
+    val projectIds = state.projects.map { it.id }.toSet()
+    val hintedProjectId = selectedEvents.firstNotNullOfOrNull { event ->
+        event.projectHintId?.takeIf { it in projectIds }
+    } ?: state.draft.projectId
     val title = if (selectedEvents.size == 1) {
         firstEvent.title
     } else {
@@ -706,48 +857,164 @@ private fun UsageEvent.isCapturedUsage(): Boolean =
 private fun UsageEvent.isIdleUsage(): Boolean =
     sourceType == UsageSourceType.Idle
 
-private fun addEntryFromDraft(state: TimeboxxingScreenState): TimeboxxingScreenState {
-    val draft = state.draft
-    val entry = TimeEntry(
-        id = "entry-${state.nextEntryNumber}",
-        projectId = draft.projectId,
-        title = draft.title.ifBlank { "New time entry" },
-        notes = draft.notes,
-        startMinute = draft.startMinute,
-        durationMinutes = draft.durationMinutes,
-        billable = draft.billable,
-        sourceUsageIds = state.selectedUsageIds,
+private fun projectsLoaded(
+    state: TimeboxxingScreenState,
+    projects: List<Project>,
+): TimeboxxingScreenState {
+    val projectIds = projects.map { it.id }.toSet()
+    val nextDraftProjectId = state.draft.projectId
+        .takeIf { it.isBlank() || it in projectIds }
+        .orEmpty()
+
+    return state.copy(
+        projects = projects,
+        draft = state.draft.copy(projectId = nextDraftProjectId),
+        scheduleFocusEntryId = null,
+        notice = null,
     )
+}
+
+private fun createProjectSucceeded(
+    state: TimeboxxingScreenState,
+    project: Project,
+): TimeboxxingScreenState {
+    val projects = if (state.projects.any { it.id == project.id }) {
+        state.projects.map { existing -> if (existing.id == project.id) project else existing }
+    } else {
+        state.projects + project
+    }
+
+    return state.copy(
+        projects = projects,
+        draft = state.draft.copy(projectId = project.id),
+        scheduleFocusEntryId = null,
+        notice = "Created ${project.name}.",
+    )
+}
+
+private fun deleteProject(
+    state: TimeboxxingScreenState,
+    projectId: String,
+): TimeboxxingScreenState {
+    if (state.projects.none { it.id == projectId }) return state
+
+    val remainingProjects = state.projects.filterNot { it.id == projectId }
+    val nextDraftProjectId = if (state.draft.projectId == projectId) {
+        ""
+    } else {
+        state.draft.projectId
+    }
+
+    return state.copy(
+        projects = remainingProjects,
+        entries = state.entries.map { entry ->
+            if (entry.projectId == projectId) entry.copy(projectId = "") else entry
+        },
+        draft = state.draft.copy(projectId = nextDraftProjectId),
+        scheduleFocusEntryId = null,
+        notice = "Deleted project.",
+    )
+}
+
+private fun addDraftEntryStarted(state: TimeboxxingScreenState): TimeboxxingScreenState {
+    val draft = state.draft
+    if (state.entrySaving) return state
+    if (!state.hasValidDraftProject()) {
+        return state.copy(
+            scheduleFocusEntryId = null,
+            notice = InvalidDraftProjectNotice,
+        )
+    }
+
+    return state.copy(
+        entrySaving = true,
+        scheduleFocusEntryId = null,
+        notice = null,
+    )
+}
+
+private fun addDraftEntrySucceeded(
+    state: TimeboxxingScreenState,
+    dayStartedAtEpochMillis: Long,
+    entry: TimeEntry,
+): TimeboxxingScreenState {
+    if (dayStartedAtEpochMillis != state.selectedDay.startedAtEpochMillis) {
+        return state.copy(entrySaving = false)
+    }
 
     return state.copy(
         entries = state.entries + entry,
+        entrySaving = false,
         scheduleFocusEntryId = entry.id,
         selectedUsageIds = emptySet(),
-        draft = blankDraft(draft.projectId).copy(startMinute = draft.startMinute + draft.durationMinutes),
+        draft = blankDraft(state.draft.projectId).copy(startMinute = state.draft.startMinute + state.draft.durationMinutes),
         notice = "Added ${formatDuration(entry.durationMinutes)} to ${state.projectFor(entry.projectId).name}.",
         nextEntryNumber = state.nextEntryNumber + 1,
     )
 }
 
-private fun duplicateEntry(
+private fun duplicateEntryStarted(
     state: TimeboxxingScreenState,
     entryId: String,
 ): TimeboxxingScreenState {
-    val source = state.entries.firstOrNull { it.id == entryId } ?: return state
-    val duplicate = source.copy(
-        id = "entry-${state.nextEntryNumber}",
-        title = "Copy of ${source.title}",
-        startMinute = source.startMinute + source.durationMinutes,
-        sourceUsageIds = emptySet(),
-    )
-
+    if (state.entrySaving) return state
+    state.entries.firstOrNull { it.id == entryId } ?: return state
     return state.copy(
-        entries = state.entries + duplicate,
-        scheduleFocusEntryId = duplicate.id,
-        nextEntryNumber = state.nextEntryNumber + 1,
-        notice = "Duplicated ${source.title}.",
+        entrySaving = true,
+        scheduleFocusEntryId = null,
+        notice = null,
     )
 }
+
+private fun duplicateEntrySucceeded(
+    state: TimeboxxingScreenState,
+    dayStartedAtEpochMillis: Long,
+    sourceTitle: String,
+    entry: TimeEntry,
+): TimeboxxingScreenState {
+    if (dayStartedAtEpochMillis != state.selectedDay.startedAtEpochMillis) {
+        return state.copy(entrySaving = false)
+    }
+
+    return state.copy(
+        entries = state.entries + entry,
+        entrySaving = false,
+        scheduleFocusEntryId = entry.id,
+        nextEntryNumber = state.nextEntryNumber + 1,
+        notice = "Duplicated $sourceTitle.",
+    )
+}
+
+private fun deleteEntryStarted(
+    state: TimeboxxingScreenState,
+    entryId: String,
+): TimeboxxingScreenState {
+    if (state.entries.none { it.id == entryId }) return state
+    if (entryId in state.deletingEntryIds) return state
+    return state.copy(
+        deletingEntryIds = state.deletingEntryIds + entryId,
+        scheduleFocusEntryId = null,
+        notice = null,
+    )
+}
+
+private fun exportTimesheetStarted(state: TimeboxxingScreenState): TimeboxxingScreenState {
+    if (state.entries.isEmpty()) {
+        return state.copy(
+            timesheetExporting = false,
+            scheduleFocusEntryId = null,
+            notice = AddEntryBeforeExportNotice,
+        )
+    }
+    return state.copy(
+        timesheetExporting = true,
+        scheduleFocusEntryId = null,
+        notice = null,
+    )
+}
+
+private fun TimeboxxingScreenState.hasValidDraftProject(): Boolean =
+    draft.projectId.isBlank() || projects.any { it.id == draft.projectId }
 
 private fun Set<String>.toggle(value: String): Set<String> =
     if (value in this) this - value else this + value

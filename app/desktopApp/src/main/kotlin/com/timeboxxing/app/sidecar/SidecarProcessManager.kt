@@ -1,7 +1,9 @@
 package com.timeboxxing.app.sidecar
 
 import com.timeboxxing.data.grpc.GrpcAmaRepository
+import com.timeboxxing.data.grpc.GrpcProjectRepository
 import com.timeboxxing.data.grpc.GrpcSettingsRepository
+import com.timeboxxing.data.grpc.GrpcTimesheetRepository
 import com.timeboxxing.data.grpc.GrpcUsageHistoryRepository
 import com.timeboxxing.domain.model.UsageDay
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +53,8 @@ class SidecarProcessManager(
         val repository = GrpcUsageHistoryRepository(target)
         val amaRepository = GrpcAmaRepository(target)
         val settingsRepository = GrpcSettingsRepository(target)
+        val projectRepository = GrpcProjectRepository(target)
+        val timesheetRepository = GrpcTimesheetRepository(target)
         val deadlineNanos = System.nanoTime() + Duration.ofSeconds(15).toNanos()
         var lastError: Throwable? = null
 
@@ -59,6 +63,8 @@ class SidecarProcessManager(
                 repository.close()
                 amaRepository.close()
                 settingsRepository.close()
+                projectRepository.close()
+                timesheetRepository.close()
                 return@withContext SidecarStartResult.Failed(
                     "Usage sidecar exited before it became ready.${logTail.messageSuffix()}",
                 )
@@ -71,6 +77,8 @@ class SidecarProcessManager(
                         repository = repository,
                         amaRepository = amaRepository,
                         settingsRepository = settingsRepository,
+                        projectRepository = projectRepository,
+                        timesheetRepository = timesheetRepository,
                         process = process,
                     ),
                 )
@@ -82,6 +90,8 @@ class SidecarProcessManager(
         repository.close()
         amaRepository.close()
         settingsRepository.close()
+        projectRepository.close()
+        timesheetRepository.close()
         stopProcess(process)
         SidecarStartResult.Failed(
             "Usage sidecar did not become ready: ${redactor.redact(lastError?.message ?: "timed out")}.${logTail.messageSuffix()}",
@@ -139,12 +149,16 @@ class SidecarConnection(
     val repository: GrpcUsageHistoryRepository,
     val amaRepository: GrpcAmaRepository,
     val settingsRepository: GrpcSettingsRepository,
+    val projectRepository: GrpcProjectRepository,
+    val timesheetRepository: GrpcTimesheetRepository,
     private val process: Process,
 ) : AutoCloseable {
     override fun close() {
         repository.close()
         amaRepository.close()
         settingsRepository.close()
+        projectRepository.close()
+        timesheetRepository.close()
         stopProcess(process)
     }
 }

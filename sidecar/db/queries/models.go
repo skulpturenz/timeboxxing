@@ -33,6 +33,16 @@ type EmbeddingModel struct {
 	Label          string
 }
 
+type Project struct {
+	ID              string
+	Name            string
+	ColorArgb       int64
+	Client          string
+	HourlyRateCents int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type SemanticDocument struct {
 	ID                int64
 	DocumentKey       string
@@ -59,6 +69,33 @@ type SemanticModel struct {
 	OpenrouterSlug string
 	OllamaSlug     string
 	Label          string
+}
+
+type Timesheet struct {
+	ID        string
+	StartedAt time.Time
+	EndedAt   time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type TimesheetEntry struct {
+	ID              string
+	TimesheetID     string
+	ProjectID       sql.NullString
+	Title           string
+	Notes           string
+	StartMinute     int64
+	DurationMinutes int64
+	Billable        bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type TimesheetEntryUsageBlock struct {
+	TimesheetEntryID string
+	UsageID          string
+	SortOrder        int64
 }
 
 type TransitionEvent struct {

@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package projects.v1;
+
+option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1;projectsv1";
+option java_multiple_files = true;
+option java_package = "com.timeboxxing.sidecar.projects.v1";
+
+service ProjectsService {
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc CreateProject(CreateProjectRequest) returns (Project);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+  int64 color_argb = 3;
+  string client = 4;
+  int64 hourly_rate_cents = 5;
+}
+
+message ListProjectsRequest {}
+
+message ListProjectsResponse {
+  repeated Project projects = 1;
+}
+
+message CreateProjectRequest {
+  string name = 1;
+  int64 color_argb = 2;
+}
+
+message DeleteProjectRequest {
+  string id = 1;
+}
+
+message DeleteProjectResponse {}

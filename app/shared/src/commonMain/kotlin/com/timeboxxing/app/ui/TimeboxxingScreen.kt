@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -105,7 +106,6 @@ import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaSource
 import com.timeboxxing.domain.model.CalendarDate
 import com.timeboxxing.domain.model.DiagnosticsLogLine
-import com.timeboxxing.domain.model.EntryMode
 import com.timeboxxing.domain.model.WeekdayShortLabels
 import com.timeboxxing.domain.model.calendarMonthGrid
 import com.timeboxxing.domain.model.monthYearLabel
@@ -162,6 +162,8 @@ private val ProjectPaneWidth = 280.dp
 private const val OverviewPaneAnimationMillis = 220
 private const val OverviewPaneGenieMillis = 820
 private const val OverviewPaneTrayPulseMillis = 620L
+private const val NoticeToastAnimationMillis = 180
+private const val NoticeToastVisibleMillis = 4_000L
 private const val MinimizedPaneWeight = 0.0001f
 private const val OverviewPaneGenieTrayScale = 0.86f
 private val OverviewPaneGenieEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -192,6 +194,22 @@ fun TimeboxxingScreen(
         }
         val scheduleScrollState = rememberSchedulePaneScrollState()
         var minimizedOverviewPanes by remember { mutableStateOf(emptySet<OverviewPane>()) }
+        var displayedNotice by remember { mutableStateOf<String?>(null) }
+        val noticeVisibilityState = remember { MutableTransitionState(false) }
+
+        LaunchedEffect(state.notice) {
+            val notice = state.notice
+            if (notice == null) {
+                noticeVisibilityState.targetState = false
+                delay(NoticeToastAnimationMillis.toLong())
+                if (!noticeVisibilityState.targetState) {
+                    displayedNotice = null
+                }
+            } else {
+                displayedNotice = notice
+                noticeVisibilityState.targetState = true
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxSize(),
@@ -217,15 +235,6 @@ fun TimeboxxingScreen(
                             compact = layout == WorkspaceLayout.Compact,
                             onAction = onAction,
                         )
-
-                        state.notice?.let { notice ->
-                            NoticeBanner(
-                                notice = notice,
-                                actionLabel = noticeActionLabel,
-                                onAction = onNoticeAction,
-                                onDismiss = { onAction(TimeboxxingAction.DismissNotice) },
-                            )
-                        }
 
                         when (layout) {
                             WorkspaceLayout.Wide -> WideWorkspace(
@@ -263,6 +272,45 @@ fun TimeboxxingScreen(
                         state = state,
                         onAction = onAction,
                         modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+
+        state.notice?.let { notice ->
+            LaunchedEffect(notice) {
+                delay(NoticeToastVisibleMillis)
+                onAction(TimeboxxingAction.DismissNotice)
+            }
+        }
+
+        displayedNotice?.let { notice ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = navigationWidth)
+                    .zIndex(1f),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                AnimatedVisibility(
+                    visibleState = noticeVisibilityState,
+                    enter = fadeIn(animationSpec = tween(NoticeToastAnimationMillis)) +
+                        slideInVertically(
+                            animationSpec = tween(NoticeToastAnimationMillis),
+                            initialOffsetY = { height -> height / 2 },
+                        ),
+                    exit = fadeOut(animationSpec = tween(NoticeToastAnimationMillis)) +
+                        slideOutVertically(
+                            animationSpec = tween(NoticeToastAnimationMillis),
+                            targetOffsetY = { height -> height / 2 },
+                        ),
+                ) {
+                    NoticeToast(
+                        notice = notice,
+                        actionLabel = noticeActionLabel,
+                        onAction = onNoticeAction,
+                        onDismiss = { onAction(TimeboxxingAction.DismissNotice) },
+                        modifier = Modifier.padding(24.dp),
                     )
                 }
             }
@@ -823,39 +871,47 @@ private fun ZoomMenu(
 }
 
 @Composable
-private fun NoticeBanner(
+private fun NoticeToast(
     notice: String,
     actionLabel: String?,
     onAction: (() -> Unit)?,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(TbTheme.colors.accentSubtle)
-            .padding(horizontal = 24.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    TbSurface(
+        modifier = modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth(),
+        color = TbTheme.colors.surface,
+        shape = RoundedCornerShape(TbTheme.radii.panel),
+        border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
+        shadowElevation = 12.dp,
     ) {
-        TbText(
-            modifier = Modifier.weight(1f),
-            text = notice,
-            color = TbTheme.colors.text,
-            style = TbTheme.typography.body,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (actionLabel != null && onAction != null) {
-            TbButton(onClick = onAction, variant = TbButtonVariant.Secondary) {
-                TbText(actionLabel, style = TbTheme.typography.button)
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TbText(
+                modifier = Modifier.weight(1f),
+                text = notice,
+                color = TbTheme.colors.text,
+                style = TbTheme.typography.body,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (actionLabel != null && onAction != null) {
+                TbButton(onClick = onAction, variant = TbButtonVariant.Secondary) {
+                    TbText(actionLabel, style = TbTheme.typography.button)
+                }
             }
+            TbIconButton(
+                icon = Icons.Rounded.Close,
+                contentDescription = "Dismiss notice",
+                onClick = onDismiss,
+                variant = TbButtonVariant.Ghost,
+            )
         }
-        TbIconButton(
-            icon = Icons.Rounded.Close,
-            contentDescription = "Dismiss notice",
-            onClick = onDismiss,
-            variant = TbButtonVariant.Ghost,
-        )
     }
 }
 
@@ -2203,7 +2259,7 @@ private fun AmaComposer(
 private val OverviewPane.label: String
     get() = when (this) {
         OverviewPane.UsageSchedule -> "Usage schedule"
-        OverviewPane.TimeEntries -> "Time entries"
+        OverviewPane.TimeEntries -> "Entries"
         OverviewPane.Projects -> "Projects"
     }
 
@@ -2253,32 +2309,3 @@ private fun formatUsageChartPercent(seconds: Long, totalSeconds: Long): String {
 
 private fun Double.formatDistance(): String =
     ((this * 1000.0).roundToInt() / 1000.0).toString()
-
-@Composable
-fun ModeToggle(
-    mode: EntryMode,
-    onModeChange: (EntryMode) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        EntryMode.entries.forEach { option ->
-            TbButton(
-                onClick = { onModeChange(option) },
-                variant = if (option == mode) TbButtonVariant.Primary else TbButtonVariant.Secondary,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 7.dp),
-            ) {
-                TbText(option.label, style = TbTheme.typography.button)
-            }
-        }
-    }
-}
-
-private val EntryMode.label: String
-    get() = when (this) {
-        EntryMode.Timesheet -> "Timesheet"
-        EntryMode.Invoice -> "Invoice"
-    }

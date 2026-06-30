@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -35,7 +34,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.timeboxxing.domain.model.EntryDraft
-import com.timeboxxing.domain.model.EntryMode
 import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.UsageEvent
@@ -69,7 +67,7 @@ fun EntryBuilderPane(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 TbText(
-                    text = "Time entries",
+                    text = "Entries",
                     style = TbTheme.typography.largeTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -83,10 +81,6 @@ fun EntryBuilderPane(
                 )
             }
 
-            ModeToggle(
-                mode = state.mode,
-                onModeChange = { onAction(TimeboxxingAction.ChangeMode(it)) },
-            )
             headerAction?.invoke()
         }
 
@@ -113,6 +107,7 @@ private fun DraftEditor(
 ) {
     val draft = state.draft
     val selectedCount = state.selectedUsageIds.size
+    val canAddEntry = !state.entrySaving && (draft.projectId.isBlank() || state.projects.any { it.id == draft.projectId })
 
     TbCard {
         Column(
@@ -234,6 +229,7 @@ private fun DraftEditor(
                 TbButton(
                     modifier = Modifier.weight(1f),
                     onClick = { onAction(TimeboxxingAction.AddDraftEntry) },
+                    enabled = canAddEntry,
                 ) {
                     TbIcon(
                         imageVector = Icons.Rounded.Add,
@@ -319,7 +315,25 @@ private fun ProjectPicker(
     onProjectSelected: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selected = projects.firstOrNull { it.id == selectedProjectId } ?: projects.first()
+    val selected = projects.firstOrNull { it.id == selectedProjectId }
+
+    if (projects.isEmpty()) {
+        TbButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {},
+            enabled = false,
+            variant = TbButtonVariant.Secondary,
+        ) {
+            TbText(
+                modifier = Modifier.weight(1f),
+                text = "No project",
+                style = TbTheme.typography.body,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        return
+    }
 
     TbMenu(
         expanded = expanded,
@@ -330,12 +344,16 @@ private fun ProjectPicker(
                 onClick = { expanded = true },
                 variant = TbButtonVariant.Secondary,
             ) {
-                ProjectColorDot(selected)
+                if (selected == null) {
+                    NoProjectDot()
+                } else {
+                    ProjectColorDot(selected)
+                }
                 TbText(
                     modifier = Modifier
                         .padding(start = 8.dp)
                         .weight(1f),
-                    text = selected.name,
+                    text = selected?.name ?: "No project",
                     style = TbTheme.typography.body,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -349,6 +367,20 @@ private fun ProjectPicker(
             }
         },
         panelContent = {
+            TbMenuItem(
+                onClick = {
+                    expanded = false
+                    onProjectSelected("")
+                },
+            ) {
+                NoProjectDot()
+                TbText(
+                    "No project",
+                    style = TbTheme.typography.body,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             projects.forEach { project ->
                 TbMenuItem(
                     onClick = {
@@ -364,19 +396,32 @@ private fun ProjectPicker(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        TbText(
-                            project.client,
-                            style = TbTheme.typography.bodySmall,
-                            color = TbTheme.colors.secondaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        if (project.client.isNotBlank()) {
+                            TbText(
+                                project.client,
+                                style = TbTheme.typography.bodySmall,
+                                color = TbTheme.colors.secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
         },
     )
 }
+
+@Composable
+private fun NoProjectDot() {
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .background(Color(NoProjectPickerColorArgb), RoundedCornerShape(999.dp)),
+    )
+}
+
+private const val NoProjectPickerColorArgb = 0xFF6E7F80
 
 @Composable
 private fun TimeStepper(
@@ -508,16 +553,7 @@ private fun EntryList(
                 )
             }
 
-            TbButton(onClick = { onAction(TimeboxxingAction.ConfirmPrimaryAction) }) {
-                TbIcon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(end = 6.dp)
-                        .size(17.dp),
-                )
-                TbText(state.primaryActionLabel, style = TbTheme.typography.button)
-            }
+            TimesheetPrimaryActionButton(state = state, onAction = onAction)
         }
 
         state.entries.forEach { entry ->
@@ -525,9 +561,9 @@ private fun EntryList(
                 entry = entry,
                 project = state.projectFor(entry.projectId),
                 sourceEvents = entry.sourceUsageIds.mapNotNull { usageById[it] },
-                showRate = state.mode == EntryMode.Invoice,
                 onDuplicate = { onAction(TimeboxxingAction.DuplicateEntry(entry.id)) },
                 onDelete = { onAction(TimeboxxingAction.DeleteEntry(entry.id)) },
+                deleting = entry.id in state.deletingEntryIds,
             )
         }
     }
@@ -538,9 +574,9 @@ private fun EntryCard(
     entry: TimeEntry,
     project: Project,
     sourceEvents: List<UsageEvent>,
-    showRate: Boolean,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    deleting: Boolean,
 ) {
     TbCard {
         Row(
@@ -613,11 +649,7 @@ private fun EntryCard(
                 ) {
                     if (entry.billable) {
                         TbBadge(
-                            label = if (showRate) {
-                                formatMoney(project.hourlyRateCents * entry.durationMinutes / 60)
-                            } else {
-                                "Billable"
-                            },
+                            label = "Billable",
                         )
                     }
 
@@ -625,12 +657,14 @@ private fun EntryCard(
                         icon = Icons.Rounded.ContentCopy,
                         contentDescription = "Duplicate entry",
                         onClick = onDuplicate,
+                        enabled = !deleting,
                         variant = TbButtonVariant.Ghost,
                     )
                     TbIconButton(
                         icon = Icons.Rounded.Delete,
                         contentDescription = "Delete entry",
                         onClick = onDelete,
+                        enabled = !deleting,
                         variant = TbButtonVariant.Destructive,
                     )
                 }

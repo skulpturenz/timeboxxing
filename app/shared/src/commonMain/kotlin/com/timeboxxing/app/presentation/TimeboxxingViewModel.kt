@@ -4,9 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.domain.model.TimesheetEntryDraft
+import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.repository.AmaRepository
+import com.timeboxxing.domain.repository.ProjectRepository
 import com.timeboxxing.domain.repository.SettingsRepository
+import com.timeboxxing.domain.repository.TimesheetRepository
 import com.timeboxxing.domain.repository.UsageHistoryRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +47,8 @@ class TimeboxxingViewModel(
         observeAppearanceMode()
         observeUsageLoads()
         observeUsageStream()
+        observeProjectLoads()
+        observeTimesheetEntryLoads()
         observeSettingsLoads()
         observeAmaIndexStatus()
     }
@@ -52,6 +58,12 @@ class TimeboxxingViewModel(
         val currentRepositories = runtime.repositories.value
         val amaQuestion = currentState.amaQuestionFor(action)
         val settingsToSave = currentState.settingsToSaveFor(action)
+        val projectToCreate = action.projectToCreate()
+        val projectToDelete = action.projectToDelete()
+        val draftEntryToCreate = currentState.draftEntryToCreateFor(action)
+        val duplicateEntryToCreate = currentState.duplicateEntryToCreateFor(action)
+        val entryToDelete = currentState.entryToDeleteFor(action)
+        val timesheetToExport = currentState.timesheetToExportFor(action)
 
         reduce(action)
 
@@ -65,6 +77,24 @@ class TimeboxxingViewModel(
         }
         if (settingsToSave != null) {
             saveSettings(currentRepositories.settingsRepository, settingsToSave)
+        }
+        if (projectToCreate != null) {
+            createProject(currentRepositories.projectRepository, projectToCreate.name, projectToCreate.colorArgb)
+        }
+        if (projectToDelete != null) {
+            deleteProject(currentRepositories.projectRepository, projectToDelete)
+        }
+        if (draftEntryToCreate != null) {
+            createDraftEntry(currentRepositories.timesheetRepository, draftEntryToCreate)
+        }
+        if (duplicateEntryToCreate != null) {
+            duplicateEntry(currentRepositories.timesheetRepository, duplicateEntryToCreate)
+        }
+        if (entryToDelete != null) {
+            deleteEntry(currentRepositories.timesheetRepository, entryToDelete)
+        }
+        if (timesheetToExport != null) {
+            exportTimesheet(currentRepositories.timesheetRepository, timesheetToExport)
         }
     }
 
@@ -125,6 +155,34 @@ class TimeboxxingViewModel(
                             ),
                         )
                     }
+            }
+        }
+    }
+
+    private fun observeProjectLoads() {
+        viewModelScope.launch {
+            combine(ready, runtime.repositories) { isReady, repositories ->
+                ProjectLoadRequest(isReady, repositories.projectRepository)
+            }.collectLatest { request ->
+                if (request.isReady) {
+                    loadProjects(request.repository)
+                }
+            }
+        }
+    }
+
+    private fun observeTimesheetEntryLoads() {
+        viewModelScope.launch {
+            combine(
+                ready,
+                runtime.repositories,
+                _state.map { it.selectedDay }.distinctUntilChanged(),
+            ) { isReady, repositories, selectedDay ->
+                TimesheetEntryLoadRequest(isReady, repositories.timesheetRepository, selectedDay)
+            }.collectLatest { request ->
+                if (request.isReady) {
+                    loadTimesheetEntries(request.repository, request.day)
+                }
             }
         }
     }
@@ -210,6 +268,40 @@ class TimeboxxingViewModel(
         )
     }
 
+    private suspend fun loadProjects(repository: ProjectRepository) {
+        reduce(TimeboxxingAction.LoadProjects)
+        val loaded = runCatching { repository.listProjects() }
+        loaded.fold(
+            onSuccess = { projects ->
+                reduce(TimeboxxingAction.ProjectsLoadSucceeded(projects))
+            },
+            onFailure = { error ->
+                reduce(TimeboxxingAction.ProjectsLoadFailed(error.message ?: "Projects are unavailable."))
+            },
+        )
+    }
+
+    private suspend fun loadTimesheetEntries(
+        repository: TimesheetRepository,
+        day: UsageDay,
+    ) {
+        reduce(TimeboxxingAction.LoadTimesheetEntries)
+        val loaded = runCatching { repository.listEntries(day) }
+        loaded.fold(
+            onSuccess = { entries ->
+                reduce(TimeboxxingAction.TimesheetEntriesLoadSucceeded(day.startedAtEpochMillis, entries))
+            },
+            onFailure = { error ->
+                reduce(
+                    TimeboxxingAction.TimesheetEntriesLoadFailed(
+                        day.startedAtEpochMillis,
+                        error.message ?: "Timesheets are unavailable.",
+                    ),
+                )
+            },
+        )
+    }
+
     private suspend fun loadSettings(
         repository: SettingsRepository,
         showLoading: Boolean,
@@ -256,6 +348,103 @@ class TimeboxxingViewModel(
         }
     }
 
+    private fun createProject(repository: ProjectRepository, name: String, colorArgb: Long) {
+        viewModelScope.launch {
+            val created = runCatching { repository.createProject(name, colorArgb) }
+            created.fold(
+                onSuccess = { reduce(TimeboxxingAction.CreateProjectSucceeded(it)) },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.CreateProjectFailed(error.message ?: "Project could not be saved."))
+                },
+            )
+        }
+    }
+
+    private fun deleteProject(repository: ProjectRepository, projectId: String) {
+        viewModelScope.launch {
+            val deleted = runCatching { repository.deleteProject(projectId) }
+            deleted.fold(
+                onSuccess = { reduce(TimeboxxingAction.DeleteProjectSucceeded(projectId)) },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.DeleteProjectFailed(error.message ?: "Project could not be deleted."))
+                },
+            )
+        }
+    }
+
+    private fun createDraftEntry(repository: TimesheetRepository, request: TimesheetEntryCreateRequest) {
+        viewModelScope.launch {
+            val created = runCatching { repository.createEntry(request.day, request.draft) }
+            created.fold(
+                onSuccess = {
+                    reduce(TimeboxxingAction.AddDraftEntrySucceeded(request.day.startedAtEpochMillis, it))
+                },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.AddDraftEntryFailed(error.message ?: "Timesheet entry could not be saved."))
+                },
+            )
+        }
+    }
+
+    private fun duplicateEntry(repository: TimesheetRepository, request: TimesheetEntryDuplicateRequest) {
+        viewModelScope.launch {
+            val created = runCatching { repository.createEntry(request.day, request.draft) }
+            created.fold(
+                onSuccess = {
+                    reduce(
+                        TimeboxxingAction.DuplicateEntrySucceeded(
+                            dayStartedAtEpochMillis = request.day.startedAtEpochMillis,
+                            sourceTitle = request.sourceTitle,
+                            entry = it,
+                        ),
+                    )
+                },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.DuplicateEntryFailed(error.message ?: "Timesheet entry could not be duplicated."))
+                },
+            )
+        }
+    }
+
+    private fun deleteEntry(repository: TimesheetRepository, request: TimesheetEntryDeleteRequest) {
+        viewModelScope.launch {
+            val deleted = runCatching { repository.deleteEntry(request.entryId) }
+            deleted.fold(
+                onSuccess = { reduce(TimeboxxingAction.DeleteEntrySucceeded(request.entryId)) },
+                onFailure = { error ->
+                    reduce(
+                        TimeboxxingAction.DeleteEntryFailed(
+                            entryId = request.entryId,
+                            message = error.message ?: "Timesheet entry could not be deleted.",
+                        ),
+                    )
+                },
+            )
+        }
+    }
+
+    private fun exportTimesheet(repository: TimesheetRepository, request: TimesheetExportRequest) {
+        viewModelScope.launch {
+            val exported = runCatching {
+                val export = repository.exportTimesheet(request.day, request.format)
+                val destination = runtime.timesheetExportFileWriter.save(export)
+                export to destination
+            }
+            exported.fold(
+                onSuccess = { (export, destination) ->
+                    if (destination == null) {
+                        reduce(TimeboxxingAction.ExportTimesheetCanceled)
+                    } else {
+                        reduce(TimeboxxingAction.ExportTimesheetSucceeded(export.fileName))
+                    }
+                },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.ExportTimesheetFailed(error.message ?: "Timesheet could not be exported."))
+                },
+            )
+        }
+    }
+
     private fun reduce(action: TimeboxxingAction) {
         _state.update { reduceTimeboxxingState(it, action) }
     }
@@ -271,6 +460,17 @@ private data class SettingsLoadRequest(
     val isReady: Boolean,
     val repository: SettingsRepository,
     val showLoading: Boolean,
+)
+
+private data class ProjectLoadRequest(
+    val isReady: Boolean,
+    val repository: ProjectRepository,
+)
+
+private data class TimesheetEntryLoadRequest(
+    val isReady: Boolean,
+    val repository: TimesheetRepository,
+    val day: UsageDay,
 )
 
 private data class SettingsSectionLoadRequest(
@@ -298,3 +498,93 @@ private fun TimeboxxingScreenState.amaQuestionFor(action: TimeboxxingAction): St
 
 private fun TimeboxxingScreenState.settingsToSaveFor(action: TimeboxxingAction): AiSettings? =
     if (action == TimeboxxingAction.SaveSettings && !settingsSaving) settingsDraft else null
+
+private data class ProjectCreateRequest(
+    val name: String,
+    val colorArgb: Long,
+)
+
+private fun TimeboxxingAction.projectToCreate(): ProjectCreateRequest? =
+    when (this) {
+        is TimeboxxingAction.CreateProject -> ProjectCreateRequest(name, colorArgb)
+        else -> null
+    }
+
+private fun TimeboxxingAction.projectToDelete(): String? =
+    when (this) {
+        is TimeboxxingAction.DeleteProject -> projectId
+        else -> null
+    }
+
+private data class TimesheetEntryCreateRequest(
+    val day: UsageDay,
+    val draft: TimesheetEntryDraft,
+)
+
+private data class TimesheetEntryDuplicateRequest(
+    val day: UsageDay,
+    val sourceTitle: String,
+    val draft: TimesheetEntryDraft,
+)
+
+private data class TimesheetEntryDeleteRequest(
+    val entryId: String,
+)
+
+private data class TimesheetExportRequest(
+    val day: UsageDay,
+    val format: TimesheetExportFormat,
+)
+
+private fun TimeboxxingScreenState.draftEntryToCreateFor(action: TimeboxxingAction): TimesheetEntryCreateRequest? {
+    if (action != TimeboxxingAction.AddDraftEntry || entrySaving || !hasValidDraftProject()) return null
+    return TimesheetEntryCreateRequest(
+        day = selectedDay,
+        draft = TimesheetEntryDraft(
+            projectId = validProjectIdOrBlank(draft.projectId),
+            title = draft.title.ifBlank { "New time entry" },
+            notes = draft.notes,
+            startMinute = draft.startMinute,
+            durationMinutes = draft.durationMinutes,
+            billable = draft.billable,
+            sourceUsageIds = selectedUsageEvents.map { it.id },
+        ),
+    )
+}
+
+private fun TimeboxxingScreenState.duplicateEntryToCreateFor(action: TimeboxxingAction): TimesheetEntryDuplicateRequest? {
+    if (action !is TimeboxxingAction.DuplicateEntry || entrySaving) return null
+    val source = entries.firstOrNull { it.id == action.entryId } ?: return null
+    return TimesheetEntryDuplicateRequest(
+        day = selectedDay,
+        sourceTitle = source.title,
+        draft = TimesheetEntryDraft(
+            projectId = validProjectIdOrBlank(source.projectId),
+            title = "Copy of ${source.title}",
+            notes = source.notes,
+            startMinute = (source.startMinute + source.durationMinutes).coerceIn(0, 24 * 60 - 1),
+            durationMinutes = source.durationMinutes,
+            billable = source.billable,
+            sourceUsageIds = emptyList(),
+        ),
+    )
+}
+
+private fun TimeboxxingScreenState.entryToDeleteFor(action: TimeboxxingAction): TimesheetEntryDeleteRequest? {
+    if (action !is TimeboxxingAction.DeleteEntry) return null
+    if (action.entryId in deletingEntryIds) return null
+    if (entries.none { it.id == action.entryId }) return null
+    return TimesheetEntryDeleteRequest(action.entryId)
+}
+
+private fun TimeboxxingScreenState.timesheetToExportFor(action: TimeboxxingAction): TimesheetExportRequest? {
+    if (action !is TimeboxxingAction.ExportTimesheet) return null
+    if (entries.isEmpty() || timesheetExporting) return null
+    return TimesheetExportRequest(selectedDay, action.format)
+}
+
+private fun TimeboxxingScreenState.hasValidDraftProject(): Boolean =
+    draft.projectId.isBlank() || projects.any { it.id == draft.projectId }
+
+private fun TimeboxxingScreenState.validProjectIdOrBlank(projectId: String): String =
+    projectId.takeIf { id -> id.isNotBlank() && projects.any { it.id == id } }.orEmpty()

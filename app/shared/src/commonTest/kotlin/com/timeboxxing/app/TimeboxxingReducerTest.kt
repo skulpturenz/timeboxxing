@@ -12,8 +12,9 @@ import com.timeboxxing.data.mock.mockTimeboxxingData
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.CalendarDate
-import com.timeboxxing.domain.model.EntryMode
+import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
+import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.model.UsageSourceType
 import com.timeboxxing.domain.model.formatClockTime
@@ -36,6 +37,8 @@ import com.timeboxxing.app.ui.SchedulePaneAutoScrollState
 import com.timeboxxing.app.ui.TimelineScrollDirection
 import com.timeboxxing.app.ui.TbDarkColors
 import com.timeboxxing.app.ui.TbLightColors
+import com.timeboxxing.app.ui.DefaultProjectColorArgb
+import com.timeboxxing.app.ui.ProjectPaletteColorOptions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -80,10 +83,47 @@ class TimeboxxingReducerTest {
         )
 
         assertEquals(setOf("usage-intro-email"), state.selectedUsageIds)
-        assertEquals("axion", state.draft.projectId)
+        assertEquals("", state.draft.projectId)
         assertEquals("Re: Intro Axion Ltd.", state.draft.title)
         assertEquals(20, state.draft.durationMinutes)
         assertTrue(state.draft.notes.contains("Gmail"))
+    }
+
+    @Test
+    fun selectingUsageIgnoresProjectHintWhenProjectDoesNotExist() {
+        val usage = usageEvent(
+            id = "hinted",
+            durationMinutes = 25,
+            projectHintId = "missing-project",
+        )
+        val initial = createInitialTimeboxxingState().copy(
+            usageEvents = listOf(usage),
+            draft = createInitialTimeboxxingState().draft.copy(projectId = ""),
+        )
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.ToggleUsageSelection("hinted"))
+
+        assertEquals("", state.draft.projectId)
+        assertEquals("Usage", state.draft.title)
+    }
+
+    @Test
+    fun selectingUsageUsesProjectHintWhenProjectExists() {
+        val usage = usageEvent(
+            id = "hinted",
+            durationMinutes = 25,
+            projectHintId = "client-project",
+        )
+        val initial = createInitialTimeboxxingState().copy(
+            projects = listOf(project(id = "client-project", name = "Client Project")),
+            usageEvents = listOf(usage),
+            draft = createInitialTimeboxxingState().draft.copy(projectId = ""),
+        )
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.ToggleUsageSelection("hinted"))
+
+        assertEquals("client-project", state.draft.projectId)
+        assertEquals("Usage", state.draft.title)
     }
 
     @Test
@@ -325,16 +365,297 @@ class TimeboxxingReducerTest {
     }
 
     @Test
-    fun addingDraftCreatesEntryAndClearsSelection() {
+    fun projectCreatePaletteHasDefaultAndFixedOptionsWithoutProjects() {
+        val initial = createInitialTimeboxxingState()
+
+        assertTrue(initial.projects.isEmpty())
+        assertEquals(0xFF00FFEEL, DefaultProjectColorArgb)
+        assertTrue(ProjectPaletteColorOptions.isNotEmpty())
+        assertFalse(DefaultProjectColorArgb in ProjectPaletteColorOptions)
+        assertEquals(ProjectPaletteColorOptions.distinct(), ProjectPaletteColorOptions)
+    }
+
+    @Test
+    fun loadingProjectsReplacesProjectsAndSelectsFallbackDraftProject() {
+        val initial = createInitialTimeboxxingState().copy(
+            projects = emptyList(),
+            draft = createInitialTimeboxxingState().draft.copy(projectId = "missing"),
+        )
+        val loadedProject = project(id = "lunar-lab", name = "Lunar Lab")
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.ProjectsLoadSucceeded(listOf(loadedProject)),
+        )
+
+        assertEquals(listOf(loadedProject), state.projects)
+        assertEquals("", state.draft.projectId)
+        assertEquals(null, state.notice)
+    }
+
+    @Test
+    fun loadingNoProjectsLeavesEmptyDraftProject() {
+        val initial = stateWithLegacyProjects()
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.ProjectsLoadSucceeded(emptyList()))
+
+        assertTrue(state.projects.isEmpty())
+        assertEquals("", state.draft.projectId)
+    }
+
+    @Test
+    fun projectLoadFailureShowsNoticeWithoutReplacingProjects() {
+        val initial = stateWithLegacyProjects()
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.ProjectsLoadFailed("Projects failed."))
+
+        assertEquals(initial.projects, state.projects)
+        assertEquals("Projects failed.", state.notice)
+    }
+
+    @Test
+    fun createProjectIntentDoesNotMutateUntilBackendSuccess() {
+        val initial = createInitialTimeboxxingState()
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.CreateProject("  Lunar Lab  ", 0xFF00FFEE),
+        )
+
+        assertEquals(initial, state)
+    }
+
+    @Test
+    fun createProjectSuccessAddsProjectSelectsDraftAndUsesHiddenDefaults() {
+        val initial = createInitialTimeboxxingState()
+        val createdProject = Project(
+            id = "lunar-lab",
+            name = "Lunar Lab",
+            client = "",
+            colorArgb = 0xFF00FFEE,
+            hourlyRateCents = 0,
+        )
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.CreateProjectSucceeded(createdProject),
+        )
+        val project = state.projects.last()
+
+        assertEquals(initial.projects.size + 1, state.projects.size)
+        assertEquals("lunar-lab", project.id)
+        assertEquals("Lunar Lab", project.name)
+        assertEquals("", project.client)
+        assertEquals(0xFF00FFEE, project.colorArgb)
+        assertEquals(0, project.hourlyRateCents)
+        assertEquals(project.id, state.draft.projectId)
+        assertEquals(0, state.minutesForProject(project.id))
+        assertEquals("Created Lunar Lab.", state.notice)
+    }
+
+    @Test
+    fun createProjectFailureLeavesStateUnchangedExceptNotice() {
+        val initial = createInitialTimeboxxingState()
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.CreateProjectFailed("Project failed."),
+        )
+
+        assertEquals(initial.copy(notice = "Project failed."), state)
+    }
+
+    @Test
+    fun deleteProjectFailureLeavesStateUnchangedExceptNotice() {
+        val initial = stateWithLegacyProjects()
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.DeleteProjectFailed("Delete failed."),
+        )
+
+        assertEquals(initial.copy(notice = "Delete failed."), state)
+    }
+
+    @Test
+    fun creatingProjectPreservesSelectedUsageAndAssignsEntryToNewProject() {
         val selected = reduceTimeboxxingState(
             createInitialTimeboxxingState(),
             TimeboxxingAction.ToggleUsageSelection("usage-daven-chat"),
         )
+
+        val withProject = reduceTimeboxxingState(
+            selected,
+            TimeboxxingAction.CreateProjectSucceeded(project(id = "launch-build", name = "Launch Build")),
+        )
+        val saving = reduceTimeboxxingState(withProject, TimeboxxingAction.AddDraftEntry)
+        val state = reduceTimeboxxingState(
+            saving,
+            TimeboxxingAction.AddDraftEntrySucceeded(
+                saving.selectedDay.startedAtEpochMillis,
+                TimeEntry(
+                    id = "entry-created",
+                    projectId = "launch-build",
+                    title = saving.draft.title,
+                    notes = saving.draft.notes,
+                    startMinute = saving.draft.startMinute,
+                    durationMinutes = saving.draft.durationMinutes,
+                    billable = saving.draft.billable,
+                    sourceUsageIds = saving.selectedUsageIds,
+                ),
+            ),
+        )
+
+        assertEquals(setOf("usage-daven-chat"), withProject.selectedUsageIds)
+        assertEquals("John (DM) - Daven Ltd.", withProject.draft.title)
+        assertEquals(selected.draft.notes, withProject.draft.notes)
+        assertEquals(selected.draft.startMinute, withProject.draft.startMinute)
+        assertEquals(selected.draft.durationMinutes, withProject.draft.durationMinutes)
+        assertEquals(selected.draft.billable, withProject.draft.billable)
+        assertEquals("launch-build", state.entries.last().projectId)
+        assertEquals(setOf("usage-daven-chat"), state.entries.last().sourceUsageIds)
+        assertEquals(15, state.minutesForProject("launch-build"))
+    }
+
+    @Test
+    fun initialStateCanBeCreatedWithoutProjects() {
+        val state = createInitialTimeboxxingState(
+            data = mockTimeboxxingData().copy(projects = emptyList()),
+        )
+
+        assertTrue(state.projects.isEmpty())
+        assertEquals("", state.draft.projectId)
+    }
+
+    @Test
+    fun deleteProjectIntentDoesNotMutateUntilBackendSuccess() {
+        val initial = stateWithLegacyProjects()
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.DeleteProject("daven"))
+
+        assertEquals(initial, state)
+    }
+
+    @Test
+    fun deletingProjectRemovesProject() {
+        val initial = stateWithLegacyProjects()
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.DeleteProjectSucceeded("daven"))
+
+        assertEquals(initial.projects.size - 1, state.projects.size)
+        assertFalse(state.projects.any { it.id == "daven" })
+        assertEquals("Deleted project.", state.notice)
+    }
+
+    @Test
+    fun deletingFinalProjectLeavesNoProjectsAndEmptyDraftProject() {
+        val initial = stateWithLegacyProjects()
+        val onlyProject = initial.projects.first()
+        val singleProjectState = initial.copy(
+            projects = listOf(onlyProject),
+            entries = emptyList(),
+            draft = initial.draft.copy(projectId = onlyProject.id),
+        )
+
+        val state = reduceTimeboxxingState(singleProjectState, TimeboxxingAction.DeleteProjectSucceeded(onlyProject.id))
+
+        assertTrue(state.projects.isEmpty())
+        assertEquals("", state.draft.projectId)
+        assertEquals("Deleted project.", state.notice)
+    }
+
+    @Test
+    fun deletingDraftProjectSelectsFallbackProject() {
+        val initial = stateWithLegacyProjects()
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.DeleteProjectSucceeded(initial.draft.projectId))
+
+        assertFalse(state.projects.any { it.id == "morgan" })
+        assertEquals("", state.draft.projectId)
+    }
+
+    @Test
+    fun deletingProjectDoesNotDeleteEntriesAndUnlinksThem() {
+        val initial = stateWithLegacyProjects().copy(
+            entries = listOf(timeEntry(projectId = "morgan", startMinute = 12 * 60)),
+        )
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.DeleteProjectSucceeded("morgan"))
+
+        assertEquals(initial.entries.size, state.entries.size)
+        assertTrue(state.entries.any { it.projectId == "" })
+    }
+
+    @Test
+    fun deletingUnknownProjectIsNoOp() {
+        val initial = createInitialTimeboxxingState()
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.DeleteProjectSucceeded("missing"))
+
+        assertEquals(initial, state)
+    }
+
+    @Test
+    fun missingProjectReferencesUseDeletedProjectPlaceholderAndZeroRate() {
+        val initial = stateWithLegacyProjects().copy(
+            entries = listOf(timeEntry(projectId = "morgan", startMinute = 12 * 60)),
+        )
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.DeleteProjectSucceeded("morgan"))
+        val morganInvoiceTotalCents = 18_000 * 30 / 60
+
+        assertEquals("No project", state.projectFor("").name)
+        assertEquals("Deleted project", state.projectFor("missing").name)
+        assertEquals(0, state.projectFor("").hourlyRateCents)
+        assertEquals(initial.invoiceTotalCents() - morganInvoiceTotalCents, state.invoiceTotalCents())
+    }
+
+    @Test
+    fun addingDraftWithoutProjectsStartsSavingNoProjectEntry() {
+        val initial = createInitialTimeboxxingState().copy(
+            projects = emptyList(),
+            entries = emptyList(),
+            draft = createInitialTimeboxxingState().draft.copy(projectId = ""),
+        )
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.AddDraftEntry)
+
+        assertTrue(state.entries.isEmpty())
+        assertTrue(state.entrySaving)
+        assertEquals(null, state.notice)
+    }
+
+    @Test
+    fun addingDraftCreatesEntryAndClearsSelection() {
+        val withProject = reduceTimeboxxingState(
+            createInitialTimeboxxingState(),
+            TimeboxxingAction.CreateProjectSucceeded(project(id = "daven", name = "Daven")),
+        )
+        val selected = reduceTimeboxxingState(
+            withProject,
+            TimeboxxingAction.ToggleUsageSelection("usage-daven-chat"),
+        )
         val beforeCount = selected.entries.size
 
-        val state = reduceTimeboxxingState(selected, TimeboxxingAction.AddDraftEntry)
+        val saving = reduceTimeboxxingState(selected, TimeboxxingAction.AddDraftEntry)
+        val state = reduceTimeboxxingState(
+            saving,
+            TimeboxxingAction.AddDraftEntrySucceeded(
+                saving.selectedDay.startedAtEpochMillis,
+                TimeEntry(
+                    id = "entry-created",
+                    projectId = "daven",
+                    title = saving.draft.title,
+                    notes = saving.draft.notes,
+                    startMinute = saving.draft.startMinute,
+                    durationMinutes = saving.draft.durationMinutes,
+                    billable = saving.draft.billable,
+                    sourceUsageIds = saving.selectedUsageIds,
+                ),
+            ),
+        )
 
         assertEquals(beforeCount + 1, state.entries.size)
+        assertFalse(state.entrySaving)
         assertTrue(state.selectedUsageIds.isEmpty())
         assertEquals("daven", state.entries.last().projectId)
         assertEquals(setOf("usage-daven-chat"), state.entries.last().sourceUsageIds)
@@ -343,19 +664,39 @@ class TimeboxxingReducerTest {
 
     @Test
     fun duplicatingEntryFocusesDuplicateOnSchedule() {
-        val initial = createInitialTimeboxxingState()
+        val initial = stateWithLegacyProjects().copy(
+            entries = listOf(timeEntry(projectId = "morgan", startMinute = 12 * 60)),
+        )
         val source = initial.entries.first()
 
-        val state = reduceTimeboxxingState(initial, TimeboxxingAction.DuplicateEntry(source.id))
+        val saving = reduceTimeboxxingState(initial, TimeboxxingAction.DuplicateEntry(source.id))
+        val state = reduceTimeboxxingState(
+            saving,
+            TimeboxxingAction.DuplicateEntrySucceeded(
+                saving.selectedDay.startedAtEpochMillis,
+                source.title,
+                source.copy(
+                    id = "entry-copy",
+                    title = "Copy of ${source.title}",
+                    startMinute = source.startMinute + source.durationMinutes,
+                    sourceUsageIds = emptySet(),
+                ),
+            ),
+        )
 
         assertEquals(initial.entries.size + 1, state.entries.size)
+        assertFalse(state.entrySaving)
         assertEquals(state.entries.last().id, state.scheduleFocusEntryId)
         assertEquals(source.startMinute + source.durationMinutes, state.entries.last().startMinute)
     }
 
     @Test
     fun deletingFocusedEntryClearsScheduleFocus() {
-        val added = reduceTimeboxxingState(createInitialTimeboxxingState(), TimeboxxingAction.AddDraftEntry)
+        val entry = timeEntry(projectId = "morgan", startMinute = 12 * 60)
+        val added = stateWithLegacyProjects().copy(
+            entries = listOf(entry),
+            scheduleFocusEntryId = entry.id,
+        )
 
         val state = reduceTimeboxxingState(
             added,
@@ -367,7 +708,11 @@ class TimeboxxingReducerTest {
 
     @Test
     fun movingDateClearsScheduleFocus() {
-        val added = reduceTimeboxxingState(createInitialTimeboxxingState(), TimeboxxingAction.AddDraftEntry)
+        val entry = timeEntry(projectId = "morgan", startMinute = 12 * 60)
+        val added = stateWithLegacyProjects().copy(
+            entries = listOf(entry),
+            scheduleFocusEntryId = entry.id,
+        )
 
         val state = reduceTimeboxxingState(added, TimeboxxingAction.MoveDate(1))
 
@@ -404,7 +749,7 @@ class TimeboxxingReducerTest {
     @Test
     fun dateSelectionClearsLoadedDayState() {
         val withSelection = reduceTimeboxxingState(
-            reduceTimeboxxingState(createInitialTimeboxxingState(), TimeboxxingAction.AddDraftEntry),
+            reduceTimeboxxingState(stateWithLegacyProjects(), TimeboxxingAction.AddDraftEntry),
             TimeboxxingAction.ToggleUsageSelection("usage-intro-email"),
         ).copy(notice = "Ready")
 
@@ -435,26 +780,33 @@ class TimeboxxingReducerTest {
 
     @Test
     fun deletingEntryUpdatesTotals() {
-        val initial = createInitialTimeboxxingState()
+        val initial = stateWithLegacyProjects().copy(
+            entries = listOf(timeEntry(projectId = "morgan", startMinute = 12 * 60)),
+        )
         val entry = initial.entries.first()
 
-        val state = reduceTimeboxxingState(
+        val deleting = reduceTimeboxxingState(
             initial,
             TimeboxxingAction.DeleteEntry(entry.id),
         )
+        val state = reduceTimeboxxingState(deleting, TimeboxxingAction.DeleteEntrySucceeded(entry.id))
 
         assertFalse(state.entries.any { it.id == entry.id })
         assertEquals(initial.billableMinutes - entry.durationMinutes, state.billableMinutes)
     }
 
     @Test
-    fun modeChangesPrimaryActionLabel() {
+    fun exportTimesheetStartsWhenEntriesExist() {
+        val initial = createInitialTimeboxxingState().copy(
+            entries = listOf(timeEntry(projectId = "morgan", startMinute = 12 * 60)),
+        )
         val state = reduceTimeboxxingState(
-            createInitialTimeboxxingState(),
-            TimeboxxingAction.ChangeMode(EntryMode.Invoice),
+            initial,
+            TimeboxxingAction.ExportTimesheet(TimesheetExportFormat.Json),
         )
 
-        assertEquals("Create invoice", state.primaryActionLabel)
+        assertTrue(state.timesheetExporting)
+        assertEquals(null, state.notice)
     }
 
     @Test
@@ -623,13 +975,39 @@ class TimeboxxingReducerTest {
             aiSettings = AiSettings(openRouterSecretExists = true),
         )
 
+    private fun stateWithLegacyProjects() =
+        createInitialTimeboxxingState().let { state ->
+            state.copy(
+                projects = listOf(
+                    project(id = "morgan", name = "Morgan Project", hourlyRateCents = 18_000),
+                    project(id = "axion", name = "Axion Ltd. Project", hourlyRateCents = 16_500),
+                    project(id = "daven", name = "Daven Retainer", hourlyRateCents = 15_000),
+                ),
+                draft = state.draft.copy(projectId = "morgan"),
+            )
+        }
+
+    private fun project(
+        id: String,
+        name: String,
+        hourlyRateCents: Int = 0,
+    ): Project =
+        Project(
+            id = id,
+            name = name,
+            client = "",
+            colorArgb = 0xFF00FFEE,
+            hourlyRateCents = hourlyRateCents,
+        )
+
     private fun timeEntry(
         startMinute: Int,
+        projectId: String = "project",
         sourceUsageIds: Set<String> = emptySet(),
     ): TimeEntry =
         TimeEntry(
             id = "entry",
-            projectId = "project",
+            projectId = projectId,
             title = "Entry",
             notes = "",
             startMinute = startMinute,
@@ -644,6 +1022,7 @@ class TimeboxxingReducerTest {
         id: String = if (isActive) "sidecar-active" else "usage",
         startMinute: Int = 10 * 60,
         sourceType: UsageSourceType = UsageSourceType.Application,
+        projectHintId: String? = null,
     ): UsageEvent =
         UsageEvent(
             id = id,
@@ -652,7 +1031,7 @@ class TimeboxxingReducerTest {
             sourceType = sourceType,
             startMinute = startMinute,
             durationMinutes = durationMinutes,
-            projectHintId = null,
+            projectHintId = projectHintId,
             isActive = isActive,
         )
 

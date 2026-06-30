@@ -9,19 +9,31 @@ import (
 )
 
 type Querier interface {
+	CountProjectsByID(ctx context.Context, id string) (int64, error)
+	CountProjectsByName(ctx context.Context, name string) (int64, error)
+	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateSemanticDocumentEmbedding(ctx context.Context, arg CreateSemanticDocumentEmbeddingParams) error
+	CreateTimesheet(ctx context.Context, arg CreateTimesheetParams) (Timesheet, error)
+	CreateTimesheetEntry(ctx context.Context, arg CreateTimesheetEntryParams) (TimesheetEntry, error)
+	CreateTimesheetEntryUsageBlock(ctx context.Context, arg CreateTimesheetEntryUsageBlockParams) error
 	CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error)
 	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
 	CreateTransitionEventNow(ctx context.Context, arg CreateTransitionEventNowParams) (int64, error)
+	DeleteProject(ctx context.Context, id string) error
 	DeleteSemanticDocumentEmbedding(ctx context.Context, semanticDocumentID int64) error
+	DeleteTimesheetEntry(ctx context.Context, id string) error
 	GetAISettings(ctx context.Context) (GetAISettingsRow, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
 	GetSemanticIndexCounts(ctx context.Context, embeddingModel string) (GetSemanticIndexCountsRow, error)
+	GetTimesheetByWindow(ctx context.Context, arg GetTimesheetByWindowParams) (Timesheet, error)
 	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
 	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
 	ListEmbeddingModels(ctx context.Context) ([]EmbeddingModel, error)
 	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
+	ListProjects(ctx context.Context) ([]Project, error)
 	ListSemanticModels(ctx context.Context) ([]SemanticModel, error)
+	ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]TimesheetEntry, error)
+	ListTimesheetEntryUsageBlocks(ctx context.Context, timesheetEntryID string) ([]string, error)
 	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
 	SearchSemanticDocuments(ctx context.Context, arg SearchSemanticDocumentsParams) ([]SearchSemanticDocumentsRow, error)
 	UpsertAISettings(ctx context.Context, arg UpsertAISettingsParams) error

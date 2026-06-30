@@ -131,6 +131,7 @@ func SqliteDataSourceName(dataSourceName string) string {
 	values.Set("_journal_mode", "WAL")
 	values.Add("_pragma", "journal_mode(WAL)")
 	values.Add("_pragma", "busy_timeout(5000)")
+	values.Add("_pragma", "foreign_keys(ON)")
 
 	if !hasQuery && values.Encode() == "" {
 		return dataSourceName

@@ -12,15 +12,15 @@ enum class UsageSourceType {
     Idle,
 }
 
-enum class EntryMode {
-    Timesheet,
-    Invoice,
-}
-
 enum class AppearanceMode {
     System,
     Light,
     Dark,
+}
+
+enum class TimesheetExportFormat {
+    Json,
+    Csv,
 }
 
 enum class AmaMessageRole {
@@ -71,6 +71,22 @@ data class TimeEntry(
     val durationMinutes: Int,
     val billable: Boolean,
     val sourceUsageIds: Set<String>,
+)
+
+data class TimesheetEntryDraft(
+    val projectId: String,
+    val title: String,
+    val notes: String,
+    val startMinute: Int,
+    val durationMinutes: Int,
+    val billable: Boolean,
+    val sourceUsageIds: List<String>,
+)
+
+data class TimesheetExport(
+    val fileName: String,
+    val contentType: String,
+    val content: ByteArray,
 )
 
 data class EntryDraft(

@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package timesheets.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1;timesheetsv1";
+option java_multiple_files = true;
+option java_package = "com.timeboxxing.sidecar.timesheets.v1";
+
+service TimesheetsService {
+  rpc ListTimesheetEntries(ListTimesheetEntriesRequest) returns (ListTimesheetEntriesResponse);
+  rpc CreateTimesheetEntry(CreateTimesheetEntryRequest) returns (TimesheetEntry);
+  rpc DeleteTimesheetEntry(DeleteTimesheetEntryRequest) returns (DeleteTimesheetEntryResponse);
+  rpc ExportTimesheet(ExportTimesheetRequest) returns (ExportTimesheetResponse);
+}
+
+message TimesheetEntry {
+  string id = 1;
+  string project_id = 2;
+  string title = 3;
+  string notes = 4;
+  int32 start_minute = 5;
+  int32 duration_minutes = 6;
+  bool billable = 7;
+  repeated string source_usage_ids = 8;
+}
+
+message ListTimesheetEntriesRequest {
+  google.protobuf.Timestamp day_started_at = 1;
+  google.protobuf.Timestamp day_ended_at = 2;
+}
+
+message ListTimesheetEntriesResponse {
+  repeated TimesheetEntry entries = 1;
+}
+
+message CreateTimesheetEntryRequest {
+  google.protobuf.Timestamp day_started_at = 1;
+  google.protobuf.Timestamp day_ended_at = 2;
+  string project_id = 3;
+  string title = 4;
+  string notes = 5;
+  int32 start_minute = 6;
+  int32 duration_minutes = 7;
+  bool billable = 8;
+  repeated string source_usage_ids = 9;
+}
+
+message DeleteTimesheetEntryRequest {
+  string id = 1;
+}
+
+message DeleteTimesheetEntryResponse {}
+
+enum TimesheetExportFormat {
+  TIMESHEET_EXPORT_FORMAT_UNSPECIFIED = 0;
+  TIMESHEET_EXPORT_FORMAT_JSON = 1;
+  TIMESHEET_EXPORT_FORMAT_CSV = 2;
+}
+
+message ExportTimesheetRequest {
+  google.protobuf.Timestamp day_started_at = 1;
+  google.protobuf.Timestamp day_ended_at = 2;
+  TimesheetExportFormat format = 3;
+}
+
+message ExportTimesheetResponse {
+  string file_name = 1;
+  string content_type = 2;
+  bytes content = 3;
+}

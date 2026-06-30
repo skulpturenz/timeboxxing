@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 )
 
 func TestSqliteVecIsAvailable(t *testing.T) {
@@ -51,11 +54,102 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 	}
 	defer database.Close()
 
-	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 1)
+	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 3)
 	assertMigrationTableVersion(t, ctx, database, "seed_migrations_embedding_models", 1)
 	assertMigrationTableVersion(t, ctx, database, "seed_migrations_semantic_models", 1)
 	assertMigrationTableVersion(t, ctx, database, "seed_migrations_settings", 1)
 	assertMigrationTableVersion(t, ctx, database, "seed_migrations_transition_event_reasons", 1)
+}
+
+func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
+	ctx := context.Background()
+	database, err := New(ctx, Options{
+		Engine:         EngineSqlite,
+		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+	})
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	defer database.Close()
+
+	if _, err := database.WriteQuerier.CreateProject(ctx, queries.CreateProjectParams{
+		ID:        "client-work",
+		Name:      "Client Work",
+		ColorArgb: 0xFF00FFEE,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	projects, err := database.ReadQuerier.ListProjects(ctx)
+	if err != nil {
+		t.Fatalf("list projects: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(projects))
+	}
+	if projects[0].Client != "" {
+		t.Fatalf("expected empty client, got %q", projects[0].Client)
+	}
+	if projects[0].HourlyRateCents != 0 {
+		t.Fatalf("expected zero hourly rate, got %d", projects[0].HourlyRateCents)
+	}
+}
+
+func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
+	ctx := context.Background()
+	database, err := New(ctx, Options{
+		Engine:         EngineSqlite,
+		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+	})
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	defer database.Close()
+
+	now := time.Now().UTC()
+	timesheet, err := database.WriteQuerier.CreateTimesheet(ctx, queries.CreateTimesheetParams{
+		ID:        "timesheet-test",
+		StartedAt: now,
+		EndedAt:   now.Add(24 * time.Hour),
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create timesheet: %v", err)
+	}
+	entry, err := database.WriteQuerier.CreateTimesheetEntry(ctx, queries.CreateTimesheetEntryParams{
+		ID:              "entry-test",
+		TimesheetID:     timesheet.ID,
+		Title:           "Design review",
+		Notes:           "",
+		StartMinute:     9 * 60,
+		DurationMinutes: 30,
+		Billable:        true,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if err != nil {
+		t.Fatalf("create timesheet entry: %v", err)
+	}
+	if err := database.WriteQuerier.CreateTimesheetEntryUsageBlock(ctx, queries.CreateTimesheetEntryUsageBlockParams{
+		TimesheetEntryID: entry.ID,
+		UsageID:          "sidecar-123",
+		SortOrder:        0,
+	}); err != nil {
+		t.Fatalf("create usage block: %v", err)
+	}
+
+	entries, err := database.ReadQuerier.ListTimesheetEntries(ctx, queries.ListTimesheetEntriesParams{
+		StartedAt: timesheet.StartedAt,
+		EndedAt:   timesheet.EndedAt,
+	})
+	if err != nil {
+		t.Fatalf("list timesheet entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 timesheet entry, got %d", len(entries))
+	}
 }
 
 func TestSqliteUsesWALAndSingleWriterPool(t *testing.T) {
@@ -92,6 +186,8 @@ func TestSqliteUsesWALAndSingleWriterPool(t *testing.T) {
 	assertJournalMode(t, ctx, database.ReadConn, "reader")
 	assertBusyTimeout(t, ctx, database.WriteConn, "writer")
 	assertBusyTimeout(t, ctx, database.ReadConn, "reader")
+	assertForeignKeys(t, ctx, database.WriteConn, "writer")
+	assertForeignKeys(t, ctx, database.ReadConn, "reader")
 }
 
 func assertMigrationTableVersion(t *testing.T, ctx context.Context, database *Database, table string, expectedVersion int64) {
@@ -135,5 +231,19 @@ func assertBusyTimeout(t *testing.T, ctx context.Context, conn interface {
 	}
 	if timeoutMS != 5000 {
 		t.Fatalf("expected %s busy timeout 5000ms, got %dms", name, timeoutMS)
+	}
+}
+
+func assertForeignKeys(t *testing.T, ctx context.Context, conn interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, name string) {
+	t.Helper()
+
+	var enabled int64
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&enabled); err != nil {
+		t.Fatalf("query %s foreign keys: %v", name, err)
+	}
+	if enabled != 1 {
+		t.Fatalf("expected %s foreign keys on, got %d", name, enabled)
 	}
 }

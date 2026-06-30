@@ -15,11 +15,15 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	"github.com/skulpturenz/timeboxxing/sidecar/envs"
 	amav1 "github.com/skulpturenz/timeboxxing/sidecar/gen/ama/v1"
+	projectsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
+	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	transitionsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/transitions/v1"
 	usagev1 "github.com/skulpturenz/timeboxxing/sidecar/gen/usage/v1"
 	grpcAma "github.com/skulpturenz/timeboxxing/sidecar/grpc/ama"
+	grpcProjects "github.com/skulpturenz/timeboxxing/sidecar/grpc/projects"
 	grpcSettings "github.com/skulpturenz/timeboxxing/sidecar/grpc/settings"
+	grpcTimesheets "github.com/skulpturenz/timeboxxing/sidecar/grpc/timesheets"
 	grpcTransitions "github.com/skulpturenz/timeboxxing/sidecar/grpc/transitions"
 	grpcUsage "github.com/skulpturenz/timeboxxing/sidecar/grpc/usage"
 	sidecarLogging "github.com/skulpturenz/timeboxxing/sidecar/logging"
@@ -199,7 +203,9 @@ func serveGRPC(ctx context.Context, registry *services.Services[any, any], logge
 	reflection.Register(server)
 	transitionsv1.RegisterTransitionsServiceServer(server, grpcTransitions.NewServer(registry))
 	amav1.RegisterAmaServiceServer(server, grpcAma.NewServer(registry))
+	projectsv1.RegisterProjectsServiceServer(server, grpcProjects.NewServer(registry))
 	settingsv1.RegisterSettingsServiceServer(server, grpcSettings.NewServer(registry))
+	timesheetsv1.RegisterTimesheetsServiceServer(server, grpcTimesheets.NewServer(registry))
 	usagev1.RegisterUsageServiceServer(server, grpcUsage.NewServer(registry))
 
 	logger.InfoContext(ctx, "sidecar gRPC server listening", "address", listenAddress)

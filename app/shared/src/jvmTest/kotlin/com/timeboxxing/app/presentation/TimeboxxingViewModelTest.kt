@@ -8,10 +8,17 @@ import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.DiagnosticsLogLine
+import com.timeboxxing.domain.model.Project
+import com.timeboxxing.domain.model.TimeEntry
+import com.timeboxxing.domain.model.TimesheetEntryDraft
+import com.timeboxxing.domain.model.TimesheetExport
+import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.repository.AmaRepository
+import com.timeboxxing.domain.repository.ProjectRepository
 import com.timeboxxing.domain.repository.SettingsRepository
+import com.timeboxxing.domain.repository.TimesheetRepository
 import com.timeboxxing.domain.repository.UsageHistoryRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -148,12 +155,129 @@ class TimeboxxingViewModelTest {
         assertEquals(1, usageRepository.getCalls)
         assertEquals("usage-proposal", viewModel.state.value.usageEvents.single().id)
     }
+
+    @Test
+    fun readyRuntimeLoadsProjects() = runTest {
+        val projectRepository = FakeProjectRepository(
+            loadedProjects = listOf(project(id = "client", name = "Client")),
+        )
+        val viewModel = TimeboxxingViewModel(fakeRuntime(projectRepository = projectRepository))
+
+        advanceUntilIdle()
+
+        assertEquals(1, projectRepository.listCalls)
+        assertEquals(listOf("client"), viewModel.state.value.projects.map { it.id })
+        assertEquals("", viewModel.state.value.draft.projectId)
+    }
+
+    @Test
+    fun createProjectUsesRepositoryAndUpdatesOnSuccess() = runTest {
+        val projectRepository = FakeProjectRepository(
+            createdProject = project(id = "lunar-lab", name = "Lunar Lab"),
+        )
+        val viewModel = TimeboxxingViewModel(
+            fakeRuntime(
+                projectRepository = projectRepository,
+                sidecarStatus = TimeboxxingSidecarStatus.Starting,
+            ),
+        )
+
+        viewModel.dispatch(TimeboxxingAction.CreateProject("  Lunar Lab  ", 0xFF00FFEE))
+        runCurrent()
+
+        assertEquals(listOf("  Lunar Lab  " to 0xFF00FFEE), projectRepository.createCalls)
+        assertEquals(listOf("lunar-lab"), viewModel.state.value.projects.map { it.id })
+        assertEquals("lunar-lab", viewModel.state.value.draft.projectId)
+        assertEquals("Created Lunar Lab.", viewModel.state.value.notice)
+    }
+
+    @Test
+    fun createProjectFailureShowsNoticeWithoutAddingProject() = runTest {
+        val viewModel = TimeboxxingViewModel(
+            fakeRuntime(
+                projectRepository = FakeProjectRepository(error = IllegalStateException("Project failed.")),
+                sidecarStatus = TimeboxxingSidecarStatus.Starting,
+            ),
+        )
+
+        viewModel.dispatch(TimeboxxingAction.CreateProject("Lunar Lab", 0xFF00FFEE))
+        runCurrent()
+
+        assertEquals(emptyList(), viewModel.state.value.projects)
+        assertEquals("Project failed.", viewModel.state.value.notice)
+    }
+
+    @Test
+    fun deleteProjectUsesRepositoryAndUpdatesOnSuccess() = runTest {
+        val projectRepository = FakeProjectRepository(
+            loadedProjects = listOf(
+                project(id = "alpha", name = "Alpha"),
+                project(id = "beta", name = "Beta"),
+            ),
+        )
+        val viewModel = TimeboxxingViewModel(fakeRuntime(projectRepository = projectRepository))
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.DeleteProject("alpha"))
+        runCurrent()
+
+        assertEquals(listOf("alpha"), projectRepository.deleteCalls)
+        assertEquals(listOf("beta"), viewModel.state.value.projects.map { it.id })
+        assertEquals("", viewModel.state.value.draft.projectId)
+        assertEquals("Deleted project.", viewModel.state.value.notice)
+    }
+
+    @Test
+    fun addDraftEntryUsesTimesheetRepositoryAndUpdatesOnSuccess() = runTest {
+        val timesheetRepository = FakeTimesheetRepository()
+        val viewModel = TimeboxxingViewModel(
+            fakeRuntime(
+                timesheetRepository = timesheetRepository,
+                sidecarStatus = TimeboxxingSidecarStatus.Starting,
+            ),
+        )
+
+        viewModel.dispatch(TimeboxxingAction.AddDraftEntry)
+        runCurrent()
+
+        assertEquals(1, timesheetRepository.createdEntries.size)
+        assertEquals("", timesheetRepository.createdEntries.single().projectId)
+        assertEquals(1, viewModel.state.value.entries.size)
+        assertEquals("No project", viewModel.state.value.projectFor(viewModel.state.value.entries.single().projectId).name)
+    }
+
+    @Test
+    fun exportTimesheetUsesRepositoryAndWriter() = runTest {
+        val entry = TimeEntry(
+            id = "entry-1",
+            projectId = "",
+            title = "Entry",
+            notes = "",
+            startMinute = 9 * 60,
+            durationMinutes = 30,
+            billable = true,
+            sourceUsageIds = emptySet(),
+        )
+        val timesheetRepository = FakeTimesheetRepository(loadedEntries = listOf(entry))
+        val runtime = fakeRuntime(timesheetRepository = timesheetRepository)
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.ExportTimesheet(TimesheetExportFormat.Csv))
+        runCurrent()
+
+        assertEquals(listOf(TimesheetExportFormat.Csv), timesheetRepository.exportedFormats)
+        assertEquals(1, runtime.timesheetExportFileWriter.savedExports.size)
+        assertEquals("Exported timesheet-test.csv.", viewModel.state.value.notice)
+    }
 }
 
 private fun fakeRuntime(
     usageRepository: UsageHistoryRepository = FakeUsageHistoryRepository(),
     amaRepository: AmaRepository = FakeAmaRepository(),
     settingsRepository: SettingsRepository = FakeSettingsRepository(),
+    projectRepository: ProjectRepository = FakeProjectRepository(),
+    timesheetRepository: TimesheetRepository = FakeTimesheetRepository(),
     sidecarStatus: TimeboxxingSidecarStatus = TimeboxxingSidecarStatus.Ready,
 ): FakeTimeboxxingRuntime {
     val data = mockTimeboxxingData()
@@ -163,6 +287,8 @@ private fun fakeRuntime(
             usageHistoryRepository = usageRepository,
             amaRepository = amaRepository,
             settingsRepository = settingsRepository,
+            projectRepository = projectRepository,
+            timesheetRepository = timesheetRepository,
         ),
         sidecarStatus = sidecarStatus,
     )
@@ -180,6 +306,7 @@ private class FakeTimeboxxingRuntime(
     override val repositories = MutableStateFlow(repositories)
     override val sidecarStatus = MutableStateFlow(sidecarStatus)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
+    override val timesheetExportFileWriter = StaticTimesheetExportFileWriter()
     var restartCount = 0
 
     override suspend fun setAppearanceMode(mode: AppearanceMode) {
@@ -237,3 +364,89 @@ private class FakeSettingsRepository : SettingsRepository {
         return settings
     }
 }
+
+private class FakeProjectRepository(
+    private val loadedProjects: List<Project> = emptyList(),
+    private val createdProject: Project = project(id = "created", name = "Created"),
+    private val error: Throwable? = null,
+) : ProjectRepository {
+    val createCalls = mutableListOf<Pair<String, Long>>()
+    val deleteCalls = mutableListOf<String>()
+    var listCalls = 0
+
+    override suspend fun listProjects(): List<Project> {
+        listCalls++
+        error?.let { throw it }
+        return loadedProjects
+    }
+
+    override suspend fun createProject(name: String, colorArgb: Long): Project {
+        createCalls += name to colorArgb
+        error?.let { throw it }
+        return createdProject
+    }
+
+    override suspend fun deleteProject(projectId: String) {
+        deleteCalls += projectId
+        error?.let { throw it }
+    }
+}
+
+private class FakeTimesheetRepository(
+    private val loadedEntries: List<TimeEntry> = emptyList(),
+    private val error: Throwable? = null,
+) : TimesheetRepository {
+    val createdEntries = mutableListOf<TimesheetEntryDraft>()
+    val deletedEntries = mutableListOf<String>()
+    val exportedFormats = mutableListOf<TimesheetExportFormat>()
+    var listCalls = 0
+    private var nextEntryNumber = 1
+
+    override suspend fun listEntries(day: UsageDay): List<TimeEntry> {
+        listCalls++
+        error?.let { throw it }
+        return loadedEntries
+    }
+
+    override suspend fun createEntry(day: UsageDay, draft: TimesheetEntryDraft): TimeEntry {
+        createdEntries += draft
+        error?.let { throw it }
+        return TimeEntry(
+            id = "entry-${nextEntryNumber++}",
+            projectId = draft.projectId,
+            title = draft.title,
+            notes = draft.notes,
+            startMinute = draft.startMinute,
+            durationMinutes = draft.durationMinutes,
+            billable = draft.billable,
+            sourceUsageIds = draft.sourceUsageIds.toSet(),
+        )
+    }
+
+    override suspend fun deleteEntry(entryId: String) {
+        deletedEntries += entryId
+        error?.let { throw it }
+    }
+
+    override suspend fun exportTimesheet(day: UsageDay, format: TimesheetExportFormat): TimesheetExport {
+        exportedFormats += format
+        error?.let { throw it }
+        return TimesheetExport(
+            fileName = "timesheet-test.${format.name.lowercase()}",
+            contentType = "text/plain",
+            content = byteArrayOf(1, 2, 3),
+        )
+    }
+}
+
+private fun project(
+    id: String,
+    name: String,
+): Project =
+    Project(
+        id = id,
+        name = name,
+        client = "",
+        colorArgb = 0xFF00FFEE,
+        hourlyRateCents = 0,
+    )

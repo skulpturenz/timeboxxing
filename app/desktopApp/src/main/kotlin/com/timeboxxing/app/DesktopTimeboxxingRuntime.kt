@@ -3,14 +3,17 @@ package com.timeboxxing.app
 import com.timeboxxing.app.presentation.TimeboxxingRepositories
 import com.timeboxxing.app.presentation.TimeboxxingRuntime
 import com.timeboxxing.app.presentation.TimeboxxingSidecarStatus
+import com.timeboxxing.app.presentation.TimesheetExportFileWriter
 import com.timeboxxing.app.sidecar.SidecarConnection
 import com.timeboxxing.app.sidecar.SidecarProcessManager
 import com.timeboxxing.app.sidecar.SidecarSecrets
 import com.timeboxxing.app.sidecar.SidecarSessionLog
 import com.timeboxxing.app.sidecar.SidecarStartResult
 import com.timeboxxing.data.repository.EmptyUsageHistoryRepository
+import com.timeboxxing.data.repository.UnavailableProjectRepository
 import com.timeboxxing.data.repository.UnavailableAmaRepository
 import com.timeboxxing.data.repository.UnavailableSettingsRepository
+import com.timeboxxing.data.repository.UnavailableTimesheetRepository
 import com.timeboxxing.data.repository.UnavailableUsageHistoryRepository
 import com.timeboxxing.data.time.recentUsageDays
 import com.timeboxxing.domain.model.AppearanceMode
@@ -47,6 +50,7 @@ internal class DesktopTimeboxxingRuntime(
     override val sidecarStatus: StateFlow<TimeboxxingSidecarStatus> = _sidecarStatus
 
     override val diagnosticsLogs = sidecarSessionLog.lines
+    override val timesheetExportFileWriter: TimesheetExportFileWriter = DesktopTimesheetExportFileWriter()
 
     fun start() {
         scope.launch {
@@ -89,6 +93,8 @@ internal class DesktopTimeboxxingRuntime(
                             }
                         },
                     ),
+                    projectRepository = result.connection.projectRepository,
+                    timesheetRepository = result.connection.timesheetRepository,
                 )
                 _sidecarStatus.value = TimeboxxingSidecarStatus.Ready
             }
@@ -115,6 +121,8 @@ internal class DesktopTimeboxxingRuntime(
             usageHistoryRepository = EmptyUsageHistoryRepository(),
             amaRepository = UnavailableAmaRepository(StartingSidecarMessage),
             settingsRepository = UnavailableSettingsRepository(StartingSidecarMessage),
+            projectRepository = UnavailableProjectRepository(StartingSidecarMessage),
+            timesheetRepository = UnavailableTimesheetRepository(StartingSidecarMessage),
         )
 
     private fun failedRepositories(message: String): TimeboxxingRepositories =
@@ -122,6 +130,8 @@ internal class DesktopTimeboxxingRuntime(
             usageHistoryRepository = UnavailableUsageHistoryRepository(message),
             amaRepository = UnavailableAmaRepository(message),
             settingsRepository = UnavailableSettingsRepository(message),
+            projectRepository = UnavailableProjectRepository(message),
+            timesheetRepository = UnavailableTimesheetRepository(message),
         )
 }
 
