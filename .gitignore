@@ -118,6 +118,9 @@ jspm_packages/
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
+# Astro generated type/cache directory
+.astro/
+
 # TypeScript cache
 *.tsbuildinfo
 

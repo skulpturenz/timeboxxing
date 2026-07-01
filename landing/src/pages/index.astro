@@ -1,0 +1,333 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { downloads, signupEndpoint } from "@lib/site";
+
+const title = "Timeboxxing | Usage history into useful time records";
+const description =
+  "Timeboxxing is a desktop usage tracker for freelancers and focused workers who want cleaner timesheets, project records, and personal attention insight.";
+
+const features = [
+  {
+    eyebrow: "Capture",
+    title: "See what your workday actually used",
+    copy:
+      "Timeboxxing turns desktop activity into a clear timeline so your day is no longer reconstructed from memory.",
+  },
+  {
+    eyebrow: "Assign",
+    title: "Turn usage into project entries",
+    copy:
+      "Select captured sessions, assign them to projects, add notes, and shape them into time entries that make sense.",
+  },
+  {
+    eyebrow: "Export",
+    title: "Send usable records downstream",
+    copy:
+      "Export timesheets as JSON or CSV, keeping your billing and personal records portable from day one.",
+  },
+];
+
+const trustItems = [
+  "Desktop-first tracking designed around your machine, not a team dashboard.",
+  "Downloads are always available; the email form is optional and never gates the app.",
+  "AI usage questions are optional and only appear when configured in the desktop app.",
+];
+
+const faqs = [
+  {
+    question: "Is Timeboxxing for freelancers or personal productivity?",
+    answer:
+      "Both. It is built around freelancer workflows like project entries and exports, while also helping individuals understand where their attention went.",
+  },
+  {
+    question: "Do I have to sign up before downloading?",
+    answer:
+      "No. Downloads stay available. The email field is only for optional updates once a signup endpoint is configured.",
+  },
+  {
+    question: "Which platforms are planned?",
+    answer:
+      "The installer project currently targets macOS DMG and Windows EXE builds, so the landing page starts with those two paths.",
+  },
+  {
+    question: "Does this replace my invoicing tool?",
+    answer:
+      "No. Timeboxxing helps create cleaner source records and exports them, so you can feed the tools you already use.",
+  },
+];
+---
+
+<BaseLayout title={title} description={description}>
+  <header class="site-header" data-header>
+    <a class="brand" href="#top" aria-label="Timeboxxing home">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>Timeboxxing</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="#workflow">Workflow</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="header-cta" href="#download">Download</a>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Desktop usage tracker for real working days</p>
+        <h1 id="hero-title">Turn app activity into cleaner time records.</h1>
+        <p class="hero-lede">
+          Timeboxxing helps freelancers and focused workers turn captured usage into project entries,
+          timesheets, and a calmer picture of where the day went.
+        </p>
+        <div class="hero-actions" id="download">
+          <a
+            class="button button-primary"
+            href={downloads.macos.href}
+            data-download-link
+            data-platform="macos"
+          >
+            {downloads.macos.label}
+          </a>
+          <a
+            class="button button-secondary"
+            href={downloads.windows.href}
+            data-download-link
+            data-platform="windows"
+          >
+            {downloads.windows.label}
+          </a>
+        </div>
+        <p class="cta-note" data-platform-note>
+          macOS and Windows installers are published from GitHub releases.
+        </p>
+      </div>
+      <div class="hero-visual" aria-label="Timeboxxing desktop app preview">
+        <img
+          src="/images/timeboxxing-product-preview.png"
+          width="1536"
+          height="864"
+          alt="Dark Timeboxxing desktop app preview showing captured usage, project summaries, and time entry tools."
+          loading="eager"
+          decoding="async"
+        />
+      </div>
+    </section>
+
+    <section class="proof-strip" aria-label="Product highlights">
+      <div>
+        <strong>Timeline first</strong>
+        <span>Captured activity grouped into a workday view.</span>
+      </div>
+      <div>
+        <strong>Project aware</strong>
+        <span>Assign sessions to clients, projects, or no project.</span>
+      </div>
+      <div>
+        <strong>Portable exports</strong>
+        <span>CSV and JSON records for the rest of your workflow.</span>
+      </div>
+    </section>
+
+    <section class="section intro-band" id="workflow" aria-labelledby="workflow-title">
+      <div class="section-heading">
+        <p class="eyebrow">Workflow</p>
+        <h2 id="workflow-title">Less archaeology. Better records.</h2>
+        <p>
+          Timeboxxing is for the messy middle of knowledge work: documents, calls,
+          chats, browser research, and the little switches that are hard to remember later.
+        </p>
+      </div>
+      <div class="feature-grid">
+        {features.map((feature) => (
+          <article class="feature-card">
+            <p>{feature.eyebrow}</p>
+            <h3>{feature.title}</h3>
+            <span>{feature.copy}</span>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="section split-band" aria-labelledby="personal-title">
+      <div class="section-heading compact">
+        <p class="eyebrow">Freelance billing + personal awareness</p>
+        <h2 id="personal-title">A tracker that respects the person using it.</h2>
+      </div>
+      <div class="compare-layout">
+        <article class="use-case">
+          <span class="icon-chip" aria-hidden="true">01</span>
+          <h3>For client work</h3>
+          <p>
+            Build project entries from real usage sessions, then export structured records
+            before invoice time turns into guesswork.
+          </p>
+        </article>
+        <article class="use-case">
+          <span class="icon-chip" aria-hidden="true">02</span>
+          <h3>For your own attention</h3>
+          <p>
+            Review patterns across apps and days so you can spot where deep work, admin,
+            meetings, and context switching are really landing.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section privacy-band" id="privacy" aria-labelledby="privacy-title">
+      <div class="section-heading">
+        <p class="eyebrow">Trust</p>
+        <h2 id="privacy-title">Private by posture, transparent by design.</h2>
+        <p>
+          Timeboxxing starts as a desktop app for your own records. The landing page does
+          not add analytics or a hidden signup funnel.
+        </p>
+      </div>
+      <ul class="trust-list">
+        {trustItems.map((item) => (
+          <li>
+            <span aria-hidden="true"></span>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <section class="section signup-band" aria-labelledby="signup-title">
+      <div>
+        <p class="eyebrow">Updates</p>
+        <h2 id="signup-title">Get release notes when the signup endpoint is connected.</h2>
+        <p>
+          Downloads stay open. The email field is optional and only submits when a public
+          endpoint is configured.
+        </p>
+      </div>
+      <form class="signup-form" data-signup-form data-endpoint={signupEndpoint} novalidate>
+        <label for="email">Email address</label>
+        <div class="form-row">
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            placeholder="you@example.com"
+            data-email-input
+          />
+          <button class="button button-primary" type="submit" data-signup-button>
+            Notify me
+          </button>
+        </div>
+        <p class="form-status" data-form-status aria-live="polite">
+          Signup is not connected yet. You can still download Timeboxxing above.
+        </p>
+      </form>
+    </section>
+
+    <section class="section faq-band" id="faq" aria-labelledby="faq-title">
+      <div class="section-heading compact">
+        <p class="eyebrow">FAQ</p>
+        <h2 id="faq-title">Straight answers before install.</h2>
+      </div>
+      <div class="faq-list">
+        {faqs.map((faq, index) => (
+          <details class="faq-item" open={index === 0}>
+            <summary>{faq.question}</summary>
+            <p>{faq.answer}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section class="final-cta" aria-labelledby="final-title">
+      <p class="eyebrow">Ready when your day gets complicated</p>
+      <h2 id="final-title">Start with the activity you already created.</h2>
+      <div class="hero-actions">
+        <a class="button button-primary" href={downloads.macos.href} data-download-link data-platform="macos">
+          {downloads.macos.label}
+        </a>
+        <a class="button button-secondary" href={downloads.windows.href} data-download-link data-platform="windows">
+          {downloads.windows.label}
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Timeboxxing by Skulpture</span>
+    <a href="https://github.com/skulpturenz/timeboxxing">GitHub</a>
+  </footer>
+
+  <script>
+    const platformNote = document.querySelector("[data-platform-note]");
+    const downloadLinks = [...document.querySelectorAll("[data-download-link]")];
+
+    const platform = (() => {
+      const platformValue = navigator.platform.toLowerCase();
+      const userAgent = navigator.userAgent.toLowerCase();
+      if (platformValue.includes("mac")) return "macos";
+      if (platformValue.includes("win") || userAgent.includes("windows")) return "windows";
+      return "";
+    })();
+
+    if (platform) {
+      downloadLinks.forEach((link) => {
+        const isMatch = link.getAttribute("data-platform") === platform;
+        link.toggleAttribute("data-preferred", isMatch);
+        if (isMatch && platformNote) {
+          const label = platform === "macos" ? "macOS" : "Windows";
+          platformNote.textContent = `${label} looks right for this device. Both downloads remain available from GitHub releases.`;
+        }
+      });
+    }
+
+    const form = document.querySelector("[data-signup-form]");
+    const status = document.querySelector("[data-form-status]");
+    const input = document.querySelector("[data-email-input]");
+    const button = document.querySelector("[data-signup-button]");
+    const endpoint = form?.getAttribute("data-endpoint")?.trim();
+
+    if (form && status && input instanceof HTMLInputElement && button instanceof HTMLButtonElement) {
+      const setStatus = (message: string, tone = "neutral") => {
+        status.textContent = message;
+        status.setAttribute("data-tone", tone);
+      };
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        if (!endpoint) {
+          setStatus("Signup is not connected yet. Downloads stay open above.", "neutral");
+          return;
+        }
+
+        if (!input.validity.valid || !input.value.trim()) {
+          setStatus("Enter a valid email address first.", "error");
+          input.focus();
+          return;
+        }
+
+        button.disabled = true;
+        setStatus("Sending...", "neutral");
+
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: input.value.trim(), source: "timeboxxing-landing" }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Signup failed with ${response.status}`);
+          }
+
+          input.value = "";
+          setStatus("You're on the update list. Downloads are still available above.", "success");
+        } catch {
+          setStatus("Signup failed. You can still download Timeboxxing above.", "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    }
+  </script>
+</BaseLayout>
