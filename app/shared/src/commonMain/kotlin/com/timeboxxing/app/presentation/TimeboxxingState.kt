@@ -1,12 +1,15 @@
 package com.timeboxxing.app.presentation
 
 import com.timeboxxing.data.mock.mockTimeboxxingData
+import com.timeboxxing.data.time.calendarDateForEpochMillis
 import com.timeboxxing.data.time.usageDayForCalendarDate
 import com.timeboxxing.domain.model.AmaAnswer
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaMessage
 import com.timeboxxing.domain.model.AmaMessageRole
+import com.timeboxxing.domain.model.AmaQueryKind
+import com.timeboxxing.domain.model.AmaStructuredQuery
 import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiProvider
 import com.timeboxxing.domain.model.AiSettings
@@ -48,6 +51,7 @@ data class TimeboxxingScreenState(
     val deletingEntryIds: Set<String> = emptySet(),
     val timesheetExporting: Boolean = false,
     val scheduleFocusEntryId: String?,
+    val scheduleFocusTarget: ScheduleFocusTarget? = null,
     val selectedUsageIds: Set<String>,
     val draft: EntryDraft,
     val notice: String?,
@@ -59,6 +63,7 @@ data class TimeboxxingScreenState(
     val amaError: String? = null,
     val amaIndexStatus: AmaIndexStatus? = null,
     val nextAmaMessageNumber: Int = 1,
+    val nextScheduleFocusRequestId: Long = 1,
     val settingsOptions: AiModelOptions = AiModelOptions(),
     val aiSettings: AiSettings = AiSettings(),
     val settingsDraft: AiSettings = AiSettings(),
@@ -164,6 +169,13 @@ data class TimeboxxingScreenState(
         }
 }
 
+data class ScheduleFocusTarget(
+    val date: CalendarDate,
+    val minute: Int,
+    val usageId: String?,
+    val requestId: Long,
+)
+
 enum class TimeboxxingSection {
     Overview,
     Ama,
@@ -233,11 +245,16 @@ sealed interface TimeboxxingAction {
     data object DismissNotice : TimeboxxingAction
     data class UpdateAmaInput(val input: String) : TimeboxxingAction
     data object SubmitAmaQuestion : TimeboxxingAction
+    data class SubmitAmaStructuredQuery(val query: AmaStructuredQuery) : TimeboxxingAction
     data class AmaAnswerSucceeded(val answer: AmaAnswer) : TimeboxxingAction
     data class AmaAnswerFailed(val message: String) : TimeboxxingAction
     data class AmaIndexStatusSucceeded(val status: AmaIndexStatus) : TimeboxxingAction
     data class AmaIndexStatusFailed(val message: String) : TimeboxxingAction
     data object ClearAmaChat : TimeboxxingAction
+    data class OpenAmaUsageSource(
+        val startedAtEpochMillis: Long?,
+        val transitionEventId: Long,
+    ) : TimeboxxingAction
     data object LoadSettings : TimeboxxingAction
     data class SettingsLoadSucceeded(val options: AiModelOptions, val settings: AiSettings) : TimeboxxingAction
     data class SettingsLoadFailed(val message: String) : TimeboxxingAction
@@ -363,11 +380,12 @@ fun reduceTimeboxxingState(
             if (action.dayStartedAtEpochMillis != state.selectedDay.startedAtEpochMillis) {
                 state
             } else {
+                val normalizedEvents = normalizeUsageEvents(action.events)
                 state.copy(
-                    usageEvents = normalizeUsageEvents(action.events),
+                    usageEvents = normalizedEvents,
                     usageLoading = false,
                     scheduleFocusEntryId = null,
-                    selectedUsageIds = emptySet(),
+                    selectedUsageIds = focusedUsageSelection(state.scheduleFocusTarget, normalizedEvents),
                     draft = blankDraft(state.draft.projectId),
                     notice = null,
                 )
@@ -397,7 +415,7 @@ fun reduceTimeboxxingState(
                 state.copy(
                     usageEvents = mergedEvents,
                     usageLoading = false,
-                    selectedUsageIds = state.selectedUsageIds.intersect(mergedEvents.selectableUsageIds()),
+                    selectedUsageIds = mergedFocusedUsageSelection(state, mergedEvents),
                 )
             }
         }
@@ -411,6 +429,7 @@ fun reduceTimeboxxingState(
                     selectedUsageIds = nextSelection,
                     draft = draftFromSelection(state, nextSelection),
                     scheduleFocusEntryId = null,
+                    scheduleFocusTarget = null,
                     notice = null,
                 )
             }
@@ -420,6 +439,7 @@ fun reduceTimeboxxingState(
             selectedUsageIds = emptySet(),
             draft = blankDraft(state.draft.projectId),
             scheduleFocusEntryId = null,
+            scheduleFocusTarget = null,
             notice = null,
         )
 
@@ -427,6 +447,7 @@ fun reduceTimeboxxingState(
             selectedUsageIds = emptySet(),
             draft = blankDraft(state.draft.projectId),
             scheduleFocusEntryId = null,
+            scheduleFocusTarget = null,
             notice = null,
         )
 
@@ -586,6 +607,8 @@ fun reduceTimeboxxingState(
 
         TimeboxxingAction.SubmitAmaQuestion -> submitAmaQuestion(state)
 
+        is TimeboxxingAction.SubmitAmaStructuredQuery -> submitAmaStructuredQuery(state, action.query)
+
         is TimeboxxingAction.AmaAnswerSucceeded -> {
             val message = AmaMessage(
                 id = "ama-${state.nextAmaMessageNumber}",
@@ -633,6 +656,12 @@ fun reduceTimeboxxingState(
             amaError = null,
             amaIndexStatus = state.amaIndexStatus,
             nextAmaMessageNumber = 1,
+        )
+
+        is TimeboxxingAction.OpenAmaUsageSource -> openAmaUsageSource(
+            state = state,
+            startedAtEpochMillis = action.startedAtEpochMillis,
+            transitionEventId = action.transitionEventId,
         )
 
         TimeboxxingAction.LoadSettings -> state.copy(
@@ -895,6 +924,7 @@ private fun TimeboxxingScreenState.copyForSelectedDate(
         deletingEntryIds = emptySet(),
         timesheetExporting = false,
         scheduleFocusEntryId = null,
+        scheduleFocusTarget = null,
         selectedUsageIds = emptySet(),
         draft = blankDraft(draft.projectId),
         notice = null,
@@ -1251,4 +1281,98 @@ private fun submitAmaQuestion(state: TimeboxxingScreenState): TimeboxxingScreenS
         amaError = null,
         nextAmaMessageNumber = state.nextAmaMessageNumber + 1,
     )
+}
+
+private fun submitAmaStructuredQuery(
+    state: TimeboxxingScreenState,
+    query: AmaStructuredQuery,
+): TimeboxxingScreenState {
+    if (state.amaLoading) {
+        return state
+    }
+
+    val message = AmaMessage(
+        id = "ama-${state.nextAmaMessageNumber}",
+        role = AmaMessageRole.User,
+        content = query.userFacingQuestion(),
+    )
+    return state.copy(
+        selectedSection = TimeboxxingSection.Ama,
+        amaInput = "",
+        amaMessages = state.amaMessages + message,
+        amaLoading = true,
+        amaError = null,
+        nextAmaMessageNumber = state.nextAmaMessageNumber + 1,
+    )
+}
+
+private fun AmaStructuredQuery.userFacingQuestion(): String {
+    val label = periodLabel.ifBlank { "selected period" }
+    return when (kind) {
+        AmaQueryKind.AppTotals -> "Show app totals for $label"
+        AmaQueryKind.Timeline -> "Show usage timeline for $label"
+        AmaQueryKind.Habits -> "Summarize habits for $label"
+        AmaQueryKind.ComparePeriods -> {
+            val baseline = baselinePeriodLabel.ifBlank { "baseline period" }
+            "Compare $label with $baseline"
+        }
+    }
+}
+
+private fun openAmaUsageSource(
+    state: TimeboxxingScreenState,
+    startedAtEpochMillis: Long?,
+    transitionEventId: Long,
+): TimeboxxingScreenState {
+    val startedAt = startedAtEpochMillis ?: return state.copy(
+        selectedSection = TimeboxxingSection.Overview,
+        notice = "That AMA source does not include a schedule time.",
+    )
+    val date = calendarDateForEpochMillis(startedAt)
+    val day = usageDayForCalendarDate(date)
+    val minute = ((startedAt - day.startedAtEpochMillis) / 60_000L)
+        .toInt()
+        .coerceIn(0, UsageDayMinutes - 1)
+    val usageId = transitionEventId
+        .takeIf { it > 0L }
+        ?.let { "$SidecarUsageIdPrefix$it" }
+    val target = ScheduleFocusTarget(
+        date = date,
+        minute = minute,
+        usageId = usageId,
+        requestId = state.nextScheduleFocusRequestId,
+    )
+    val selectedDateState = selectDate(state, date)
+    val selectedUsageIds = focusedUsageSelection(target, selectedDateState.usageEvents)
+    return selectedDateState.copy(
+        selectedSection = TimeboxxingSection.Overview,
+        scheduleFocusEntryId = null,
+        scheduleFocusTarget = target,
+        selectedUsageIds = selectedUsageIds,
+        nextScheduleFocusRequestId = state.nextScheduleFocusRequestId + 1,
+        notice = null,
+    )
+}
+
+private fun focusedUsageSelection(
+    target: ScheduleFocusTarget?,
+    events: List<UsageEvent>,
+): Set<String> {
+    val usageId = target?.usageId ?: return emptySet()
+    return if (events.firstOrNull { it.id == usageId }?.isSelectableUsage() == true) {
+        setOf(usageId)
+    } else {
+        emptySet()
+    }
+}
+
+private fun mergedFocusedUsageSelection(
+    state: TimeboxxingScreenState,
+    events: List<UsageEvent>,
+): Set<String> {
+    val focused = focusedUsageSelection(state.scheduleFocusTarget, events)
+    if (focused.isNotEmpty()) {
+        return focused
+    }
+    return state.selectedUsageIds.intersect(events.selectableUsageIds())
 }

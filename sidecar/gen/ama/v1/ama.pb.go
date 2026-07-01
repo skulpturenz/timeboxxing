@@ -22,6 +22,61 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type QueryKind int32
+
+const (
+	QueryKind_QUERY_KIND_UNSPECIFIED     QueryKind = 0
+	QueryKind_QUERY_KIND_APP_TOTALS      QueryKind = 1
+	QueryKind_QUERY_KIND_TIMELINE        QueryKind = 2
+	QueryKind_QUERY_KIND_HABITS          QueryKind = 3
+	QueryKind_QUERY_KIND_COMPARE_PERIODS QueryKind = 4
+)
+
+// Enum value maps for QueryKind.
+var (
+	QueryKind_name = map[int32]string{
+		0: "QUERY_KIND_UNSPECIFIED",
+		1: "QUERY_KIND_APP_TOTALS",
+		2: "QUERY_KIND_TIMELINE",
+		3: "QUERY_KIND_HABITS",
+		4: "QUERY_KIND_COMPARE_PERIODS",
+	}
+	QueryKind_value = map[string]int32{
+		"QUERY_KIND_UNSPECIFIED":     0,
+		"QUERY_KIND_APP_TOTALS":      1,
+		"QUERY_KIND_TIMELINE":        2,
+		"QUERY_KIND_HABITS":          3,
+		"QUERY_KIND_COMPARE_PERIODS": 4,
+	}
+)
+
+func (x QueryKind) Enum() *QueryKind {
+	p := new(QueryKind)
+	*p = x
+	return p
+}
+
+func (x QueryKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (QueryKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_ama_v1_ama_proto_enumTypes[0].Descriptor()
+}
+
+func (QueryKind) Type() protoreflect.EnumType {
+	return &file_ama_v1_ama_proto_enumTypes[0]
+}
+
+func (x QueryKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use QueryKind.Descriptor instead.
+func (QueryKind) EnumDescriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{0}
+}
+
 type SemanticIndexStatus_State int32
 
 const (
@@ -61,11 +116,11 @@ func (x SemanticIndexStatus_State) String() string {
 }
 
 func (SemanticIndexStatus_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_ama_v1_ama_proto_enumTypes[0].Descriptor()
+	return file_ama_v1_ama_proto_enumTypes[1].Descriptor()
 }
 
 func (SemanticIndexStatus_State) Type() protoreflect.EnumType {
-	return &file_ama_v1_ama_proto_enumTypes[0]
+	return &file_ama_v1_ama_proto_enumTypes[1]
 }
 
 func (x SemanticIndexStatus_State) Number() protoreflect.EnumNumber {
@@ -74,15 +129,16 @@ func (x SemanticIndexStatus_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SemanticIndexStatus_State.Descriptor instead.
 func (SemanticIndexStatus_State) EnumDescriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{7, 0}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{15, 0}
 }
 
 type AskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Question      string                 `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
-	MaxSources    int32                  `protobuf:"varint,2,opt,name=max_sources,json=maxSources,proto3" json:"max_sources,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Question        string                 `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
+	MaxSources      int32                  `protobuf:"varint,2,opt,name=max_sources,json=maxSources,proto3" json:"max_sources,omitempty"`
+	StructuredQuery *StructuredQuery       `protobuf:"bytes,3,opt,name=structured_query,json=structuredQuery,proto3" json:"structured_query,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AskRequest) Reset() {
@@ -127,6 +183,13 @@ func (x *AskRequest) GetMaxSources() int32 {
 		return x.MaxSources
 	}
 	return 0
+}
+
+func (x *AskRequest) GetStructuredQuery() *StructuredQuery {
+	if x != nil {
+		return x.StructuredQuery
+	}
+	return nil
 }
 
 type AskResponse struct {
@@ -302,6 +365,9 @@ type Artifact struct {
 	// Types that are valid to be assigned to Value:
 	//
 	//	*Artifact_AppUsageChart
+	//	*Artifact_UsageTimeline
+	//	*Artifact_UsageHabitSummary
+	//	*Artifact_UsageComparison
 	Value         isArtifact_Value `protobuf_oneof:"value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -353,6 +419,33 @@ func (x *Artifact) GetAppUsageChart() *AppUsageChart {
 	return nil
 }
 
+func (x *Artifact) GetUsageTimeline() *UsageTimeline {
+	if x != nil {
+		if x, ok := x.Value.(*Artifact_UsageTimeline); ok {
+			return x.UsageTimeline
+		}
+	}
+	return nil
+}
+
+func (x *Artifact) GetUsageHabitSummary() *UsageHabitSummary {
+	if x != nil {
+		if x, ok := x.Value.(*Artifact_UsageHabitSummary); ok {
+			return x.UsageHabitSummary
+		}
+	}
+	return nil
+}
+
+func (x *Artifact) GetUsageComparison() *UsageComparison {
+	if x != nil {
+		if x, ok := x.Value.(*Artifact_UsageComparison); ok {
+			return x.UsageComparison
+		}
+	}
+	return nil
+}
+
 type isArtifact_Value interface {
 	isArtifact_Value()
 }
@@ -361,7 +454,169 @@ type Artifact_AppUsageChart struct {
 	AppUsageChart *AppUsageChart `protobuf:"bytes,1,opt,name=app_usage_chart,json=appUsageChart,proto3,oneof"`
 }
 
+type Artifact_UsageTimeline struct {
+	UsageTimeline *UsageTimeline `protobuf:"bytes,2,opt,name=usage_timeline,json=usageTimeline,proto3,oneof"`
+}
+
+type Artifact_UsageHabitSummary struct {
+	UsageHabitSummary *UsageHabitSummary `protobuf:"bytes,3,opt,name=usage_habit_summary,json=usageHabitSummary,proto3,oneof"`
+}
+
+type Artifact_UsageComparison struct {
+	UsageComparison *UsageComparison `protobuf:"bytes,4,opt,name=usage_comparison,json=usageComparison,proto3,oneof"`
+}
+
 func (*Artifact_AppUsageChart) isArtifact_Value() {}
+
+func (*Artifact_UsageTimeline) isArtifact_Value() {}
+
+func (*Artifact_UsageHabitSummary) isArtifact_Value() {}
+
+func (*Artifact_UsageComparison) isArtifact_Value() {}
+
+type StructuredQuery struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Kind                QueryKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=ama.v1.QueryKind" json:"kind,omitempty"`
+	Window              *TimeWindow            `protobuf:"bytes,2,opt,name=window,proto3" json:"window,omitempty"`
+	BaselineWindow      *TimeWindow            `protobuf:"bytes,3,opt,name=baseline_window,json=baselineWindow,proto3" json:"baseline_window,omitempty"`
+	Limit               int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	IncludeIdle         bool                   `protobuf:"varint,5,opt,name=include_idle,json=includeIdle,proto3" json:"include_idle,omitempty"`
+	PeriodLabel         string                 `protobuf:"bytes,6,opt,name=period_label,json=periodLabel,proto3" json:"period_label,omitempty"`
+	BaselinePeriodLabel string                 `protobuf:"bytes,7,opt,name=baseline_period_label,json=baselinePeriodLabel,proto3" json:"baseline_period_label,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *StructuredQuery) Reset() {
+	*x = StructuredQuery{}
+	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StructuredQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StructuredQuery) ProtoMessage() {}
+
+func (x *StructuredQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StructuredQuery.ProtoReflect.Descriptor instead.
+func (*StructuredQuery) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *StructuredQuery) GetKind() QueryKind {
+	if x != nil {
+		return x.Kind
+	}
+	return QueryKind_QUERY_KIND_UNSPECIFIED
+}
+
+func (x *StructuredQuery) GetWindow() *TimeWindow {
+	if x != nil {
+		return x.Window
+	}
+	return nil
+}
+
+func (x *StructuredQuery) GetBaselineWindow() *TimeWindow {
+	if x != nil {
+		return x.BaselineWindow
+	}
+	return nil
+}
+
+func (x *StructuredQuery) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *StructuredQuery) GetIncludeIdle() bool {
+	if x != nil {
+		return x.IncludeIdle
+	}
+	return false
+}
+
+func (x *StructuredQuery) GetPeriodLabel() string {
+	if x != nil {
+		return x.PeriodLabel
+	}
+	return ""
+}
+
+func (x *StructuredQuery) GetBaselinePeriodLabel() string {
+	if x != nil {
+		return x.BaselinePeriodLabel
+	}
+	return ""
+}
+
+type TimeWindow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	EndedAt       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TimeWindow) Reset() {
+	*x = TimeWindow{}
+	mi := &file_ama_v1_ama_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TimeWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TimeWindow) ProtoMessage() {}
+
+func (x *TimeWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TimeWindow.ProtoReflect.Descriptor instead.
+func (*TimeWindow) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TimeWindow) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *TimeWindow) GetEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndedAt
+	}
+	return nil
+}
 
 type AppUsageChart struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
@@ -377,7 +632,7 @@ type AppUsageChart struct {
 
 func (x *AppUsageChart) Reset() {
 	*x = AppUsageChart{}
-	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	mi := &file_ama_v1_ama_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -389,7 +644,7 @@ func (x *AppUsageChart) String() string {
 func (*AppUsageChart) ProtoMessage() {}
 
 func (x *AppUsageChart) ProtoReflect() protoreflect.Message {
-	mi := &file_ama_v1_ama_proto_msgTypes[4]
+	mi := &file_ama_v1_ama_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -402,7 +657,7 @@ func (x *AppUsageChart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppUsageChart.ProtoReflect.Descriptor instead.
 func (*AppUsageChart) Descriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{4}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AppUsageChart) GetStartedAt() *timestamppb.Timestamp {
@@ -461,7 +716,7 @@ type AppUsageBucket struct {
 
 func (x *AppUsageBucket) Reset() {
 	*x = AppUsageBucket{}
-	mi := &file_ama_v1_ama_proto_msgTypes[5]
+	mi := &file_ama_v1_ama_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +728,7 @@ func (x *AppUsageBucket) String() string {
 func (*AppUsageBucket) ProtoMessage() {}
 
 func (x *AppUsageBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_ama_v1_ama_proto_msgTypes[5]
+	mi := &file_ama_v1_ama_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +741,7 @@ func (x *AppUsageBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppUsageBucket.ProtoReflect.Descriptor instead.
 func (*AppUsageBucket) Descriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{5}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AppUsageBucket) GetName() string {
@@ -531,6 +786,638 @@ func (x *AppUsageBucket) GetApplicationPath() string {
 	return ""
 }
 
+type UsageTimeline struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	StartedAt            *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	EndedAt              *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	Timezone             string                 `protobuf:"bytes,3,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	TotalDurationSeconds int64                  `protobuf:"varint,4,opt,name=total_duration_seconds,json=totalDurationSeconds,proto3" json:"total_duration_seconds,omitempty"`
+	Events               []*UsageTimelineEvent  `protobuf:"bytes,5,rep,name=events,proto3" json:"events,omitempty"`
+	PeriodLabel          string                 `protobuf:"bytes,6,opt,name=period_label,json=periodLabel,proto3" json:"period_label,omitempty"`
+	TotalEventCount      int32                  `protobuf:"varint,7,opt,name=total_event_count,json=totalEventCount,proto3" json:"total_event_count,omitempty"`
+	Truncated            bool                   `protobuf:"varint,8,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *UsageTimeline) Reset() {
+	*x = UsageTimeline{}
+	mi := &file_ama_v1_ama_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageTimeline) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageTimeline) ProtoMessage() {}
+
+func (x *UsageTimeline) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageTimeline.ProtoReflect.Descriptor instead.
+func (*UsageTimeline) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UsageTimeline) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *UsageTimeline) GetEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndedAt
+	}
+	return nil
+}
+
+func (x *UsageTimeline) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *UsageTimeline) GetTotalDurationSeconds() int64 {
+	if x != nil {
+		return x.TotalDurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageTimeline) GetEvents() []*UsageTimelineEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *UsageTimeline) GetPeriodLabel() string {
+	if x != nil {
+		return x.PeriodLabel
+	}
+	return ""
+}
+
+func (x *UsageTimeline) GetTotalEventCount() int32 {
+	if x != nil {
+		return x.TotalEventCount
+	}
+	return 0
+}
+
+func (x *UsageTimeline) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+type UsageTimelineEvent struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	TransitionEventId     int64                  `protobuf:"varint,1,opt,name=transition_event_id,json=transitionEventId,proto3" json:"transition_event_id,omitempty"`
+	Title                 string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	SourceName            string                 `protobuf:"bytes,3,opt,name=source_name,json=sourceName,proto3" json:"source_name,omitempty"`
+	SourceType            string                 `protobuf:"bytes,4,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`
+	StartedAt             *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	EndedAt               *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	DurationSeconds       int64                  `protobuf:"varint,7,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	ApplicationIdentifier string                 `protobuf:"bytes,8,opt,name=application_identifier,json=applicationIdentifier,proto3" json:"application_identifier,omitempty"`
+	ApplicationPath       string                 `protobuf:"bytes,9,opt,name=application_path,json=applicationPath,proto3" json:"application_path,omitempty"`
+	UrlHost               string                 `protobuf:"bytes,10,opt,name=url_host,json=urlHost,proto3" json:"url_host,omitempty"`
+	Idle                  bool                   `protobuf:"varint,11,opt,name=idle,proto3" json:"idle,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *UsageTimelineEvent) Reset() {
+	*x = UsageTimelineEvent{}
+	mi := &file_ama_v1_ama_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageTimelineEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageTimelineEvent) ProtoMessage() {}
+
+func (x *UsageTimelineEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageTimelineEvent.ProtoReflect.Descriptor instead.
+func (*UsageTimelineEvent) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UsageTimelineEvent) GetTransitionEventId() int64 {
+	if x != nil {
+		return x.TransitionEventId
+	}
+	return 0
+}
+
+func (x *UsageTimelineEvent) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *UsageTimelineEvent) GetSourceName() string {
+	if x != nil {
+		return x.SourceName
+	}
+	return ""
+}
+
+func (x *UsageTimelineEvent) GetSourceType() string {
+	if x != nil {
+		return x.SourceType
+	}
+	return ""
+}
+
+func (x *UsageTimelineEvent) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *UsageTimelineEvent) GetEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndedAt
+	}
+	return nil
+}
+
+func (x *UsageTimelineEvent) GetDurationSeconds() int64 {
+	if x != nil {
+		return x.DurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageTimelineEvent) GetApplicationIdentifier() string {
+	if x != nil {
+		return x.ApplicationIdentifier
+	}
+	return ""
+}
+
+func (x *UsageTimelineEvent) GetApplicationPath() string {
+	if x != nil {
+		return x.ApplicationPath
+	}
+	return ""
+}
+
+func (x *UsageTimelineEvent) GetUrlHost() string {
+	if x != nil {
+		return x.UrlHost
+	}
+	return ""
+}
+
+func (x *UsageTimelineEvent) GetIdle() bool {
+	if x != nil {
+		return x.Idle
+	}
+	return false
+}
+
+type UsageHabitSummary struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	StartedAt             *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	EndedAt               *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	Timezone              string                 `protobuf:"bytes,3,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	PeriodLabel           string                 `protobuf:"bytes,4,opt,name=period_label,json=periodLabel,proto3" json:"period_label,omitempty"`
+	TotalDurationSeconds  int64                  `protobuf:"varint,5,opt,name=total_duration_seconds,json=totalDurationSeconds,proto3" json:"total_duration_seconds,omitempty"`
+	SessionCount          int64                  `protobuf:"varint,6,opt,name=session_count,json=sessionCount,proto3" json:"session_count,omitempty"`
+	ContextSwitchCount    int64                  `protobuf:"varint,7,opt,name=context_switch_count,json=contextSwitchCount,proto3" json:"context_switch_count,omitempty"`
+	AverageSessionSeconds int64                  `protobuf:"varint,8,opt,name=average_session_seconds,json=averageSessionSeconds,proto3" json:"average_session_seconds,omitempty"`
+	LongestSession        *UsageTimelineEvent    `protobuf:"bytes,9,opt,name=longest_session,json=longestSession,proto3" json:"longest_session,omitempty"`
+	TopSources            []*AppUsageBucket      `protobuf:"bytes,10,rep,name=top_sources,json=topSources,proto3" json:"top_sources,omitempty"`
+	TimeBuckets           []*TimeOfDayBucket     `protobuf:"bytes,11,rep,name=time_buckets,json=timeBuckets,proto3" json:"time_buckets,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *UsageHabitSummary) Reset() {
+	*x = UsageHabitSummary{}
+	mi := &file_ama_v1_ama_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageHabitSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageHabitSummary) ProtoMessage() {}
+
+func (x *UsageHabitSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageHabitSummary.ProtoReflect.Descriptor instead.
+func (*UsageHabitSummary) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *UsageHabitSummary) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *UsageHabitSummary) GetEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndedAt
+	}
+	return nil
+}
+
+func (x *UsageHabitSummary) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *UsageHabitSummary) GetPeriodLabel() string {
+	if x != nil {
+		return x.PeriodLabel
+	}
+	return ""
+}
+
+func (x *UsageHabitSummary) GetTotalDurationSeconds() int64 {
+	if x != nil {
+		return x.TotalDurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageHabitSummary) GetSessionCount() int64 {
+	if x != nil {
+		return x.SessionCount
+	}
+	return 0
+}
+
+func (x *UsageHabitSummary) GetContextSwitchCount() int64 {
+	if x != nil {
+		return x.ContextSwitchCount
+	}
+	return 0
+}
+
+func (x *UsageHabitSummary) GetAverageSessionSeconds() int64 {
+	if x != nil {
+		return x.AverageSessionSeconds
+	}
+	return 0
+}
+
+func (x *UsageHabitSummary) GetLongestSession() *UsageTimelineEvent {
+	if x != nil {
+		return x.LongestSession
+	}
+	return nil
+}
+
+func (x *UsageHabitSummary) GetTopSources() []*AppUsageBucket {
+	if x != nil {
+		return x.TopSources
+	}
+	return nil
+}
+
+func (x *UsageHabitSummary) GetTimeBuckets() []*TimeOfDayBucket {
+	if x != nil {
+		return x.TimeBuckets
+	}
+	return nil
+}
+
+type TimeOfDayBucket struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Label           string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	DurationSeconds int64                  `protobuf:"varint,2,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	SessionCount    int64                  `protobuf:"varint,3,opt,name=session_count,json=sessionCount,proto3" json:"session_count,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *TimeOfDayBucket) Reset() {
+	*x = TimeOfDayBucket{}
+	mi := &file_ama_v1_ama_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TimeOfDayBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TimeOfDayBucket) ProtoMessage() {}
+
+func (x *TimeOfDayBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TimeOfDayBucket.ProtoReflect.Descriptor instead.
+func (*TimeOfDayBucket) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *TimeOfDayBucket) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *TimeOfDayBucket) GetDurationSeconds() int64 {
+	if x != nil {
+		return x.DurationSeconds
+	}
+	return 0
+}
+
+func (x *TimeOfDayBucket) GetSessionCount() int64 {
+	if x != nil {
+		return x.SessionCount
+	}
+	return 0
+}
+
+type UsageComparison struct {
+	state                        protoimpl.MessageState   `protogen:"open.v1"`
+	CurrentStartedAt             *timestamppb.Timestamp   `protobuf:"bytes,1,opt,name=current_started_at,json=currentStartedAt,proto3" json:"current_started_at,omitempty"`
+	CurrentEndedAt               *timestamppb.Timestamp   `protobuf:"bytes,2,opt,name=current_ended_at,json=currentEndedAt,proto3" json:"current_ended_at,omitempty"`
+	BaselineStartedAt            *timestamppb.Timestamp   `protobuf:"bytes,3,opt,name=baseline_started_at,json=baselineStartedAt,proto3" json:"baseline_started_at,omitempty"`
+	BaselineEndedAt              *timestamppb.Timestamp   `protobuf:"bytes,4,opt,name=baseline_ended_at,json=baselineEndedAt,proto3" json:"baseline_ended_at,omitempty"`
+	Timezone                     string                   `protobuf:"bytes,5,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	CurrentPeriodLabel           string                   `protobuf:"bytes,6,opt,name=current_period_label,json=currentPeriodLabel,proto3" json:"current_period_label,omitempty"`
+	BaselinePeriodLabel          string                   `protobuf:"bytes,7,opt,name=baseline_period_label,json=baselinePeriodLabel,proto3" json:"baseline_period_label,omitempty"`
+	CurrentTotalDurationSeconds  int64                    `protobuf:"varint,8,opt,name=current_total_duration_seconds,json=currentTotalDurationSeconds,proto3" json:"current_total_duration_seconds,omitempty"`
+	BaselineTotalDurationSeconds int64                    `protobuf:"varint,9,opt,name=baseline_total_duration_seconds,json=baselineTotalDurationSeconds,proto3" json:"baseline_total_duration_seconds,omitempty"`
+	DurationDeltaSeconds         int64                    `protobuf:"varint,10,opt,name=duration_delta_seconds,json=durationDeltaSeconds,proto3" json:"duration_delta_seconds,omitempty"`
+	DurationDeltaPercent         float64                  `protobuf:"fixed64,11,opt,name=duration_delta_percent,json=durationDeltaPercent,proto3" json:"duration_delta_percent,omitempty"`
+	Buckets                      []*UsageComparisonBucket `protobuf:"bytes,12,rep,name=buckets,proto3" json:"buckets,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
+}
+
+func (x *UsageComparison) Reset() {
+	*x = UsageComparison{}
+	mi := &file_ama_v1_ama_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageComparison) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageComparison) ProtoMessage() {}
+
+func (x *UsageComparison) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageComparison.ProtoReflect.Descriptor instead.
+func (*UsageComparison) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *UsageComparison) GetCurrentStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CurrentStartedAt
+	}
+	return nil
+}
+
+func (x *UsageComparison) GetCurrentEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CurrentEndedAt
+	}
+	return nil
+}
+
+func (x *UsageComparison) GetBaselineStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.BaselineStartedAt
+	}
+	return nil
+}
+
+func (x *UsageComparison) GetBaselineEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.BaselineEndedAt
+	}
+	return nil
+}
+
+func (x *UsageComparison) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *UsageComparison) GetCurrentPeriodLabel() string {
+	if x != nil {
+		return x.CurrentPeriodLabel
+	}
+	return ""
+}
+
+func (x *UsageComparison) GetBaselinePeriodLabel() string {
+	if x != nil {
+		return x.BaselinePeriodLabel
+	}
+	return ""
+}
+
+func (x *UsageComparison) GetCurrentTotalDurationSeconds() int64 {
+	if x != nil {
+		return x.CurrentTotalDurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageComparison) GetBaselineTotalDurationSeconds() int64 {
+	if x != nil {
+		return x.BaselineTotalDurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageComparison) GetDurationDeltaSeconds() int64 {
+	if x != nil {
+		return x.DurationDeltaSeconds
+	}
+	return 0
+}
+
+func (x *UsageComparison) GetDurationDeltaPercent() float64 {
+	if x != nil {
+		return x.DurationDeltaPercent
+	}
+	return 0
+}
+
+func (x *UsageComparison) GetBuckets() []*UsageComparisonBucket {
+	if x != nil {
+		return x.Buckets
+	}
+	return nil
+}
+
+type UsageComparisonBucket struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Name                    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	SourceType              string                 `protobuf:"bytes,2,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"`
+	CurrentDurationSeconds  int64                  `protobuf:"varint,3,opt,name=current_duration_seconds,json=currentDurationSeconds,proto3" json:"current_duration_seconds,omitempty"`
+	BaselineDurationSeconds int64                  `protobuf:"varint,4,opt,name=baseline_duration_seconds,json=baselineDurationSeconds,proto3" json:"baseline_duration_seconds,omitempty"`
+	DeltaDurationSeconds    int64                  `protobuf:"varint,5,opt,name=delta_duration_seconds,json=deltaDurationSeconds,proto3" json:"delta_duration_seconds,omitempty"`
+	CurrentSessionCount     int64                  `protobuf:"varint,6,opt,name=current_session_count,json=currentSessionCount,proto3" json:"current_session_count,omitempty"`
+	BaselineSessionCount    int64                  `protobuf:"varint,7,opt,name=baseline_session_count,json=baselineSessionCount,proto3" json:"baseline_session_count,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *UsageComparisonBucket) Reset() {
+	*x = UsageComparisonBucket{}
+	mi := &file_ama_v1_ama_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageComparisonBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageComparisonBucket) ProtoMessage() {}
+
+func (x *UsageComparisonBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_ama_v1_ama_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageComparisonBucket.ProtoReflect.Descriptor instead.
+func (*UsageComparisonBucket) Descriptor() ([]byte, []int) {
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UsageComparisonBucket) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *UsageComparisonBucket) GetSourceType() string {
+	if x != nil {
+		return x.SourceType
+	}
+	return ""
+}
+
+func (x *UsageComparisonBucket) GetCurrentDurationSeconds() int64 {
+	if x != nil {
+		return x.CurrentDurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageComparisonBucket) GetBaselineDurationSeconds() int64 {
+	if x != nil {
+		return x.BaselineDurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageComparisonBucket) GetDeltaDurationSeconds() int64 {
+	if x != nil {
+		return x.DeltaDurationSeconds
+	}
+	return 0
+}
+
+func (x *UsageComparisonBucket) GetCurrentSessionCount() int64 {
+	if x != nil {
+		return x.CurrentSessionCount
+	}
+	return 0
+}
+
+func (x *UsageComparisonBucket) GetBaselineSessionCount() int64 {
+	if x != nil {
+		return x.BaselineSessionCount
+	}
+	return 0
+}
+
 type GetSemanticIndexStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -539,7 +1426,7 @@ type GetSemanticIndexStatusRequest struct {
 
 func (x *GetSemanticIndexStatusRequest) Reset() {
 	*x = GetSemanticIndexStatusRequest{}
-	mi := &file_ama_v1_ama_proto_msgTypes[6]
+	mi := &file_ama_v1_ama_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -551,7 +1438,7 @@ func (x *GetSemanticIndexStatusRequest) String() string {
 func (*GetSemanticIndexStatusRequest) ProtoMessage() {}
 
 func (x *GetSemanticIndexStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ama_v1_ama_proto_msgTypes[6]
+	mi := &file_ama_v1_ama_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -564,7 +1451,7 @@ func (x *GetSemanticIndexStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSemanticIndexStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetSemanticIndexStatusRequest) Descriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{6}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{14}
 }
 
 type SemanticIndexStatus struct {
@@ -581,7 +1468,7 @@ type SemanticIndexStatus struct {
 
 func (x *SemanticIndexStatus) Reset() {
 	*x = SemanticIndexStatus{}
-	mi := &file_ama_v1_ama_proto_msgTypes[7]
+	mi := &file_ama_v1_ama_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -593,7 +1480,7 @@ func (x *SemanticIndexStatus) String() string {
 func (*SemanticIndexStatus) ProtoMessage() {}
 
 func (x *SemanticIndexStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ama_v1_ama_proto_msgTypes[7]
+	mi := &file_ama_v1_ama_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -606,7 +1493,7 @@ func (x *SemanticIndexStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SemanticIndexStatus.ProtoReflect.Descriptor instead.
 func (*SemanticIndexStatus) Descriptor() ([]byte, []int) {
-	return file_ama_v1_ama_proto_rawDescGZIP(), []int{7}
+	return file_ama_v1_ama_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SemanticIndexStatus) GetState() SemanticIndexStatus_State {
@@ -655,12 +1542,13 @@ var File_ama_v1_ama_proto protoreflect.FileDescriptor
 
 const file_ama_v1_ama_proto_rawDesc = "" +
 	"\n" +
-	"\x10ama/v1/ama.proto\x12\x06ama.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"I\n" +
+	"\x10ama/v1/ama.proto\x12\x06ama.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8d\x01\n" +
 	"\n" +
 	"AskRequest\x12\x1a\n" +
 	"\bquestion\x18\x01 \x01(\tR\bquestion\x12\x1f\n" +
 	"\vmax_sources\x18\x02 \x01(\x05R\n" +
-	"maxSources\"\xe6\x01\n" +
+	"maxSources\x12B\n" +
+	"\x10structured_query\x18\x03 \x01(\v2\x17.ama.v1.StructuredQueryR\x0fstructuredQuery\"\xe6\x01\n" +
 	"\vAskResponse\x12\x16\n" +
 	"\x06answer\x18\x01 \x01(\tR\x06answer\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x12(\n" +
@@ -675,10 +1563,26 @@ const file_ama_v1_ama_proto_rawDesc = "" +
 	"\rdocument_type\x18\x05 \x01(\tR\fdocumentType\x129\n" +
 	"\n" +
 	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"T\n" +
+	"\bended_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xa7\x02\n" +
 	"\bArtifact\x12?\n" +
-	"\x0fapp_usage_chart\x18\x01 \x01(\v2\x15.ama.v1.AppUsageChartH\x00R\rappUsageChartB\a\n" +
-	"\x05value\"\xa8\x02\n" +
+	"\x0fapp_usage_chart\x18\x01 \x01(\v2\x15.ama.v1.AppUsageChartH\x00R\rappUsageChart\x12>\n" +
+	"\x0eusage_timeline\x18\x02 \x01(\v2\x15.ama.v1.UsageTimelineH\x00R\rusageTimeline\x12K\n" +
+	"\x13usage_habit_summary\x18\x03 \x01(\v2\x19.ama.v1.UsageHabitSummaryH\x00R\x11usageHabitSummary\x12D\n" +
+	"\x10usage_comparison\x18\x04 \x01(\v2\x17.ama.v1.UsageComparisonH\x00R\x0fusageComparisonB\a\n" +
+	"\x05value\"\xb1\x02\n" +
+	"\x0fStructuredQuery\x12%\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x11.ama.v1.QueryKindR\x04kind\x12*\n" +
+	"\x06window\x18\x02 \x01(\v2\x12.ama.v1.TimeWindowR\x06window\x12;\n" +
+	"\x0fbaseline_window\x18\x03 \x01(\v2\x12.ama.v1.TimeWindowR\x0ebaselineWindow\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12!\n" +
+	"\finclude_idle\x18\x05 \x01(\bR\vincludeIdle\x12!\n" +
+	"\fperiod_label\x18\x06 \x01(\tR\vperiodLabel\x122\n" +
+	"\x15baseline_period_label\x18\a \x01(\tR\x13baselinePeriodLabel\"~\n" +
+	"\n" +
+	"TimeWindow\x129\n" +
+	"\n" +
+	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
+	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xa8\x02\n" +
 	"\rAppUsageChart\x129\n" +
 	"\n" +
 	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
@@ -694,7 +1598,75 @@ const file_ama_v1_ama_proto_rawDesc = "" +
 	"\x10duration_seconds\x18\x03 \x01(\x03R\x0fdurationSeconds\x12#\n" +
 	"\rsession_count\x18\x04 \x01(\x03R\fsessionCount\x125\n" +
 	"\x16application_identifier\x18\x05 \x01(\tR\x15applicationIdentifier\x12)\n" +
-	"\x10application_path\x18\x06 \x01(\tR\x0fapplicationPath\"\x1f\n" +
+	"\x10application_path\x18\x06 \x01(\tR\x0fapplicationPath\"\xf4\x02\n" +
+	"\rUsageTimeline\x129\n" +
+	"\n" +
+	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
+	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12\x1a\n" +
+	"\btimezone\x18\x03 \x01(\tR\btimezone\x124\n" +
+	"\x16total_duration_seconds\x18\x04 \x01(\x03R\x14totalDurationSeconds\x122\n" +
+	"\x06events\x18\x05 \x03(\v2\x1a.ama.v1.UsageTimelineEventR\x06events\x12!\n" +
+	"\fperiod_label\x18\x06 \x01(\tR\vperiodLabel\x12*\n" +
+	"\x11total_event_count\x18\a \x01(\x05R\x0ftotalEventCount\x12\x1c\n" +
+	"\ttruncated\x18\b \x01(\bR\ttruncated\"\xca\x03\n" +
+	"\x12UsageTimelineEvent\x12.\n" +
+	"\x13transition_event_id\x18\x01 \x01(\x03R\x11transitionEventId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1f\n" +
+	"\vsource_name\x18\x03 \x01(\tR\n" +
+	"sourceName\x12\x1f\n" +
+	"\vsource_type\x18\x04 \x01(\tR\n" +
+	"sourceType\x129\n" +
+	"\n" +
+	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
+	"\bended_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12)\n" +
+	"\x10duration_seconds\x18\a \x01(\x03R\x0fdurationSeconds\x125\n" +
+	"\x16application_identifier\x18\b \x01(\tR\x15applicationIdentifier\x12)\n" +
+	"\x10application_path\x18\t \x01(\tR\x0fapplicationPath\x12\x19\n" +
+	"\burl_host\x18\n" +
+	" \x01(\tR\aurlHost\x12\x12\n" +
+	"\x04idle\x18\v \x01(\bR\x04idle\"\xc3\x04\n" +
+	"\x11UsageHabitSummary\x129\n" +
+	"\n" +
+	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
+	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12\x1a\n" +
+	"\btimezone\x18\x03 \x01(\tR\btimezone\x12!\n" +
+	"\fperiod_label\x18\x04 \x01(\tR\vperiodLabel\x124\n" +
+	"\x16total_duration_seconds\x18\x05 \x01(\x03R\x14totalDurationSeconds\x12#\n" +
+	"\rsession_count\x18\x06 \x01(\x03R\fsessionCount\x120\n" +
+	"\x14context_switch_count\x18\a \x01(\x03R\x12contextSwitchCount\x126\n" +
+	"\x17average_session_seconds\x18\b \x01(\x03R\x15averageSessionSeconds\x12C\n" +
+	"\x0flongest_session\x18\t \x01(\v2\x1a.ama.v1.UsageTimelineEventR\x0elongestSession\x127\n" +
+	"\vtop_sources\x18\n" +
+	" \x03(\v2\x16.ama.v1.AppUsageBucketR\n" +
+	"topSources\x12:\n" +
+	"\ftime_buckets\x18\v \x03(\v2\x17.ama.v1.TimeOfDayBucketR\vtimeBuckets\"w\n" +
+	"\x0fTimeOfDayBucket\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12)\n" +
+	"\x10duration_seconds\x18\x02 \x01(\x03R\x0fdurationSeconds\x12#\n" +
+	"\rsession_count\x18\x03 \x01(\x03R\fsessionCount\"\xe8\x05\n" +
+	"\x0fUsageComparison\x12H\n" +
+	"\x12current_started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x10currentStartedAt\x12D\n" +
+	"\x10current_ended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x0ecurrentEndedAt\x12J\n" +
+	"\x13baseline_started_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x11baselineStartedAt\x12F\n" +
+	"\x11baseline_ended_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0fbaselineEndedAt\x12\x1a\n" +
+	"\btimezone\x18\x05 \x01(\tR\btimezone\x120\n" +
+	"\x14current_period_label\x18\x06 \x01(\tR\x12currentPeriodLabel\x122\n" +
+	"\x15baseline_period_label\x18\a \x01(\tR\x13baselinePeriodLabel\x12C\n" +
+	"\x1ecurrent_total_duration_seconds\x18\b \x01(\x03R\x1bcurrentTotalDurationSeconds\x12E\n" +
+	"\x1fbaseline_total_duration_seconds\x18\t \x01(\x03R\x1cbaselineTotalDurationSeconds\x124\n" +
+	"\x16duration_delta_seconds\x18\n" +
+	" \x01(\x03R\x14durationDeltaSeconds\x124\n" +
+	"\x16duration_delta_percent\x18\v \x01(\x01R\x14durationDeltaPercent\x127\n" +
+	"\abuckets\x18\f \x03(\v2\x1d.ama.v1.UsageComparisonBucketR\abuckets\"\xe2\x02\n" +
+	"\x15UsageComparisonBucket\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\vsource_type\x18\x02 \x01(\tR\n" +
+	"sourceType\x128\n" +
+	"\x18current_duration_seconds\x18\x03 \x01(\x03R\x16currentDurationSeconds\x12:\n" +
+	"\x19baseline_duration_seconds\x18\x04 \x01(\x03R\x17baselineDurationSeconds\x124\n" +
+	"\x16delta_duration_seconds\x18\x05 \x01(\x03R\x14deltaDurationSeconds\x122\n" +
+	"\x15current_session_count\x18\x06 \x01(\x03R\x13currentSessionCount\x124\n" +
+	"\x16baseline_session_count\x18\a \x01(\x03R\x14baselineSessionCount\"\x1f\n" +
 	"\x1dGetSemanticIndexStatusRequest\"\xfc\x02\n" +
 	"\x13SemanticIndexStatus\x127\n" +
 	"\x05state\x18\x01 \x01(\x0e2!.ama.v1.SemanticIndexStatus.StateR\x05state\x122\n" +
@@ -708,7 +1680,13 @@ const file_ama_v1_ama_proto_rawDesc = "" +
 	"\x05READY\x10\x01\x12\f\n" +
 	"\bINDEXING\x10\x02\x12\t\n" +
 	"\x05EMPTY\x10\x03\x12\x0f\n" +
-	"\vUNAVAILABLE\x10\x042\x9a\x01\n" +
+	"\vUNAVAILABLE\x10\x04*\x92\x01\n" +
+	"\tQueryKind\x12\x1a\n" +
+	"\x16QUERY_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15QUERY_KIND_APP_TOTALS\x10\x01\x12\x17\n" +
+	"\x13QUERY_KIND_TIMELINE\x10\x02\x12\x15\n" +
+	"\x11QUERY_KIND_HABITS\x10\x03\x12\x1e\n" +
+	"\x1aQUERY_KIND_COMPARE_PERIODS\x10\x042\x9a\x01\n" +
 	"\n" +
 	"AmaService\x12.\n" +
 	"\x03Ask\x12\x12.ama.v1.AskRequest\x1a\x13.ama.v1.AskResponse\x12\\\n" +
@@ -728,40 +1706,73 @@ func file_ama_v1_ama_proto_rawDescGZIP() []byte {
 	return file_ama_v1_ama_proto_rawDescData
 }
 
-var file_ama_v1_ama_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ama_v1_ama_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_ama_v1_ama_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_ama_v1_ama_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_ama_v1_ama_proto_goTypes = []any{
-	(SemanticIndexStatus_State)(0),        // 0: ama.v1.SemanticIndexStatus.State
-	(*AskRequest)(nil),                    // 1: ama.v1.AskRequest
-	(*AskResponse)(nil),                   // 2: ama.v1.AskResponse
-	(*Source)(nil),                        // 3: ama.v1.Source
-	(*Artifact)(nil),                      // 4: ama.v1.Artifact
-	(*AppUsageChart)(nil),                 // 5: ama.v1.AppUsageChart
-	(*AppUsageBucket)(nil),                // 6: ama.v1.AppUsageBucket
-	(*GetSemanticIndexStatusRequest)(nil), // 7: ama.v1.GetSemanticIndexStatusRequest
-	(*SemanticIndexStatus)(nil),           // 8: ama.v1.SemanticIndexStatus
-	(*timestamppb.Timestamp)(nil),         // 9: google.protobuf.Timestamp
+	(QueryKind)(0),                        // 0: ama.v1.QueryKind
+	(SemanticIndexStatus_State)(0),        // 1: ama.v1.SemanticIndexStatus.State
+	(*AskRequest)(nil),                    // 2: ama.v1.AskRequest
+	(*AskResponse)(nil),                   // 3: ama.v1.AskResponse
+	(*Source)(nil),                        // 4: ama.v1.Source
+	(*Artifact)(nil),                      // 5: ama.v1.Artifact
+	(*StructuredQuery)(nil),               // 6: ama.v1.StructuredQuery
+	(*TimeWindow)(nil),                    // 7: ama.v1.TimeWindow
+	(*AppUsageChart)(nil),                 // 8: ama.v1.AppUsageChart
+	(*AppUsageBucket)(nil),                // 9: ama.v1.AppUsageBucket
+	(*UsageTimeline)(nil),                 // 10: ama.v1.UsageTimeline
+	(*UsageTimelineEvent)(nil),            // 11: ama.v1.UsageTimelineEvent
+	(*UsageHabitSummary)(nil),             // 12: ama.v1.UsageHabitSummary
+	(*TimeOfDayBucket)(nil),               // 13: ama.v1.TimeOfDayBucket
+	(*UsageComparison)(nil),               // 14: ama.v1.UsageComparison
+	(*UsageComparisonBucket)(nil),         // 15: ama.v1.UsageComparisonBucket
+	(*GetSemanticIndexStatusRequest)(nil), // 16: ama.v1.GetSemanticIndexStatusRequest
+	(*SemanticIndexStatus)(nil),           // 17: ama.v1.SemanticIndexStatus
+	(*timestamppb.Timestamp)(nil),         // 18: google.protobuf.Timestamp
 }
 var file_ama_v1_ama_proto_depIdxs = []int32{
-	3,  // 0: ama.v1.AskResponse.sources:type_name -> ama.v1.Source
-	8,  // 1: ama.v1.AskResponse.semantic_index_status:type_name -> ama.v1.SemanticIndexStatus
-	4,  // 2: ama.v1.AskResponse.artifacts:type_name -> ama.v1.Artifact
-	9,  // 3: ama.v1.Source.started_at:type_name -> google.protobuf.Timestamp
-	9,  // 4: ama.v1.Source.ended_at:type_name -> google.protobuf.Timestamp
-	5,  // 5: ama.v1.Artifact.app_usage_chart:type_name -> ama.v1.AppUsageChart
-	9,  // 6: ama.v1.AppUsageChart.started_at:type_name -> google.protobuf.Timestamp
-	9,  // 7: ama.v1.AppUsageChart.ended_at:type_name -> google.protobuf.Timestamp
-	6,  // 8: ama.v1.AppUsageChart.buckets:type_name -> ama.v1.AppUsageBucket
-	0,  // 9: ama.v1.SemanticIndexStatus.state:type_name -> ama.v1.SemanticIndexStatus.State
-	1,  // 10: ama.v1.AmaService.Ask:input_type -> ama.v1.AskRequest
-	7,  // 11: ama.v1.AmaService.GetSemanticIndexStatus:input_type -> ama.v1.GetSemanticIndexStatusRequest
-	2,  // 12: ama.v1.AmaService.Ask:output_type -> ama.v1.AskResponse
-	8,  // 13: ama.v1.AmaService.GetSemanticIndexStatus:output_type -> ama.v1.SemanticIndexStatus
-	12, // [12:14] is the sub-list for method output_type
-	10, // [10:12] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	6,  // 0: ama.v1.AskRequest.structured_query:type_name -> ama.v1.StructuredQuery
+	4,  // 1: ama.v1.AskResponse.sources:type_name -> ama.v1.Source
+	17, // 2: ama.v1.AskResponse.semantic_index_status:type_name -> ama.v1.SemanticIndexStatus
+	5,  // 3: ama.v1.AskResponse.artifacts:type_name -> ama.v1.Artifact
+	18, // 4: ama.v1.Source.started_at:type_name -> google.protobuf.Timestamp
+	18, // 5: ama.v1.Source.ended_at:type_name -> google.protobuf.Timestamp
+	8,  // 6: ama.v1.Artifact.app_usage_chart:type_name -> ama.v1.AppUsageChart
+	10, // 7: ama.v1.Artifact.usage_timeline:type_name -> ama.v1.UsageTimeline
+	12, // 8: ama.v1.Artifact.usage_habit_summary:type_name -> ama.v1.UsageHabitSummary
+	14, // 9: ama.v1.Artifact.usage_comparison:type_name -> ama.v1.UsageComparison
+	0,  // 10: ama.v1.StructuredQuery.kind:type_name -> ama.v1.QueryKind
+	7,  // 11: ama.v1.StructuredQuery.window:type_name -> ama.v1.TimeWindow
+	7,  // 12: ama.v1.StructuredQuery.baseline_window:type_name -> ama.v1.TimeWindow
+	18, // 13: ama.v1.TimeWindow.started_at:type_name -> google.protobuf.Timestamp
+	18, // 14: ama.v1.TimeWindow.ended_at:type_name -> google.protobuf.Timestamp
+	18, // 15: ama.v1.AppUsageChart.started_at:type_name -> google.protobuf.Timestamp
+	18, // 16: ama.v1.AppUsageChart.ended_at:type_name -> google.protobuf.Timestamp
+	9,  // 17: ama.v1.AppUsageChart.buckets:type_name -> ama.v1.AppUsageBucket
+	18, // 18: ama.v1.UsageTimeline.started_at:type_name -> google.protobuf.Timestamp
+	18, // 19: ama.v1.UsageTimeline.ended_at:type_name -> google.protobuf.Timestamp
+	11, // 20: ama.v1.UsageTimeline.events:type_name -> ama.v1.UsageTimelineEvent
+	18, // 21: ama.v1.UsageTimelineEvent.started_at:type_name -> google.protobuf.Timestamp
+	18, // 22: ama.v1.UsageTimelineEvent.ended_at:type_name -> google.protobuf.Timestamp
+	18, // 23: ama.v1.UsageHabitSummary.started_at:type_name -> google.protobuf.Timestamp
+	18, // 24: ama.v1.UsageHabitSummary.ended_at:type_name -> google.protobuf.Timestamp
+	11, // 25: ama.v1.UsageHabitSummary.longest_session:type_name -> ama.v1.UsageTimelineEvent
+	9,  // 26: ama.v1.UsageHabitSummary.top_sources:type_name -> ama.v1.AppUsageBucket
+	13, // 27: ama.v1.UsageHabitSummary.time_buckets:type_name -> ama.v1.TimeOfDayBucket
+	18, // 28: ama.v1.UsageComparison.current_started_at:type_name -> google.protobuf.Timestamp
+	18, // 29: ama.v1.UsageComparison.current_ended_at:type_name -> google.protobuf.Timestamp
+	18, // 30: ama.v1.UsageComparison.baseline_started_at:type_name -> google.protobuf.Timestamp
+	18, // 31: ama.v1.UsageComparison.baseline_ended_at:type_name -> google.protobuf.Timestamp
+	15, // 32: ama.v1.UsageComparison.buckets:type_name -> ama.v1.UsageComparisonBucket
+	1,  // 33: ama.v1.SemanticIndexStatus.state:type_name -> ama.v1.SemanticIndexStatus.State
+	2,  // 34: ama.v1.AmaService.Ask:input_type -> ama.v1.AskRequest
+	16, // 35: ama.v1.AmaService.GetSemanticIndexStatus:input_type -> ama.v1.GetSemanticIndexStatusRequest
+	3,  // 36: ama.v1.AmaService.Ask:output_type -> ama.v1.AskResponse
+	17, // 37: ama.v1.AmaService.GetSemanticIndexStatus:output_type -> ama.v1.SemanticIndexStatus
+	36, // [36:38] is the sub-list for method output_type
+	34, // [34:36] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_ama_v1_ama_proto_init() }
@@ -771,14 +1782,17 @@ func file_ama_v1_ama_proto_init() {
 	}
 	file_ama_v1_ama_proto_msgTypes[3].OneofWrappers = []any{
 		(*Artifact_AppUsageChart)(nil),
+		(*Artifact_UsageTimeline)(nil),
+		(*Artifact_UsageHabitSummary)(nil),
+		(*Artifact_UsageComparison)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ama_v1_ama_proto_rawDesc), len(file_ama_v1_ama_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   8,
+			NumEnums:      2,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

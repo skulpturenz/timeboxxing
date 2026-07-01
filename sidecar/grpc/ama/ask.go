@@ -26,12 +26,23 @@ func (s *Server) Ask(ctx context.Context, req *amav1.AskRequest) (*amav1.AskResp
 	}
 
 	question := strings.TrimSpace(req.GetQuestion())
-	if question == "" {
+	structuredRequest := req.GetStructuredQuery()
+	if question == "" && structuredRequest == nil {
 		return nil, status.Error(codes.InvalidArgument, "question is required")
 	}
 
 	maxSources := maxSourcesFromRequest(req)
-	answer, err := s.answerer.Answer(ctx, question, maxSources)
+	var answer *semantic.Answer
+	var err error
+	if structuredRequest != nil {
+		query, parseErr := structuredQueryFromProto(structuredRequest)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		answer, err = s.answerer.AnswerStructured(ctx, query)
+	} else {
+		answer, err = s.answerer.Answer(ctx, question, maxSources)
+	}
 	if err != nil {
 		return nil, answerErrorStatus(err)
 	}
@@ -40,7 +51,7 @@ func (s *Server) Ask(ctx context.Context, req *amav1.AskRequest) (*amav1.AskResp
 		s.logger.WarnContext(ctx, "semantic index status unavailable while answering", "error", err)
 		indexStatus = semanticIndexStatusUnavailable()
 	}
-	if answer != nil && len(answer.Sources) == 0 && s.backfilling != nil {
+	if structuredRequest == nil && answer != nil && len(answer.Sources) == 0 && s.backfilling != nil {
 		switch indexStatus.State {
 		case semantic.IndexStateEmpty:
 			answer = &semantic.Answer{
@@ -83,6 +94,67 @@ func (s *Server) Ask(ctx context.Context, req *amav1.AskRequest) (*amav1.AskResp
 	s.logger.InfoContext(ctx, "AMA answer completed", "source_count", sourceCount, "max_sources", maxSources)
 
 	return answerToProto(answer, indexStatus), nil
+}
+
+func structuredQueryFromProto(req *amav1.StructuredQuery) (semantic.StructuredQuery, error) {
+	if req == nil {
+		return semantic.StructuredQuery{}, status.Error(codes.InvalidArgument, "structured_query is required")
+	}
+	window, err := timeWindowFromProto(req.GetWindow(), "window")
+	if err != nil {
+		return semantic.StructuredQuery{}, err
+	}
+	query := semantic.StructuredQuery{
+		Window:              window,
+		Limit:               int(req.GetLimit()),
+		IncludeIdle:         req.GetIncludeIdle(),
+		PeriodLabel:         strings.TrimSpace(req.GetPeriodLabel()),
+		BaselinePeriodLabel: strings.TrimSpace(req.GetBaselinePeriodLabel()),
+	}
+	switch req.GetKind() {
+	case amav1.QueryKind_QUERY_KIND_APP_TOTALS:
+		query.Kind = semantic.StructuredQueryKindAppTotals
+	case amav1.QueryKind_QUERY_KIND_TIMELINE:
+		query.Kind = semantic.StructuredQueryKindTimeline
+	case amav1.QueryKind_QUERY_KIND_HABITS:
+		query.Kind = semantic.StructuredQueryKindHabits
+	case amav1.QueryKind_QUERY_KIND_COMPARE_PERIODS:
+		query.Kind = semantic.StructuredQueryKindComparePeriods
+		baseline, err := timeWindowFromProto(req.GetBaselineWindow(), "baseline_window")
+		if err != nil {
+			return semantic.StructuredQuery{}, err
+		}
+		query.BaselineWindow = baseline
+	default:
+		return semantic.StructuredQuery{}, status.Error(codes.InvalidArgument, "structured_query kind is required")
+	}
+	return query, nil
+}
+
+func timeWindowFromProto(req *amav1.TimeWindow, fieldName string) (semantic.TimeWindow, error) {
+	if req == nil {
+		return semantic.TimeWindow{}, status.Errorf(codes.InvalidArgument, "%s is required", fieldName)
+	}
+	if req.GetStartedAt() == nil {
+		return semantic.TimeWindow{}, status.Errorf(codes.InvalidArgument, "%s.started_at is required", fieldName)
+	}
+	if req.GetEndedAt() == nil {
+		return semantic.TimeWindow{}, status.Errorf(codes.InvalidArgument, "%s.ended_at is required", fieldName)
+	}
+	if err := req.GetStartedAt().CheckValid(); err != nil {
+		return semantic.TimeWindow{}, status.Errorf(codes.InvalidArgument, "%s.started_at is invalid: %v", fieldName, err)
+	}
+	if err := req.GetEndedAt().CheckValid(); err != nil {
+		return semantic.TimeWindow{}, status.Errorf(codes.InvalidArgument, "%s.ended_at is invalid: %v", fieldName, err)
+	}
+	window := semantic.TimeWindow{
+		StartedAt: req.GetStartedAt().AsTime().UTC(),
+		EndedAt:   req.GetEndedAt().AsTime().UTC(),
+	}
+	if !window.EndedAt.After(window.StartedAt) {
+		return semantic.TimeWindow{}, status.Errorf(codes.InvalidArgument, "%s.ended_at must be after started_at", fieldName)
+	}
+	return window, nil
 }
 
 func answerErrorStatus(err error) error {
@@ -179,8 +251,131 @@ func artifactToProto(artifact semantic.Artifact) *amav1.Artifact {
 				},
 			},
 		}
+	case semantic.ArtifactTypeUsageTimeline:
+		if artifact.UsageTimeline == nil {
+			return nil
+		}
+		timeline := artifact.UsageTimeline
+		events := make([]*amav1.UsageTimelineEvent, 0, len(timeline.Events))
+		for _, event := range timeline.Events {
+			events = append(events, usageTimelineEventToProto(event))
+		}
+		return &amav1.Artifact{
+			Value: &amav1.Artifact_UsageTimeline{
+				UsageTimeline: &amav1.UsageTimeline{
+					StartedAt:            timestampOrNil(timeline.StartedAt),
+					EndedAt:              timestampOrNil(timeline.EndedAt),
+					Timezone:             timeline.TimeZone,
+					TotalDurationSeconds: timeline.TotalDurationSeconds,
+					Events:               events,
+					PeriodLabel:          timeline.PeriodLabel,
+					TotalEventCount:      int32(timeline.TotalEventCount),
+					Truncated:            timeline.Truncated,
+				},
+			},
+		}
+	case semantic.ArtifactTypeUsageHabitSummary:
+		if artifact.UsageHabitSummary == nil {
+			return nil
+		}
+		summary := artifact.UsageHabitSummary
+		topSources := make([]*amav1.AppUsageBucket, 0, len(summary.TopSources))
+		for _, bucket := range summary.TopSources {
+			topSources = append(topSources, appUsageBucketToProto(bucket))
+		}
+		timeBuckets := make([]*amav1.TimeOfDayBucket, 0, len(summary.TimeBuckets))
+		for _, bucket := range summary.TimeBuckets {
+			timeBuckets = append(timeBuckets, &amav1.TimeOfDayBucket{
+				Label:           bucket.Label,
+				DurationSeconds: bucket.DurationSeconds,
+				SessionCount:    bucket.SessionCount,
+			})
+		}
+		var longest *amav1.UsageTimelineEvent
+		if summary.LongestSession != nil {
+			longest = usageTimelineEventToProto(*summary.LongestSession)
+		}
+		return &amav1.Artifact{
+			Value: &amav1.Artifact_UsageHabitSummary{
+				UsageHabitSummary: &amav1.UsageHabitSummary{
+					StartedAt:             timestampOrNil(summary.StartedAt),
+					EndedAt:               timestampOrNil(summary.EndedAt),
+					Timezone:              summary.TimeZone,
+					PeriodLabel:           summary.PeriodLabel,
+					TotalDurationSeconds:  summary.TotalDurationSeconds,
+					SessionCount:          summary.SessionCount,
+					ContextSwitchCount:    summary.ContextSwitchCount,
+					AverageSessionSeconds: summary.AverageSessionSeconds,
+					LongestSession:        longest,
+					TopSources:            topSources,
+					TimeBuckets:           timeBuckets,
+				},
+			},
+		}
+	case semantic.ArtifactTypeUsageComparison:
+		if artifact.UsageComparison == nil {
+			return nil
+		}
+		comparison := artifact.UsageComparison
+		buckets := make([]*amav1.UsageComparisonBucket, 0, len(comparison.Buckets))
+		for _, bucket := range comparison.Buckets {
+			buckets = append(buckets, &amav1.UsageComparisonBucket{
+				Name:                    bucket.Name,
+				SourceType:              bucket.SourceType,
+				CurrentDurationSeconds:  bucket.CurrentDurationSeconds,
+				BaselineDurationSeconds: bucket.BaselineDurationSeconds,
+				DeltaDurationSeconds:    bucket.DeltaDurationSeconds,
+				CurrentSessionCount:     bucket.CurrentSessionCount,
+				BaselineSessionCount:    bucket.BaselineSessionCount,
+			})
+		}
+		return &amav1.Artifact{
+			Value: &amav1.Artifact_UsageComparison{
+				UsageComparison: &amav1.UsageComparison{
+					CurrentStartedAt:             timestampOrNil(comparison.CurrentStartedAt),
+					CurrentEndedAt:               timestampOrNil(comparison.CurrentEndedAt),
+					BaselineStartedAt:            timestampOrNil(comparison.BaselineStartedAt),
+					BaselineEndedAt:              timestampOrNil(comparison.BaselineEndedAt),
+					Timezone:                     comparison.TimeZone,
+					CurrentPeriodLabel:           comparison.CurrentPeriodLabel,
+					BaselinePeriodLabel:          comparison.BaselinePeriodLabel,
+					CurrentTotalDurationSeconds:  comparison.CurrentTotalDurationSeconds,
+					BaselineTotalDurationSeconds: comparison.BaselineTotalDurationSeconds,
+					DurationDeltaSeconds:         comparison.DurationDeltaSeconds,
+					DurationDeltaPercent:         comparison.DurationDeltaPercent,
+					Buckets:                      buckets,
+				},
+			},
+		}
 	default:
 		return nil
+	}
+}
+
+func appUsageBucketToProto(bucket semantic.AppUsageBucket) *amav1.AppUsageBucket {
+	return &amav1.AppUsageBucket{
+		Name:                  bucket.Name,
+		SourceType:            bucket.SourceType,
+		DurationSeconds:       bucket.DurationSeconds,
+		SessionCount:          bucket.SessionCount,
+		ApplicationIdentifier: bucket.ApplicationIdentifier,
+		ApplicationPath:       bucket.ApplicationPath,
+	}
+}
+
+func usageTimelineEventToProto(event semantic.UsageTimelineEvent) *amav1.UsageTimelineEvent {
+	return &amav1.UsageTimelineEvent{
+		TransitionEventId:     event.TransitionEventID,
+		Title:                 event.Title,
+		SourceName:            event.SourceName,
+		SourceType:            event.SourceType,
+		StartedAt:             timestampOrNil(event.StartedAt),
+		EndedAt:               timestampOrNil(event.EndedAt),
+		DurationSeconds:       event.DurationSeconds,
+		ApplicationIdentifier: event.ApplicationIdentifier,
+		ApplicationPath:       event.ApplicationPath,
+		UrlHost:               event.URLHost,
+		Idle:                  event.Idle,
 	}
 }
 

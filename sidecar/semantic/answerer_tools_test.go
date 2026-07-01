@@ -185,6 +185,70 @@ func TestAnswererFallsBackToRAGForNonAppUsageQuestion(t *testing.T) {
 	}
 }
 
+func TestAnswererStructuredQueryBypassesSearchAndToolDecision(t *testing.T) {
+	startedAt := time.Date(2026, 6, 30, 9, 0, 0, 0, time.UTC)
+	endedAt := startedAt.Add(time.Hour)
+	searcher := &fakeDocumentSearcher{
+		results: []SearchResult{{TransitionEventID: 99, Content: "Application: Should not be used"}},
+	}
+	generator := &fakeToolCallingGenerator{}
+	toolRunner := &fakeStructuredToolRunner{
+		result: ToolResult{
+			Artifacts: []Artifact{{
+				Type: ArtifactTypeUsageTimeline,
+				UsageTimeline: &UsageTimeline{
+					StartedAt:            startedAt,
+					EndedAt:              endedAt,
+					TimeZone:             "UTC",
+					TotalDurationSeconds: 600,
+					TotalEventCount:      1,
+					Events: []UsageTimelineEvent{{
+						TransitionEventID: 42,
+						Title:             "Docs",
+						SourceName:        "Google Chrome",
+						SourceType:        "browser",
+						StartedAt:         startedAt,
+						EndedAt:           startedAt.Add(10 * time.Minute),
+						DurationSeconds:   600,
+						URLHost:           "example.com",
+					}},
+				},
+			}},
+		},
+	}
+	answerer := NewAnswerer(searcher, generator)
+	answerer.SetToolRunner(toolRunner)
+
+	answer, err := answerer.AnswerStructured(context.Background(), StructuredQuery{
+		Kind:        StructuredQueryKindTimeline,
+		Window:      TimeWindow{StartedAt: startedAt, EndedAt: endedAt},
+		Limit:       10,
+		PeriodLabel: "Today",
+	})
+	if err != nil {
+		t.Fatalf("answer structured: %v", err)
+	}
+
+	if searcher.query != "" {
+		t.Fatalf("expected structured route to skip semantic search, got query %q", searcher.query)
+	}
+	if len(generator.messages) != 0 {
+		t.Fatalf("expected structured route to skip model tool decision, got %d calls", len(generator.messages))
+	}
+	if toolRunner.query.Kind != StructuredQueryKindTimeline || toolRunner.query.PeriodLabel != "Today" {
+		t.Fatalf("unexpected structured query passed to runner: %#v", toolRunner.query)
+	}
+	if answer.Question != "Timeline for Today" {
+		t.Fatalf("unexpected question label %q", answer.Question)
+	}
+	if !strings.Contains(answer.Answer, "I found 1 usage events for Today") {
+		t.Fatalf("unexpected answer %q", answer.Answer)
+	}
+	if got := answer.Artifacts[0].UsageTimeline.PeriodLabel; got != "Today" {
+		t.Fatalf("expected structured period label to be applied, got %q", got)
+	}
+}
+
 type fakeToolCallingGenerator struct {
 	responses []ChatResponse
 	messages  [][]ChatMessage
@@ -223,5 +287,16 @@ func (f *fakeToolRunner) Tools() []ChatTool {
 
 func (f *fakeToolRunner) Execute(_ context.Context, call ChatToolCall) (ToolResult, error) {
 	f.call = call
+	return f.result, nil
+}
+
+type fakeStructuredToolRunner struct {
+	fakeToolRunner
+	query  StructuredQuery
+	result ToolResult
+}
+
+func (f *fakeStructuredToolRunner) ExecuteStructured(_ context.Context, query StructuredQuery) (ToolResult, error) {
+	f.query = query
 	return f.result, nil
 }

@@ -294,6 +294,26 @@ fun timelineEntryScrollDp(
     return (entryTopDp - timelineScrollContextDp(grid, contextRows)).coerceIn(0f, resolvedMaxScrollDp)
 }
 
+fun timelineFocusTargetScrollDp(
+    grid: TimelineGrid,
+    targetMinute: Int,
+    targetUsageId: String?,
+    viewportHeightDp: Float,
+    maxScrollDp: Float? = null,
+    contextRows: Int = 2,
+    bottomPaddingDp: Float = 24f,
+): Float {
+    val usagePlacementTopDp = targetUsageId
+        ?.let { usageId -> grid.placements.firstOrNull { it.event.id == usageId } }
+        ?.displayTopDp
+    val minute = targetMinute.coerceIn(grid.visibleStartMinute, grid.visibleEndMinute)
+    val targetTopDp = usagePlacementTopDp
+        ?: (minute - grid.visibleStartMinute) * grid.dpPerMinute
+    val resolvedMaxScrollDp = maxScrollDp ?: (grid.contentHeightDp + bottomPaddingDp - viewportHeightDp).coerceAtLeast(0f)
+
+    return (targetTopDp - timelineScrollContextDp(grid, contextRows)).coerceIn(0f, resolvedMaxScrollDp)
+}
+
 private data class TimelineInterval(
     val event: UsageEvent,
     val startMinute: Int,

@@ -108,6 +108,28 @@ data class AmaSource(
     val distance: Double,
 )
 
+enum class AmaQueryKind {
+    AppTotals,
+    Timeline,
+    Habits,
+    ComparePeriods,
+}
+
+data class AmaTimeWindow(
+    val startedAtEpochMillis: Long,
+    val endedAtEpochMillis: Long,
+)
+
+data class AmaStructuredQuery(
+    val kind: AmaQueryKind,
+    val window: AmaTimeWindow,
+    val baselineWindow: AmaTimeWindow? = null,
+    val limit: Int = 0,
+    val includeIdle: Boolean = false,
+    val periodLabel: String = "",
+    val baselinePeriodLabel: String = "",
+)
+
 sealed interface AmaArtifact
 
 data class AmaAppUsageChart(
@@ -126,6 +148,76 @@ data class AmaAppUsageBucket(
     val sessionCount: Long,
     val applicationIdentifier: String,
     val applicationPath: String,
+)
+
+data class AmaUsageTimeline(
+    val periodLabel: String,
+    val startedAtEpochMillis: Long?,
+    val endedAtEpochMillis: Long?,
+    val timeZone: String,
+    val totalDurationSeconds: Long,
+    val totalEventCount: Int,
+    val truncated: Boolean,
+    val events: List<AmaUsageTimelineEvent>,
+) : AmaArtifact
+
+data class AmaUsageTimelineEvent(
+    val transitionEventId: Long,
+    val title: String,
+    val sourceName: String,
+    val sourceType: String,
+    val startedAtEpochMillis: Long?,
+    val endedAtEpochMillis: Long?,
+    val durationSeconds: Long,
+    val applicationIdentifier: String,
+    val applicationPath: String,
+    val urlHost: String,
+    val idle: Boolean,
+)
+
+data class AmaHabitSummary(
+    val periodLabel: String,
+    val startedAtEpochMillis: Long?,
+    val endedAtEpochMillis: Long?,
+    val timeZone: String,
+    val totalDurationSeconds: Long,
+    val sessionCount: Long,
+    val contextSwitchCount: Long,
+    val averageSessionSeconds: Long,
+    val longestSession: AmaUsageTimelineEvent?,
+    val topSources: List<AmaAppUsageBucket>,
+    val timeBuckets: List<AmaTimeOfDayBucket>,
+) : AmaArtifact
+
+data class AmaTimeOfDayBucket(
+    val label: String,
+    val durationSeconds: Long,
+    val sessionCount: Long,
+)
+
+data class AmaUsageComparison(
+    val currentStartedAtEpochMillis: Long?,
+    val currentEndedAtEpochMillis: Long?,
+    val baselineStartedAtEpochMillis: Long?,
+    val baselineEndedAtEpochMillis: Long?,
+    val timeZone: String,
+    val currentPeriodLabel: String,
+    val baselinePeriodLabel: String,
+    val currentTotalDurationSeconds: Long,
+    val baselineTotalDurationSeconds: Long,
+    val durationDeltaSeconds: Long,
+    val durationDeltaPercent: Double,
+    val buckets: List<AmaUsageComparisonBucket>,
+) : AmaArtifact
+
+data class AmaUsageComparisonBucket(
+    val name: String,
+    val sourceType: String,
+    val currentDurationSeconds: Long,
+    val baselineDurationSeconds: Long,
+    val deltaDurationSeconds: Long,
+    val currentSessionCount: Long,
+    val baselineSessionCount: Long,
 )
 
 enum class AmaIndexState {

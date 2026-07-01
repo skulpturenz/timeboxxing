@@ -16,6 +16,7 @@ service AmaService {
 message AskRequest {
   string question = 1;
   int32 max_sources = 2;
+  StructuredQuery structured_query = 3;
 }
 
 message AskResponse {
@@ -39,7 +40,33 @@ message Source {
 message Artifact {
   oneof value {
     AppUsageChart app_usage_chart = 1;
+    UsageTimeline usage_timeline = 2;
+    UsageHabitSummary usage_habit_summary = 3;
+    UsageComparison usage_comparison = 4;
   }
+}
+
+enum QueryKind {
+  QUERY_KIND_UNSPECIFIED = 0;
+  QUERY_KIND_APP_TOTALS = 1;
+  QUERY_KIND_TIMELINE = 2;
+  QUERY_KIND_HABITS = 3;
+  QUERY_KIND_COMPARE_PERIODS = 4;
+}
+
+message StructuredQuery {
+  QueryKind kind = 1;
+  TimeWindow window = 2;
+  TimeWindow baseline_window = 3;
+  int32 limit = 4;
+  bool include_idle = 5;
+  string period_label = 6;
+  string baseline_period_label = 7;
+}
+
+message TimeWindow {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
 }
 
 message AppUsageChart {
@@ -58,6 +85,76 @@ message AppUsageBucket {
   int64 session_count = 4;
   string application_identifier = 5;
   string application_path = 6;
+}
+
+message UsageTimeline {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
+  string timezone = 3;
+  int64 total_duration_seconds = 4;
+  repeated UsageTimelineEvent events = 5;
+  string period_label = 6;
+  int32 total_event_count = 7;
+  bool truncated = 8;
+}
+
+message UsageTimelineEvent {
+  int64 transition_event_id = 1;
+  string title = 2;
+  string source_name = 3;
+  string source_type = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp ended_at = 6;
+  int64 duration_seconds = 7;
+  string application_identifier = 8;
+  string application_path = 9;
+  string url_host = 10;
+  bool idle = 11;
+}
+
+message UsageHabitSummary {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
+  string timezone = 3;
+  string period_label = 4;
+  int64 total_duration_seconds = 5;
+  int64 session_count = 6;
+  int64 context_switch_count = 7;
+  int64 average_session_seconds = 8;
+  UsageTimelineEvent longest_session = 9;
+  repeated AppUsageBucket top_sources = 10;
+  repeated TimeOfDayBucket time_buckets = 11;
+}
+
+message TimeOfDayBucket {
+  string label = 1;
+  int64 duration_seconds = 2;
+  int64 session_count = 3;
+}
+
+message UsageComparison {
+  google.protobuf.Timestamp current_started_at = 1;
+  google.protobuf.Timestamp current_ended_at = 2;
+  google.protobuf.Timestamp baseline_started_at = 3;
+  google.protobuf.Timestamp baseline_ended_at = 4;
+  string timezone = 5;
+  string current_period_label = 6;
+  string baseline_period_label = 7;
+  int64 current_total_duration_seconds = 8;
+  int64 baseline_total_duration_seconds = 9;
+  int64 duration_delta_seconds = 10;
+  double duration_delta_percent = 11;
+  repeated UsageComparisonBucket buckets = 12;
+}
+
+message UsageComparisonBucket {
+  string name = 1;
+  string source_type = 2;
+  int64 current_duration_seconds = 3;
+  int64 baseline_duration_seconds = 4;
+  int64 delta_duration_seconds = 5;
+  int64 current_session_count = 6;
+  int64 baseline_session_count = 7;
 }
 
 message GetSemanticIndexStatusRequest {}

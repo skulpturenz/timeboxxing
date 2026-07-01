@@ -4,6 +4,7 @@ import com.timeboxxing.domain.model.AmaAnswer
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaSource
+import com.timeboxxing.domain.model.AmaStructuredQuery
 import com.timeboxxing.domain.repository.AmaRepository
 
 class StaticAmaRepository : AmaRepository {
@@ -25,6 +26,9 @@ class StaticAmaRepository : AmaRepository {
             indexStatus = getSemanticIndexStatus(),
         )
 
+    override suspend fun askStructured(query: AmaStructuredQuery): AmaAnswer =
+        ask("${query.kind} for ${query.periodLabel.ifBlank { "selected period" }}")
+
     override suspend fun getSemanticIndexStatus(): AmaIndexStatus =
         AmaIndexStatus(
             state = AmaIndexState.Ready,
@@ -40,6 +44,10 @@ class UnavailableAmaRepository(
     private val message: String,
 ) : AmaRepository {
     override suspend fun ask(question: String, maxSources: Int): AmaAnswer {
+        throw IllegalStateException(message)
+    }
+
+    override suspend fun askStructured(query: AmaStructuredQuery): AmaAnswer {
         throw IllegalStateException(message)
     }
 

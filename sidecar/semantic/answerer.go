@@ -105,6 +105,39 @@ func (a *Answerer) Answer(ctx context.Context, question string, k int64) (*Answe
 	}, nil
 }
 
+func (a *Answerer) AnswerStructured(ctx context.Context, query StructuredQuery) (*Answer, error) {
+	if query.Kind == "" {
+		return nil, fmt.Errorf("structured query kind is required")
+	}
+	if !query.Window.EndedAt.After(query.Window.StartedAt) {
+		return nil, fmt.Errorf("structured query window must end after it starts")
+	}
+	if a.generator == nil {
+		return nil, fmt.Errorf("generator is required")
+	}
+	runner, ok := a.toolRunner.(StructuredToolRunner)
+	if !ok || runner == nil {
+		return &Answer{
+			Question: structuredQuestionLabel(query),
+			Answer:   "I can answer structured usage questions once the usage insights tools are available.",
+			Model:    a.generator.Model(),
+		}, nil
+	}
+
+	result, err := runner.ExecuteStructured(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("execute structured usage query: %w", err)
+	}
+	applyStructuredLabels(result.Artifacts, query)
+
+	return &Answer{
+		Question:  structuredQuestionLabel(query),
+		Answer:    structuredUsageAnswer(result.Artifacts, query),
+		Model:     a.generator.Model(),
+		Artifacts: result.Artifacts,
+	}, nil
+}
+
 type appUsageChartRoute struct {
 	Recognized    bool
 	NeedsPeriod   bool
@@ -430,6 +463,131 @@ func fallbackToolAnswer(artifacts []Artifact) string {
 		return fmt.Sprintf("Your most used app was %s. The chart shows the app totals for that period.", top.Name)
 	}
 	return "I found the requested usage totals."
+}
+
+func structuredQuestionLabel(query StructuredQuery) string {
+	label := strings.TrimSpace(query.PeriodLabel)
+	if label == "" {
+		label = "selected period"
+	}
+	switch query.Kind {
+	case StructuredQueryKindAppTotals:
+		return "App totals for " + label
+	case StructuredQueryKindTimeline:
+		return "Timeline for " + label
+	case StructuredQueryKindHabits:
+		return "Habits for " + label
+	case StructuredQueryKindComparePeriods:
+		baseline := strings.TrimSpace(query.BaselinePeriodLabel)
+		if baseline == "" {
+			baseline = "baseline period"
+		}
+		return fmt.Sprintf("Compare %s to %s", label, baseline)
+	default:
+		return "Usage insight for " + label
+	}
+}
+
+func applyStructuredLabels(artifacts []Artifact, query StructuredQuery) {
+	for i := range artifacts {
+		switch artifacts[i].Type {
+		case ArtifactTypeAppUsageChart:
+			if artifacts[i].AppUsageChart != nil && artifacts[i].AppUsageChart.PeriodLabel == "" {
+				artifacts[i].AppUsageChart.PeriodLabel = query.PeriodLabel
+			}
+		case ArtifactTypeUsageTimeline:
+			if artifacts[i].UsageTimeline != nil && artifacts[i].UsageTimeline.PeriodLabel == "" {
+				artifacts[i].UsageTimeline.PeriodLabel = query.PeriodLabel
+			}
+		case ArtifactTypeUsageHabitSummary:
+			if artifacts[i].UsageHabitSummary != nil && artifacts[i].UsageHabitSummary.PeriodLabel == "" {
+				artifacts[i].UsageHabitSummary.PeriodLabel = query.PeriodLabel
+			}
+		case ArtifactTypeUsageComparison:
+			if artifacts[i].UsageComparison != nil {
+				if artifacts[i].UsageComparison.CurrentPeriodLabel == "" {
+					artifacts[i].UsageComparison.CurrentPeriodLabel = query.PeriodLabel
+				}
+				if artifacts[i].UsageComparison.BaselinePeriodLabel == "" {
+					artifacts[i].UsageComparison.BaselinePeriodLabel = query.BaselinePeriodLabel
+				}
+			}
+		}
+	}
+}
+
+func structuredUsageAnswer(artifacts []Artifact, query StructuredQuery) string {
+	for _, artifact := range artifacts {
+		switch artifact.Type {
+		case ArtifactTypeAppUsageChart:
+			return appUsageChartAnswer(artifacts, query.PeriodLabel)
+		case ArtifactTypeUsageTimeline:
+			if artifact.UsageTimeline == nil {
+				continue
+			}
+			timeline := artifact.UsageTimeline
+			label := fallbackPeriodLabel(timeline.PeriodLabel)
+			if timeline.TotalEventCount == 0 {
+				return fmt.Sprintf("I did not find any usage events for %s.", label)
+			}
+			if timeline.Truncated {
+				return fmt.Sprintf("I found %d usage events for %s and listed the first %d in the timeline.", timeline.TotalEventCount, label, len(timeline.Events))
+			}
+			return fmt.Sprintf("I found %d usage events for %s. The timeline lists the exact sessions.", timeline.TotalEventCount, label)
+		case ArtifactTypeUsageHabitSummary:
+			if artifact.UsageHabitSummary == nil {
+				continue
+			}
+			summary := artifact.UsageHabitSummary
+			label := fallbackPeriodLabel(summary.PeriodLabel)
+			if summary.SessionCount == 0 {
+				return fmt.Sprintf("I did not find any usage events for %s.", label)
+			}
+			return fmt.Sprintf(
+				"For %s, I found %s across %d sessions with %d context switches.",
+				label,
+				formatAnswerDuration(summary.TotalDurationSeconds),
+				summary.SessionCount,
+				summary.ContextSwitchCount,
+			)
+		case ArtifactTypeUsageComparison:
+			if artifact.UsageComparison == nil {
+				continue
+			}
+			comparison := artifact.UsageComparison
+			currentLabel := fallbackPeriodLabel(comparison.CurrentPeriodLabel)
+			baselineLabel := fallbackPeriodLabel(comparison.BaselinePeriodLabel)
+			delta := comparison.DurationDeltaSeconds
+			direction := "unchanged"
+			if delta > 0 {
+				direction = "up"
+			} else if delta < 0 {
+				direction = "down"
+			}
+			return fmt.Sprintf(
+				"%s was %s %s versus %s.",
+				currentLabel,
+				direction,
+				formatAnswerDuration(absInt64(delta)),
+				baselineLabel,
+			)
+		}
+	}
+	return "I found the requested usage insight."
+}
+
+func fallbackPeriodLabel(label string) string {
+	if trimmed := strings.TrimSpace(label); trimmed != "" {
+		return trimmed
+	}
+	return "the selected period"
+}
+
+func absInt64(value int64) int64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func appUsageChartAnswer(artifacts []Artifact, periodLabel string) string {

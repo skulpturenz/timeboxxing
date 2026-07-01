@@ -3,6 +3,7 @@ package com.timeboxxing.data.time
 import com.timeboxxing.domain.model.CalendarDate
 import com.timeboxxing.domain.model.UsageDay
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -24,6 +25,12 @@ actual fun usageDayForCalendarDate(date: CalendarDate): UsageDay =
 
 actual fun currentCalendarDate(): CalendarDate =
     currentCalendarDate(Clock.systemDefaultZone(), ZoneId.systemDefault())
+
+actual fun calendarDateForEpochMillis(epochMillis: Long): CalendarDate =
+    Instant.ofEpochMilli(epochMillis)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+        .toCalendarDate()
 
 internal fun currentCalendarDate(clock: Clock, zoneId: ZoneId): CalendarDate =
     LocalDate.now(clock.withZone(zoneId)).toCalendarDate()

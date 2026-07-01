@@ -4,6 +4,7 @@ import com.timeboxxing.data.mock.mockTimeboxxingData
 import com.timeboxxing.domain.model.AmaAnswer
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
+import com.timeboxxing.domain.model.AmaStructuredQuery
 import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
@@ -476,6 +477,11 @@ private class FakeAmaRepository(
     private val error: Throwable? = null,
 ) : AmaRepository {
     override suspend fun ask(question: String, maxSources: Int): AmaAnswer {
+        error?.let { throw it }
+        return answer
+    }
+
+    override suspend fun askStructured(query: AmaStructuredQuery): AmaAnswer {
         error?.let { throw it }
         return answer
     }

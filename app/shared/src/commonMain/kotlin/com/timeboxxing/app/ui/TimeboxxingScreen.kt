@@ -74,28 +74,43 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.CompareArrows
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Minimize
 import androidx.compose.material.icons.rounded.QuestionAnswer
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
+import com.timeboxxing.data.time.calendarDateForEpochMillis
+import com.timeboxxing.data.time.usageDayForCalendarDate
 import com.timeboxxing.domain.model.AmaAppUsageChart
+import com.timeboxxing.domain.model.AmaHabitSummary
 import com.timeboxxing.domain.model.AmaMessage
 import com.timeboxxing.domain.model.AmaMessageRole
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
+import com.timeboxxing.domain.model.AmaQueryKind
 import com.timeboxxing.domain.model.AmaSource
+import com.timeboxxing.domain.model.AmaStructuredQuery
+import com.timeboxxing.domain.model.AmaTimeWindow
+import com.timeboxxing.domain.model.AmaUsageComparison
+import com.timeboxxing.domain.model.AmaUsageTimeline
+import com.timeboxxing.domain.model.AmaUsageTimelineEvent
 import com.timeboxxing.domain.model.CalendarDate
 import com.timeboxxing.domain.model.DiagnosticsLogLine
+import com.timeboxxing.domain.model.formatClockTime
+import com.timeboxxing.domain.model.plusDays
 import com.timeboxxing.app.presentation.TimeboxxingAction
 import com.timeboxxing.app.presentation.TimeboxxingScreenState
 import com.timeboxxing.app.presentation.TimeboxxingSection
@@ -115,6 +130,19 @@ private enum class WorkspaceLayout {
     Medium,
     Compact,
 }
+
+private enum class AmaPeriodPreset {
+    SelectedDay,
+    PreviousDay,
+    Custom,
+}
+
+private data class AmaResolvedWindow(
+    val window: AmaTimeWindow,
+    val label: String,
+    val startDate: CalendarDate,
+    val endDate: CalendarDate,
+)
 
 internal enum class OverviewPane {
     UsageSchedule,
@@ -188,6 +216,12 @@ fun TimeboxxingScreen(
             } else {
                 displayedNotice = notice
                 noticeVisibilityState.targetState = true
+            }
+        }
+
+        LaunchedEffect(state.selectedSection, state.scheduleFocusTarget?.requestId) {
+            if (state.selectedSection == TimeboxxingSection.Overview && state.scheduleFocusTarget != null) {
+                minimizedOverviewPanes = minimizedOverviewPanes - OverviewPane.UsageSchedule
             }
         }
 
@@ -1180,6 +1214,12 @@ private fun TabbedWorkspace(
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Usage", "Entries", "Projects")
 
+    LaunchedEffect(state.scheduleFocusTarget?.requestId) {
+        if (state.scheduleFocusTarget != null) {
+            selectedTab = 0
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -1227,6 +1267,42 @@ private fun AmaPane(
 ) {
     val listState = rememberLazyListState()
     val messageCount = state.amaMessages.size + if (state.amaLoading) 1 else 0
+    val hasMessages = state.amaMessages.isNotEmpty()
+    val defaultInsightDate = amaDefaultCalendarDate(state)
+    var selectedInsightKind by remember { mutableStateOf(AmaQueryKind.AppTotals) }
+    var selectedInsightPreset by remember { mutableStateOf(AmaPeriodPreset.SelectedDay) }
+    var customInsightStartDate by remember(defaultInsightDate) { mutableStateOf(defaultInsightDate) }
+    var customInsightEndDate by remember(defaultInsightDate) { mutableStateOf(defaultInsightDate) }
+    var includeInsightIdle by remember { mutableStateOf(false) }
+    var insightLimit by remember { mutableStateOf(5) }
+    val insightLimitOptions = amaLimitOptionsFor(selectedInsightKind)
+    val selectInsightKind: (AmaQueryKind) -> Unit = { kind ->
+        selectedInsightKind = kind
+        val nextLimitOptions = amaLimitOptionsFor(kind)
+        if (insightLimit !in nextLimitOptions) {
+            insightLimit = nextLimitOptions.first()
+        }
+    }
+    val insightQuery = buildAmaStructuredQuery(
+        state = state,
+        kind = selectedInsightKind,
+        preset = selectedInsightPreset,
+        customStartDate = customInsightStartDate,
+        customEndDate = customInsightEndDate,
+        limit = insightLimit,
+        includeIdle = includeInsightIdle,
+    )
+    val submitInsight: () -> Unit = {
+        insightQuery?.let { query ->
+            onAction(TimeboxxingAction.SubmitAmaStructuredQuery(query))
+        }
+    }
+
+    LaunchedEffect(selectedInsightKind) {
+        if (insightLimit !in insightLimitOptions) {
+            insightLimit = insightLimitOptions.first()
+        }
+    }
 
     LaunchedEffect(messageCount) {
         if (messageCount > 0) {
@@ -1283,13 +1359,39 @@ private fun AmaPane(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 24.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            if (state.amaMessages.isEmpty() && !state.amaLoading) {
+            if (!hasMessages && !state.amaLoading) {
                 item("empty") {
-                    AmaEmptyState()
+                    AmaEmptyState(
+                        state = state,
+                        value = state.amaInput,
+                        loading = state.amaLoading,
+                        onValueChange = { onAction(TimeboxxingAction.UpdateAmaInput(it)) },
+                        onSubmit = { onAction(TimeboxxingAction.SubmitAmaQuestion) },
+                        selectedKind = selectedInsightKind,
+                        onSelectedKindChange = selectInsightKind,
+                        selectedPreset = selectedInsightPreset,
+                        onSelectedPresetChange = { selectedInsightPreset = it },
+                        customStartDate = customInsightStartDate,
+                        customEndDate = customInsightEndDate,
+                        onCustomStartDateChange = { customInsightStartDate = it },
+                        onCustomEndDateChange = { customInsightEndDate = it },
+                        includeIdle = includeInsightIdle,
+                        onIncludeIdleChange = { includeInsightIdle = it },
+                        limit = insightLimit,
+                        limitOptions = insightLimitOptions,
+                        onLimitChange = { insightLimit = it },
+                        canSubmitInsight = insightQuery != null && !state.amaLoading,
+                        onSubmitInsight = submitInsight,
+                    )
                 }
             }
             items(state.amaMessages, key = { it.id }) { message ->
-                AmaMessageRow(message)
+                AmaMessageRow(
+                    message = message,
+                    onOpenUsageSource = { startedAtEpochMillis, transitionEventId ->
+                        onAction(TimeboxxingAction.OpenAmaUsageSource(startedAtEpochMillis, transitionEventId))
+                    },
+                )
             }
             if (state.amaLoading) {
                 item("loading") {
@@ -1302,12 +1404,38 @@ private fun AmaPane(
             AmaErrorBanner(error)
         }
 
-        AmaComposer(
-            value = state.amaInput,
-            loading = state.amaLoading,
-            onValueChange = { onAction(TimeboxxingAction.UpdateAmaInput(it)) },
-            onSubmit = { onAction(TimeboxxingAction.SubmitAmaQuestion) },
-        )
+        if (hasMessages || state.amaLoading) {
+            AmaInsightDock(
+                state = state,
+                loading = state.amaLoading,
+                selectedKind = selectedInsightKind,
+                onSelectedKindChange = selectInsightKind,
+                selectedPreset = selectedInsightPreset,
+                onSelectedPresetChange = { selectedInsightPreset = it },
+                customStartDate = customInsightStartDate,
+                customEndDate = customInsightEndDate,
+                onCustomStartDateChange = { customInsightStartDate = it },
+                onCustomEndDateChange = { customInsightEndDate = it },
+                includeIdle = includeInsightIdle,
+                onIncludeIdleChange = { includeInsightIdle = it },
+                limit = insightLimit,
+                limitOptions = insightLimitOptions,
+                onLimitChange = { insightLimit = it },
+                canSubmit = insightQuery != null && !state.amaLoading,
+                onSubmit = submitInsight,
+            )
+        }
+
+        if (hasMessages) {
+            AmaFreeformComposer(
+                value = state.amaInput,
+                loading = state.amaLoading,
+                onValueChange = { onAction(TimeboxxingAction.UpdateAmaInput(it)) },
+                onSubmit = { onAction(TimeboxxingAction.SubmitAmaQuestion) },
+                framed = true,
+                singleLine = true,
+            )
+        }
     }
 }
 
@@ -1341,44 +1469,220 @@ private fun AmaIndexStatusBadge(status: AmaIndexStatus) {
 }
 
 @Composable
-private fun AmaEmptyState() {
+private fun AmaEmptyState(
+    state: TimeboxxingScreenState,
+    value: String,
+    loading: Boolean,
+    onValueChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    selectedKind: AmaQueryKind,
+    onSelectedKindChange: (AmaQueryKind) -> Unit,
+    selectedPreset: AmaPeriodPreset,
+    onSelectedPresetChange: (AmaPeriodPreset) -> Unit,
+    customStartDate: CalendarDate,
+    customEndDate: CalendarDate,
+    onCustomStartDateChange: (CalendarDate) -> Unit,
+    onCustomEndDateChange: (CalendarDate) -> Unit,
+    includeIdle: Boolean,
+    onIncludeIdleChange: (Boolean) -> Unit,
+    limit: Int,
+    limitOptions: List<Int>,
+    onLimitChange: (Int) -> Unit,
+    canSubmitInsight: Boolean,
+    onSubmitInsight: () -> Unit,
+) {
+    var freeformOpen by remember { mutableStateOf(false) }
     TbCard(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 120.dp),
+            .widthIn(max = 940.dp),
         color = TbTheme.colors.surface,
         borderColor = TbTheme.colors.separator,
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            TbText(
-                text = "Ask about your activity",
-                style = TbTheme.typography.title2,
-            )
-            TbText(
-                text = "Try: \"What did I spend time on this afternoon?\"",
-                style = TbTheme.typography.body,
-                color = TbTheme.colors.secondaryText,
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val compact = maxWidth < 620.dp
+                if (compact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AmaEmptyStateCopy()
+                        AmaEmptyStateActions(
+                            loading = loading,
+                            selectedKind = selectedKind,
+                            canSubmitInsight = canSubmitInsight,
+                            freeformOpen = freeformOpen,
+                            onSubmitInsight = onSubmitInsight,
+                            onToggleFreeform = { freeformOpen = !freeformOpen },
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        AmaEmptyStateCopy(modifier = Modifier.weight(1f))
+                        AmaEmptyStateActions(
+                            loading = loading,
+                            selectedKind = selectedKind,
+                            canSubmitInsight = canSubmitInsight,
+                            freeformOpen = freeformOpen,
+                            onSubmitInsight = onSubmitInsight,
+                            onToggleFreeform = { freeformOpen = !freeformOpen },
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = freeformOpen) {
+                AmaFreeformComposer(
+                    value = value,
+                    loading = loading,
+                    onValueChange = onValueChange,
+                    onSubmit = onSubmit,
+                    framed = false,
+                    singleLine = false,
+                )
+            }
+
+            TbHorizontalDivider()
+
+            AmaInsightLauncher(
+                state = state,
+                selectedKind = selectedKind,
+                onSelectedKindChange = onSelectedKindChange,
+                selectedPreset = selectedPreset,
+                onSelectedPresetChange = onSelectedPresetChange,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate,
+                onCustomStartDateChange = onCustomStartDateChange,
+                onCustomEndDateChange = onCustomEndDateChange,
+                includeIdle = includeIdle,
+                onIncludeIdleChange = onIncludeIdleChange,
+                limit = limit,
+                limitOptions = limitOptions,
+                onLimitChange = onLimitChange,
+                showRunAction = false,
+                canSubmit = canSubmitInsight,
+                onSubmit = onSubmitInsight,
             )
         }
     }
 }
 
 @Composable
-private fun AmaMessageRow(message: AmaMessage) {
-    val isUser = message.role == AmaMessageRole.User
+private fun AmaEmptyStateCopy(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        TbText(
+            text = "Ask about your usage history",
+            style = TbTheme.typography.headline,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        TbText(
+            text = "Summarize apps, timelines, habits, and comparisons from your indexed activity.",
+            style = TbTheme.typography.body,
+            color = TbTheme.colors.secondaryText,
+        )
+    }
+}
+
+@Composable
+private fun AmaEmptyStateActions(
+    loading: Boolean,
+    selectedKind: AmaQueryKind,
+    canSubmitInsight: Boolean,
+    freeformOpen: Boolean,
+    onSubmitInsight: () -> Unit,
+    onToggleFreeform: () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TbButton(
+            onClick = onSubmitInsight,
+            enabled = !loading && canSubmitInsight,
+        ) {
+            TbIcon(
+                imageVector = selectedKind.icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(17.dp),
+            )
+            TbText(
+                text = "Run ${selectedKind.label}",
+                style = TbTheme.typography.button,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TbButton(
+            onClick = onToggleFreeform,
+            variant = TbButtonVariant.Secondary,
+        ) {
+            TbIcon(
+                imageVector = Icons.Rounded.QuestionAnswer,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(17.dp),
+            )
+            TbText(
+                text = if (freeformOpen) "Hide question" else "Ask anything",
+                style = TbTheme.typography.button,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmaMessageRow(
+    message: AmaMessage,
+    onOpenUsageSource: (Long?, Long) -> Unit,
+) {
+    val isUser = message.role == AmaMessageRole.User
+    if (isUser) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TbSurface(
+                modifier = Modifier.widthIn(max = 760.dp),
+                shape = RoundedCornerShape(TbTheme.radii.card),
+                color = TbTheme.colors.accent,
+                contentColor = TbTheme.colors.accentText,
+            ) {
+                AmaMarkdownText(
+                    modifier = Modifier.padding(14.dp),
+                    content = message.content,
+                    isUser = true,
+                )
+            }
+        }
+        return
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 820.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TbSurface(
             modifier = Modifier.widthIn(max = 760.dp),
             shape = RoundedCornerShape(TbTheme.radii.card),
-            color = if (isUser) TbTheme.colors.accent else TbTheme.colors.surface,
-            contentColor = if (isUser) TbTheme.colors.accentText else TbTheme.colors.text,
-            border = if (isUser) null else BorderStroke(Dp.Hairline, TbTheme.colors.separator),
+            color = TbTheme.colors.surface,
+            contentColor = TbTheme.colors.text,
+            border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
         ) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -1386,33 +1690,36 @@ private fun AmaMessageRow(message: AmaMessage) {
             ) {
                 AmaMarkdownText(
                     content = message.content,
-                    isUser = isUser,
+                    isUser = false,
                 )
-                val messageModel = message.model
-                if (!isUser && messageModel != null) {
+                message.model?.let { model ->
                     TbText(
-                        text = messageModel,
+                        text = model,
                         style = TbTheme.typography.caption,
                         color = TbTheme.colors.tertiaryText,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (!isUser && message.artifacts.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        message.artifacts.forEach { artifact ->
-                            when (artifact) {
-                                is AmaAppUsageChart -> AmaAppUsageChartCard(artifact)
-                            }
-                        }
-                    }
-                }
-                if (message.sources.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        message.sources.take(3).forEach { source ->
-                            AmaSourceCard(source)
-                        }
-                    }
+            }
+        }
+        message.artifacts.forEach { artifact ->
+            when (artifact) {
+                is AmaAppUsageChart -> AmaAppUsageChartCard(artifact)
+                is AmaUsageTimeline -> AmaUsageTimelineCard(artifact, onOpenUsageSource)
+                is AmaHabitSummary -> AmaHabitSummaryCard(artifact, onOpenUsageSource)
+                is AmaUsageComparison -> AmaUsageComparisonCard(artifact)
+            }
+        }
+        if (message.sources.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                message.sources.take(3).forEach { source ->
+                    AmaSourceCard(
+                        source = source,
+                        onClick = {
+                            onOpenUsageSource(source.startedAtEpochMillis, source.transitionEventId)
+                        },
+                    )
                 }
             }
         }
@@ -1604,9 +1911,406 @@ private fun AmaAppUsageChartCard(chart: AmaAppUsageChart) {
 }
 
 @Composable
-private fun AmaSourceCard(source: AmaSource) {
+private fun AmaUsageTimelineCard(
+    timeline: AmaUsageTimeline,
+    onOpenUsageSource: (Long?, Long) -> Unit,
+) {
+    AmaInsightCard(
+        title = "Usage Timeline",
+        subtitle = "${timeline.periodLabel.ifBlank { "Selected period" }} · ${timeline.totalEventCount} events",
+        trailing = "${formatUsageChartDuration(timeline.totalDurationSeconds)} captured",
+    ) {
+        if (timeline.events.isEmpty()) {
+            TbText(
+                text = "No usage events found",
+                style = TbTheme.typography.bodySmall,
+                color = TbTheme.colors.secondaryText,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                timeline.events.forEach { event ->
+                    AmaTimelineEventRow(
+                        event = event,
+                        onClick = {
+                            onOpenUsageSource(event.startedAtEpochMillis, event.transitionEventId)
+                        },
+                    )
+                }
+            }
+            if (timeline.truncated) {
+                TbText(
+                    text = "Showing ${timeline.events.size} of ${timeline.totalEventCount}",
+                    style = TbTheme.typography.caption,
+                    color = TbTheme.colors.tertiaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaHabitSummaryCard(
+    summary: AmaHabitSummary,
+    onOpenUsageSource: (Long?, Long) -> Unit,
+) {
+    AmaInsightCard(
+        title = "Habit Summary",
+        subtitle = summary.periodLabel.ifBlank { "Selected period" },
+        trailing = "${summary.sessionCount} sessions",
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AmaMetricPill("Captured", formatUsageChartDuration(summary.totalDurationSeconds), Modifier.weight(1f))
+            AmaMetricPill("Switches", summary.contextSwitchCount.toString(), Modifier.weight(1f))
+            AmaMetricPill("Average", formatUsageChartDuration(summary.averageSessionSeconds), Modifier.weight(1f))
+        }
+        summary.longestSession?.let { longest ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TbText(
+                    text = "Longest session",
+                    style = TbTheme.typography.label,
+                    color = TbTheme.colors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                AmaTimelineEventRow(
+                    event = longest,
+                    onClick = {
+                        onOpenUsageSource(longest.startedAtEpochMillis, longest.transitionEventId)
+                    },
+                )
+            }
+        }
+        if (summary.topSources.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TbText(
+                    text = "Top sources",
+                    style = TbTheme.typography.label,
+                    color = TbTheme.colors.secondaryText,
+                )
+                summary.topSources.take(5).forEach { bucket ->
+                    AmaSimpleBarRow(
+                        label = bucket.name.ifBlank { "Unknown application" },
+                        value = formatUsageChartDuration(bucket.durationSeconds),
+                        fraction = bucket.durationSeconds.toFloat() /
+                            summary.topSources.maxOf { it.durationSeconds }.coerceAtLeast(1).toFloat(),
+                    )
+                }
+            }
+        }
+        if (summary.timeBuckets.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TbText(
+                    text = "Time of day",
+                    style = TbTheme.typography.label,
+                    color = TbTheme.colors.secondaryText,
+                )
+                summary.timeBuckets.forEach { bucket ->
+                    AmaSimpleBarRow(
+                        label = bucket.label,
+                        value = formatUsageChartDuration(bucket.durationSeconds),
+                        fraction = bucket.durationSeconds.toFloat() /
+                            summary.timeBuckets.maxOf { it.durationSeconds }.coerceAtLeast(1).toFloat(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaUsageComparisonCard(comparison: AmaUsageComparison) {
+    val direction = when {
+        comparison.durationDeltaSeconds > 0 -> "Up"
+        comparison.durationDeltaSeconds < 0 -> "Down"
+        else -> "Flat"
+    }
+    AmaInsightCard(
+        title = "Period Comparison",
+        subtitle = "${comparison.currentPeriodLabel.ifBlank { "Current" }} vs ${comparison.baselinePeriodLabel.ifBlank { "Baseline" }}",
+        trailing = "$direction ${formatUsageChartDuration(kotlin.math.abs(comparison.durationDeltaSeconds))}",
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AmaMetricPill("Current", formatUsageChartDuration(comparison.currentTotalDurationSeconds), Modifier.weight(1f))
+            AmaMetricPill("Baseline", formatUsageChartDuration(comparison.baselineTotalDurationSeconds), Modifier.weight(1f))
+            AmaMetricPill("Delta", "${comparison.durationDeltaPercent.formatPercentDelta()}%", Modifier.weight(1f))
+        }
+        if (comparison.buckets.isEmpty()) {
+            TbText(
+                text = "No comparable usage found",
+                style = TbTheme.typography.bodySmall,
+                color = TbTheme.colors.secondaryText,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                comparison.buckets.forEach { bucket ->
+                    AmaComparisonRow(bucket)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaInsightCard(
+    title: String,
+    subtitle: String,
+    trailing: String,
+    content: @Composable () -> Unit,
+) {
     TbSurface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.widthIn(max = 820.dp),
+        shape = RoundedCornerShape(TbTheme.radii.card),
+        color = TbTheme.colors.groupedSurface,
+        border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    TbText(
+                        text = title,
+                        style = TbTheme.typography.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    TbText(
+                        text = subtitle,
+                        style = TbTheme.typography.caption,
+                        color = TbTheme.colors.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                TbText(
+                    text = trailing,
+                    style = TbTheme.typography.caption,
+                    color = TbTheme.colors.tertiaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun AmaTimelineEventRow(
+    event: AmaUsageTimelineEvent,
+    onClick: () -> Unit,
+) {
+    val canOpen = event.startedAtEpochMillis != null
+    TbSurface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (canOpen) Modifier.clickable(onClick = onClick) else Modifier),
+        shape = RoundedCornerShape(TbTheme.radii.control),
+        color = TbTheme.colors.surface,
+        border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TbBadge(
+                label = event.sourceType.ifBlank { "usage" },
+                color = TbTheme.colors.text,
+                background = TbTheme.colors.accentSubtle,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                TbText(
+                    text = event.title.ifBlank { "Usage" },
+                    style = TbTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TbText(
+                    text = buildList {
+                        event.startedAtEpochMillis?.let { add(formatEventEpochTime(it)) }
+                        add(event.sourceName.ifBlank { "Application" })
+                        if (event.urlHost.isNotBlank()) add(event.urlHost)
+                    }.joinToString(" · "),
+                    style = TbTheme.typography.caption,
+                    color = TbTheme.colors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TbText(
+                text = formatUsageChartDuration(event.durationSeconds),
+                style = TbTheme.typography.caption,
+                color = TbTheme.colors.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmaMetricPill(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    TbSurface(
+        modifier = modifier,
+        shape = RoundedCornerShape(TbTheme.radii.control),
+        color = TbTheme.colors.surface,
+        border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            TbText(
+                text = label,
+                style = TbTheme.typography.caption,
+                color = TbTheme.colors.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TbText(
+                text = value,
+                style = TbTheme.typography.label,
+                color = TbTheme.colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmaSimpleBarRow(
+    label: String,
+    value: String,
+    fraction: Float,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TbText(
+                modifier = Modifier.weight(1f),
+                text = label,
+                style = TbTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TbText(
+                text = value,
+                style = TbTheme.typography.caption,
+                color = TbTheme.colors.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(TbTheme.colors.controlFill),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction.coerceIn(0.04f, 1f))
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(TbTheme.colors.accent),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmaComparisonRow(bucket: com.timeboxxing.domain.model.AmaUsageComparisonBucket) {
+    val maxSeconds = maxOf(bucket.currentDurationSeconds, bucket.baselineDurationSeconds).coerceAtLeast(1)
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TbText(
+                modifier = Modifier.weight(1f),
+                text = bucket.name.ifBlank { "Unknown application" },
+                style = TbTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TbText(
+                text = "${formatUsageChartDuration(bucket.currentDurationSeconds)} / ${formatUsageChartDuration(bucket.baselineDurationSeconds)}",
+                style = TbTheme.typography.caption,
+                color = TbTheme.colors.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AmaTinyBar(
+                fraction = bucket.currentDurationSeconds.toFloat() / maxSeconds.toFloat(),
+                color = TbTheme.colors.accent,
+                modifier = Modifier.weight(1f),
+            )
+            AmaTinyBar(
+                fraction = bucket.baselineDurationSeconds.toFloat() / maxSeconds.toFloat(),
+                color = TbTheme.colors.secondaryText,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmaTinyBar(
+    fraction: Float,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .height(6.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(TbTheme.colors.controlFill),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction.coerceIn(0.04f, 1f))
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(color),
+        )
+    }
+}
+
+@Composable
+private fun AmaSourceCard(
+    source: AmaSource,
+    onClick: () -> Unit,
+) {
+    val canOpen = source.startedAtEpochMillis != null
+    TbSurface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (canOpen) Modifier.clickable(onClick = onClick) else Modifier),
         shape = RoundedCornerShape(TbTheme.radii.card),
         color = TbTheme.colors.groupedSurface,
         border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
@@ -1693,20 +2397,737 @@ private fun AmaErrorBanner(error: String) {
 }
 
 @Composable
-private fun AmaComposer(
+private fun AmaInsightLauncher(
+    state: TimeboxxingScreenState,
+    selectedKind: AmaQueryKind,
+    onSelectedKindChange: (AmaQueryKind) -> Unit,
+    selectedPreset: AmaPeriodPreset,
+    onSelectedPresetChange: (AmaPeriodPreset) -> Unit,
+    customStartDate: CalendarDate,
+    customEndDate: CalendarDate,
+    onCustomStartDateChange: (CalendarDate) -> Unit,
+    onCustomEndDateChange: (CalendarDate) -> Unit,
+    includeIdle: Boolean,
+    onIncludeIdleChange: (Boolean) -> Unit,
+    limit: Int,
+    limitOptions: List<Int>,
+    onLimitChange: (Int) -> Unit,
+    showRunAction: Boolean,
+    canSubmit: Boolean,
+    onSubmit: () -> Unit,
+) {
+    val resolvedWindow = remember(state.selectedDay, state.selectedCalendarDate, selectedPreset, customStartDate, customEndDate) {
+        resolveAmaWindow(
+            state = state,
+            preset = selectedPreset,
+            customStartDate = customStartDate,
+            customEndDate = customEndDate,
+        )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        AmaInsightHeader(
+            selectedKind = selectedKind,
+            periodLabel = resolvedWindow?.label ?: "Select a period",
+            showRunAction = showRunAction,
+            canSubmit = canSubmit,
+            onSubmit = onSubmit,
+        )
+
+        AmaInsightKindGrid(
+            selectedKind = selectedKind,
+            onSelectedKindChange = onSelectedKindChange,
+        )
+
+        AmaPeriodSelector(
+            selectedPreset = selectedPreset,
+            onSelectedPresetChange = onSelectedPresetChange,
+        )
+
+        if (selectedPreset == AmaPeriodPreset.Custom) {
+            AmaCustomDateSelector(
+                customStartDate = customStartDate,
+                customEndDate = customEndDate,
+                onCustomStartDateChange = onCustomStartDateChange,
+                onCustomEndDateChange = onCustomEndDateChange,
+            )
+        }
+
+        AmaInsightControls(
+            selectedKind = selectedKind,
+            limit = limit,
+            limitOptions = limitOptions,
+            includeIdle = includeIdle,
+            onLimitChange = onLimitChange,
+            onIncludeIdleChange = onIncludeIdleChange,
+        )
+    }
+}
+
+@Composable
+private fun AmaInsightHeader(
+    selectedKind: AmaQueryKind,
+    periodLabel: String,
+    showRunAction: Boolean,
+    canSubmit: Boolean,
+    onSubmit: () -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val titleContent: @Composable (Modifier) -> Unit = { modifier ->
+            Row(
+                modifier = modifier,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TbText(
+                    modifier = Modifier.weight(1f),
+                    text = "Insight",
+                    style = TbTheme.typography.label,
+                    color = TbTheme.colors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TbText(
+                    text = periodLabel,
+                    style = TbTheme.typography.caption,
+                    color = TbTheme.colors.tertiaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        when {
+            !showRunAction -> {
+                titleContent(Modifier.fillMaxWidth())
+            }
+            maxWidth < 560.dp -> {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    titleContent(Modifier.fillMaxWidth())
+                    AmaRunInsightButton(
+                        selectedKind = selectedKind,
+                        canSubmit = canSubmit,
+                        onSubmit = onSubmit,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            else -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    titleContent(Modifier.weight(1f))
+                    AmaRunInsightButton(
+                        selectedKind = selectedKind,
+                        canSubmit = canSubmit,
+                        onSubmit = onSubmit,
+                        modifier = Modifier.widthIn(min = 150.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaInsightDock(
+    state: TimeboxxingScreenState,
+    loading: Boolean,
+    selectedKind: AmaQueryKind,
+    onSelectedKindChange: (AmaQueryKind) -> Unit,
+    selectedPreset: AmaPeriodPreset,
+    onSelectedPresetChange: (AmaPeriodPreset) -> Unit,
+    customStartDate: CalendarDate,
+    customEndDate: CalendarDate,
+    onCustomStartDateChange: (CalendarDate) -> Unit,
+    onCustomEndDateChange: (CalendarDate) -> Unit,
+    includeIdle: Boolean,
+    onIncludeIdleChange: (Boolean) -> Unit,
+    limit: Int,
+    limitOptions: List<Int>,
+    onLimitChange: (Int) -> Unit,
+    canSubmit: Boolean,
+    onSubmit: () -> Unit,
+) {
+    TbSurface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(0.dp),
+        color = TbTheme.colors.surface,
+        contentColor = TbTheme.colors.text,
+        border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            AmaInsightLauncher(
+                state = state,
+                selectedKind = selectedKind,
+                onSelectedKindChange = onSelectedKindChange,
+                selectedPreset = selectedPreset,
+                onSelectedPresetChange = onSelectedPresetChange,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate,
+                onCustomStartDateChange = onCustomStartDateChange,
+                onCustomEndDateChange = onCustomEndDateChange,
+                includeIdle = includeIdle,
+                onIncludeIdleChange = onIncludeIdleChange,
+                limit = limit,
+                limitOptions = limitOptions,
+                onLimitChange = onLimitChange,
+                showRunAction = true,
+                canSubmit = canSubmit && !loading,
+                onSubmit = onSubmit,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmaInsightKindGrid(
+    selectedKind: AmaQueryKind,
+    onSelectedKindChange: (AmaQueryKind) -> Unit,
+) {
+    val kinds = listOf(
+        AmaQueryKind.AppTotals,
+        AmaQueryKind.Timeline,
+        AmaQueryKind.Habits,
+        AmaQueryKind.ComparePeriods,
+    )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 620.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                kinds.chunked(2).forEach { rowKinds ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowKinds.forEach { kind ->
+                            AmaInsightKindTile(
+                                kind = kind,
+                                selected = selectedKind == kind,
+                                onClick = { onSelectedKindChange(kind) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                kinds.forEach { kind ->
+                    AmaInsightKindTile(
+                        kind = kind,
+                        selected = selectedKind == kind,
+                        onClick = { onSelectedKindChange(kind) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaInsightKindTile(
+    kind: AmaQueryKind,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AmaSelectableSurface(
+        modifier = modifier,
+        selected = selected,
+        onClick = onClick,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TbIcon(
+                imageVector = kind.icon,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                TbText(
+                    text = kind.label,
+                    style = TbTheme.typography.button,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TbText(
+                    text = kind.caption,
+                    style = TbTheme.typography.caption,
+                    color = if (selected) TbTheme.colors.accent else TbTheme.colors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaPeriodSelector(
+    selectedPreset: AmaPeriodPreset,
+    onSelectedPresetChange: (AmaPeriodPreset) -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val compact = maxWidth < 520.dp
+        val content: @Composable (AmaPeriodPreset, String, Modifier) -> Unit = { preset, label, modifier ->
+            AmaSelectablePill(
+                label = label,
+                selected = selectedPreset == preset,
+                onClick = { onSelectedPresetChange(preset) },
+                modifier = modifier,
+            )
+        }
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                content(AmaPeriodPreset.SelectedDay, "Selected day", Modifier.fillMaxWidth())
+                content(AmaPeriodPreset.PreviousDay, "Previous day", Modifier.fillMaxWidth())
+                content(AmaPeriodPreset.Custom, "Custom", Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                content(AmaPeriodPreset.SelectedDay, "Selected day", Modifier.weight(1f))
+                content(AmaPeriodPreset.PreviousDay, "Previous day", Modifier.weight(1f))
+                content(AmaPeriodPreset.Custom, "Custom", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaCustomDateSelector(
+    customStartDate: CalendarDate,
+    customEndDate: CalendarDate,
+    onCustomStartDateChange: (CalendarDate) -> Unit,
+    onCustomEndDateChange: (CalendarDate) -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 520.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                CalendarDatePickerMenu(
+                    selectedDate = customStartDate,
+                    label = "From ${customStartDate.isoLabel()}",
+                    onDateSelected = onCustomStartDateChange,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                CalendarDatePickerMenu(
+                    selectedDate = customEndDate,
+                    label = "To ${customEndDate.isoLabel()}",
+                    onDateSelected = onCustomEndDateChange,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CalendarDatePickerMenu(
+                    selectedDate = customStartDate,
+                    label = "From ${customStartDate.isoLabel()}",
+                    onDateSelected = onCustomStartDateChange,
+                    modifier = Modifier.weight(1f),
+                )
+                CalendarDatePickerMenu(
+                    selectedDate = customEndDate,
+                    label = "To ${customEndDate.isoLabel()}",
+                    onDateSelected = onCustomEndDateChange,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaInsightControls(
+    selectedKind: AmaQueryKind,
+    limit: Int,
+    limitOptions: List<Int>,
+    includeIdle: Boolean,
+    onLimitChange: (Int) -> Unit,
+    onIncludeIdleChange: (Boolean) -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 720.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                AmaLimitSelector(
+                    label = selectedKind.limitLabel,
+                    limit = limit,
+                    limitOptions = limitOptions,
+                    onLimitChange = onLimitChange,
+                )
+                AmaIdleToggle(
+                    includeIdle = includeIdle,
+                    onIncludeIdleChange = onIncludeIdleChange,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                AmaLimitSelector(
+                    label = selectedKind.limitLabel,
+                    limit = limit,
+                    limitOptions = limitOptions,
+                    onLimitChange = onLimitChange,
+                    modifier = Modifier.weight(1f),
+                )
+                AmaIdleToggle(
+                    includeIdle = includeIdle,
+                    onIncludeIdleChange = onIncludeIdleChange,
+                    modifier = Modifier.widthIn(min = 260.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaLimitSelector(
+    label: String,
+    limit: Int,
+    limitOptions: List<Int>,
+    onLimitChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        TbText(
+            text = label,
+            style = TbTheme.typography.caption,
+            color = TbTheme.colors.secondaryText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            limitOptions.forEach { option ->
+                AmaSelectablePill(
+                    label = option.toString(),
+                    selected = limit == option,
+                    onClick = { onLimitChange(option) },
+                    modifier = Modifier.widthIn(min = 48.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaIdleToggle(
+    includeIdle: Boolean,
+    onIncludeIdleChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AmaSelectableSurface(
+        modifier = modifier,
+        selected = includeIdle,
+        onClick = { onIncludeIdleChange(!includeIdle) },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TbCheckbox(
+                checked = includeIdle,
+                onCheckedChange = onIncludeIdleChange,
+                accessibilityLabel = "Include idle time",
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                TbText(
+                    text = "Include idle",
+                    style = TbTheme.typography.button,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TbText(
+                    text = "Count idle sessions in totals",
+                    style = TbTheme.typography.caption,
+                    color = TbTheme.colors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AmaRunInsightButton(
+    selectedKind: AmaQueryKind,
+    canSubmit: Boolean,
+    onSubmit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TbButton(
+        modifier = modifier,
+        onClick = onSubmit,
+        enabled = canSubmit,
+    ) {
+        TbIcon(
+            imageVector = selectedKind.icon,
+            contentDescription = null,
+            modifier = Modifier
+                .padding(end = 6.dp)
+                .size(17.dp),
+        )
+        TbText(
+            text = "Run ${selectedKind.label}",
+            style = TbTheme.typography.button,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun AmaSelectablePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AmaSelectableSurface(
+        modifier = modifier,
+        selected = selected,
+        onClick = onClick,
+    ) {
+        TbText(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            text = label,
+            style = TbTheme.typography.button,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun AmaSelectableSurface(
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val shape = RoundedCornerShape(TbTheme.radii.control)
+    TbSurface(
+        modifier = modifier
+            .heightIn(min = 34.dp)
+            .clip(shape)
+            .clickable(onClick = onClick),
+        shape = shape,
+        color = if (selected) TbTheme.colors.accentSubtle else TbTheme.colors.controlFill,
+        contentColor = if (selected) TbTheme.colors.accent else TbTheme.colors.text,
+        border = BorderStroke(Dp.Hairline, if (selected) TbTheme.colors.accent else TbTheme.colors.separator),
+    ) {
+        content()
+    }
+}
+
+private fun resolveAmaWindow(
+    state: TimeboxxingScreenState,
+    preset: AmaPeriodPreset,
+    customStartDate: CalendarDate,
+    customEndDate: CalendarDate,
+): AmaResolvedWindow? =
+    when (preset) {
+        AmaPeriodPreset.SelectedDay -> {
+            val date = state.selectedCalendarDate ?: return AmaResolvedWindow(
+                window = AmaTimeWindow(state.selectedDay.startedAtEpochMillis, state.selectedDay.endedAtEpochMillis),
+                label = state.dateLabel,
+                startDate = customStartDate,
+                endDate = customStartDate,
+            )
+            val day = usageDayForCalendarDate(date)
+            AmaResolvedWindow(
+                window = AmaTimeWindow(day.startedAtEpochMillis, day.endedAtEpochMillis),
+                label = date.isoLabel(),
+                startDate = date,
+                endDate = date,
+            )
+        }
+        AmaPeriodPreset.PreviousDay -> {
+            val date = (state.selectedCalendarDate ?: return null).plusDays(-1)
+            val day = usageDayForCalendarDate(date)
+            AmaResolvedWindow(
+                window = AmaTimeWindow(day.startedAtEpochMillis, day.endedAtEpochMillis),
+                label = date.isoLabel(),
+                startDate = date,
+                endDate = date,
+            )
+        }
+        AmaPeriodPreset.Custom -> {
+            val start = minCalendarDate(customStartDate, customEndDate)
+            val end = maxCalendarDate(customStartDate, customEndDate)
+            val startDay = usageDayForCalendarDate(start)
+            val endBoundary = usageDayForCalendarDate(end.plusDays(1))
+            AmaResolvedWindow(
+                window = AmaTimeWindow(startDay.startedAtEpochMillis, endBoundary.startedAtEpochMillis),
+                label = if (start == end) start.isoLabel() else "${start.isoLabel()} to ${end.isoLabel()}",
+                startDate = start,
+                endDate = end,
+            )
+        }
+    }
+
+private fun comparisonBaselineWindow(current: AmaResolvedWindow): AmaResolvedWindow {
+    val dayCount = daysBetweenInclusive(current.startDate, current.endDate)
+    val baselineEnd = current.startDate.plusDays(-1)
+    val baselineStart = baselineEnd.plusDays(-(dayCount - 1))
+    val startDay = usageDayForCalendarDate(baselineStart)
+    val endBoundary = usageDayForCalendarDate(baselineEnd.plusDays(1))
+    return AmaResolvedWindow(
+        window = AmaTimeWindow(startDay.startedAtEpochMillis, endBoundary.startedAtEpochMillis),
+        label = if (baselineStart == baselineEnd) {
+            baselineStart.isoLabel()
+        } else {
+            "${baselineStart.isoLabel()} to ${baselineEnd.isoLabel()}"
+        },
+        startDate = baselineStart,
+        endDate = baselineEnd,
+    )
+}
+
+private fun buildAmaStructuredQuery(
+    state: TimeboxxingScreenState,
+    kind: AmaQueryKind,
+    preset: AmaPeriodPreset,
+    customStartDate: CalendarDate,
+    customEndDate: CalendarDate,
+    limit: Int,
+    includeIdle: Boolean,
+): AmaStructuredQuery? {
+    val current = resolveAmaWindow(
+        state = state,
+        preset = preset,
+        customStartDate = customStartDate,
+        customEndDate = customEndDate,
+    ) ?: return null
+    val baseline = current
+        .takeIf { kind == AmaQueryKind.ComparePeriods }
+        ?.let { comparisonBaselineWindow(it) }
+    return AmaStructuredQuery(
+        kind = kind,
+        window = current.window,
+        baselineWindow = baseline?.window,
+        limit = limit,
+        includeIdle = includeIdle,
+        periodLabel = current.label,
+        baselinePeriodLabel = baseline?.label.orEmpty(),
+    )
+}
+
+private fun amaDefaultCalendarDate(state: TimeboxxingScreenState): CalendarDate =
+    state.selectedCalendarDate
+        ?: state.selectedDay.calendarDate
+        ?: calendarDateForEpochMillis(state.selectedDay.startedAtEpochMillis)
+
+private val AmaQueryKind.icon: ImageVector
+    get() = when (this) {
+        AmaQueryKind.AppTotals -> Icons.Rounded.BarChart
+        AmaQueryKind.Timeline -> Icons.AutoMirrored.Rounded.ListAlt
+        AmaQueryKind.Habits -> Icons.Rounded.Insights
+        AmaQueryKind.ComparePeriods -> Icons.AutoMirrored.Rounded.CompareArrows
+    }
+
+private val AmaQueryKind.label: String
+    get() = when (this) {
+        AmaQueryKind.AppTotals -> "Apps"
+        AmaQueryKind.Timeline -> "Timeline"
+        AmaQueryKind.Habits -> "Habits"
+        AmaQueryKind.ComparePeriods -> "Compare"
+    }
+
+private val AmaQueryKind.caption: String
+    get() = when (this) {
+        AmaQueryKind.AppTotals -> "Totals by app"
+        AmaQueryKind.Timeline -> "Exact events"
+        AmaQueryKind.Habits -> "Patterns"
+        AmaQueryKind.ComparePeriods -> "Period deltas"
+    }
+
+private val AmaQueryKind.limitLabel: String
+    get() = when (this) {
+        AmaQueryKind.Timeline -> "Rows"
+        else -> "Apps"
+    }
+
+private fun amaLimitOptionsFor(kind: AmaQueryKind): List<Int> =
+    if (kind == AmaQueryKind.Timeline) {
+        listOf(20, 50, 100)
+    } else {
+        listOf(5, 10, 20)
+    }
+
+private fun CalendarDate.isoLabel(): String =
+    "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${dayOfMonth.toString().padStart(2, '0')}"
+
+private fun minCalendarDate(first: CalendarDate, second: CalendarDate): CalendarDate =
+    if (first <= second) first else second
+
+private fun maxCalendarDate(first: CalendarDate, second: CalendarDate): CalendarDate =
+    if (first >= second) first else second
+
+private fun daysBetweenInclusive(start: CalendarDate, end: CalendarDate): Int {
+    var cursor = start
+    var count = 1
+    while (cursor < end) {
+        cursor = cursor.plusDays(1)
+        count += 1
+    }
+    return count
+}
+
+@Composable
+private fun AmaFreeformComposer(
     value: String,
     loading: Boolean,
     onValueChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    framed: Boolean,
+    singleLine: Boolean,
 ) {
     var lastEscapePress by remember { mutableStateOf<TimeMark?>(null) }
     val canSubmit = value.isNotBlank() && !loading
-
-    Row(
-        modifier = Modifier
+    val rowModifier = if (framed) {
+        Modifier
             .fillMaxWidth()
             .background(TbTheme.colors.surface)
-            .padding(16.dp),
+            .padding(16.dp)
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Row(
+        modifier = rowModifier,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
@@ -1714,8 +3135,10 @@ private fun AmaComposer(
             modifier = Modifier.weight(1f),
             value = value,
             onValueChange = onValueChange,
-            minLines = 2,
-            maxLines = 6,
+            label = if (framed) null else "Ask anything",
+            singleLine = singleLine,
+            minLines = if (singleLine) 1 else 2,
+            maxLines = if (singleLine) 1 else 6,
             inputModifier = Modifier.onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) {
                     return@onPreviewKeyEvent false
@@ -1816,6 +3239,24 @@ private fun formatUsageChartPercent(seconds: Long, totalSeconds: Long): String {
         return "0%"
     }
     return "${((seconds.toDouble() / totalSeconds.toDouble()) * 100.0).roundToInt()}%"
+}
+
+private fun formatEventEpochTime(epochMillis: Long): String {
+    val date = calendarDateForEpochMillis(epochMillis)
+    val day = usageDayForCalendarDate(date)
+    val minute = ((epochMillis - day.startedAtEpochMillis) / 60_000L)
+        .toInt()
+        .coerceIn(0, 24 * 60 - 1)
+    return formatClockTime(minute)
+}
+
+private fun Double.formatPercentDelta(): String {
+    val rounded = (this * 10.0).roundToInt() / 10.0
+    return if (rounded % 1.0 == 0.0) {
+        rounded.toInt().toString()
+    } else {
+        rounded.toString()
+    }
 }
 
 private fun Double.formatDistance(): String =

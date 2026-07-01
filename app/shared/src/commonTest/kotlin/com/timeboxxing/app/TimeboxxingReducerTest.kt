@@ -7,8 +7,12 @@ import com.timeboxxing.domain.model.AmaAppUsageChart
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaMessageRole
+import com.timeboxxing.domain.model.AmaQueryKind
 import com.timeboxxing.domain.model.AmaSource
+import com.timeboxxing.domain.model.AmaStructuredQuery
+import com.timeboxxing.domain.model.AmaTimeWindow
 import com.timeboxxing.data.mock.mockTimeboxxingData
+import com.timeboxxing.data.time.usageDayForCalendarDate
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.CalendarDate
@@ -309,6 +313,60 @@ class TimeboxxingReducerTest {
         assertEquals(1, state.amaMessages.size)
         assertEquals(AmaMessageRole.User, state.amaMessages.first().role)
         assertEquals("What did I do today?", state.amaMessages.first().content)
+    }
+
+    @Test
+    fun submittingStructuredAmaQueriesAddsKindSpecificUserMessages() {
+        val window = AmaTimeWindow(
+            startedAtEpochMillis = 1_000L,
+            endedAtEpochMillis = 2_000L,
+        )
+        val baselineWindow = AmaTimeWindow(
+            startedAtEpochMillis = 0L,
+            endedAtEpochMillis = 1_000L,
+        )
+        val cases = listOf(
+            AmaStructuredQuery(
+                kind = AmaQueryKind.AppTotals,
+                window = window,
+                limit = 5,
+                periodLabel = "Today",
+            ) to "Show app totals for Today",
+            AmaStructuredQuery(
+                kind = AmaQueryKind.Timeline,
+                window = window,
+                limit = 20,
+                periodLabel = "Today",
+            ) to "Show usage timeline for Today",
+            AmaStructuredQuery(
+                kind = AmaQueryKind.Habits,
+                window = window,
+                limit = 5,
+                periodLabel = "Today",
+            ) to "Summarize habits for Today",
+            AmaStructuredQuery(
+                kind = AmaQueryKind.ComparePeriods,
+                window = window,
+                baselineWindow = baselineWindow,
+                limit = 5,
+                periodLabel = "Today",
+                baselinePeriodLabel = "Yesterday",
+            ) to "Compare Today with Yesterday",
+        )
+
+        cases.forEach { (query, expectedMessage) ->
+            val state = reduceTimeboxxingState(
+                createAmaConfiguredState(),
+                TimeboxxingAction.SubmitAmaStructuredQuery(query),
+            )
+
+            assertEquals(TimeboxxingSection.Ama, state.selectedSection)
+            assertEquals("", state.amaInput)
+            assertTrue(state.amaLoading)
+            assertEquals(1, state.amaMessages.size)
+            assertEquals(AmaMessageRole.User, state.amaMessages.first().role)
+            assertEquals(expectedMessage, state.amaMessages.first().content)
+        }
     }
 
     @Test
@@ -840,6 +898,85 @@ class TimeboxxingReducerTest {
         assertTrue(state.selectedUsageIds.isEmpty())
         assertEquals("New time entry", state.draft.title)
         assertEquals(null, state.notice)
+    }
+
+    @Test
+    fun openingAmaUsageSourceFocusesLoadedScheduleEvent() {
+        val usage = usageEvent(
+            id = "sidecar-42",
+            startMinute = 10 * 60,
+            durationMinutes = 15,
+        )
+        val initial = createAmaConfiguredState().copy(usageEvents = listOf(usage))
+        val selectedDate = initial.selectedCalendarDate ?: error("Expected a selected date")
+        val selectedDay = usageDayForCalendarDate(selectedDate)
+        val startedAt = selectedDay.startedAtEpochMillis + usage.startMinute * 60_000L
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.OpenAmaUsageSource(
+                startedAtEpochMillis = startedAt,
+                transitionEventId = 42,
+            ),
+        )
+
+        assertEquals(TimeboxxingSection.Overview, state.selectedSection)
+        assertEquals(setOf("sidecar-42"), state.selectedUsageIds)
+        assertEquals(usage.startMinute, state.scheduleFocusTarget?.minute)
+        assertEquals("sidecar-42", state.scheduleFocusTarget?.usageId)
+    }
+
+    @Test
+    fun openingAmaUsageSourcePreservesFocusUntilTargetDayLoads() {
+        val targetDate = CalendarDate(2026, 7, 4)
+        val targetDay = usageDayForCalendarDate(targetDate)
+        val startedAt = targetDay.startedAtEpochMillis + 14 * 60 * 60_000L
+        val initial = createAmaConfiguredState()
+
+        val focusing = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.OpenAmaUsageSource(
+                startedAtEpochMillis = startedAt,
+                transitionEventId = 9,
+            ),
+        )
+
+        assertEquals(targetDate, focusing.selectedCalendarDate)
+        assertTrue(focusing.usageLoading)
+        assertEquals("sidecar-9", focusing.scheduleFocusTarget?.usageId)
+        assertTrue(focusing.selectedUsageIds.isEmpty())
+
+        val loaded = reduceTimeboxxingState(
+            focusing,
+            TimeboxxingAction.UsageLoadSucceeded(
+                dayStartedAtEpochMillis = targetDay.startedAtEpochMillis,
+                events = listOf(usageEvent(id = "sidecar-9", startMinute = 14 * 60, durationMinutes = 20)),
+            ),
+        )
+
+        assertEquals(setOf("sidecar-9"), loaded.selectedUsageIds)
+        assertEquals(14 * 60, loaded.scheduleFocusTarget?.minute)
+    }
+
+    @Test
+    fun openingTimestampOnlyAmaSourceScrollsWithoutSelectingUsage() {
+        val initial = createAmaConfiguredState()
+        val selectedDate = initial.selectedCalendarDate ?: error("Expected a selected date")
+        val selectedDay = usageDayForCalendarDate(selectedDate)
+        val startedAt = selectedDay.startedAtEpochMillis + 9 * 60 * 60_000L
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.OpenAmaUsageSource(
+                startedAtEpochMillis = startedAt,
+                transitionEventId = 0,
+            ),
+        )
+
+        assertEquals(TimeboxxingSection.Overview, state.selectedSection)
+        assertEquals(9 * 60, state.scheduleFocusTarget?.minute)
+        assertEquals(null, state.scheduleFocusTarget?.usageId)
+        assertTrue(state.selectedUsageIds.isEmpty())
     }
 
     @Test

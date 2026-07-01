@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.timeboxxing.data.time.usageDayForCalendarDate
 import com.timeboxxing.domain.model.AiSettings
+import com.timeboxxing.domain.model.AmaStructuredQuery
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.DatabasePruneRange
 import com.timeboxxing.domain.model.TimesheetEntryDraft
@@ -61,6 +62,7 @@ class TimeboxxingViewModel(
         val currentState = _state.value
         val currentRepositories = runtime.repositories.value
         val amaQuestion = currentState.amaQuestionFor(action)
+        val amaStructuredQuery = action.amaStructuredQuery()
         val settingsToSave = currentState.settingsToSaveFor(action)
         val projectToCreate = action.projectToCreate()
         val projectToDelete = action.projectToDelete()
@@ -79,6 +81,9 @@ class TimeboxxingViewModel(
         }
         if (amaQuestion != null) {
             askAma(currentRepositories.amaRepository, amaQuestion)
+        }
+        if (amaStructuredQuery != null) {
+            askStructuredAma(currentRepositories.amaRepository, amaStructuredQuery)
         }
         if (settingsToSave != null) {
             saveSettings(currentRepositories.settingsRepository, settingsToSave)
@@ -375,6 +380,18 @@ class TimeboxxingViewModel(
         }
     }
 
+    private fun askStructuredAma(repository: AmaRepository, query: AmaStructuredQuery) {
+        viewModelScope.launch {
+            val answer = runCatching { repository.askStructured(query) }
+            answer.fold(
+                onSuccess = { reduce(TimeboxxingAction.AmaAnswerSucceeded(it)) },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.AmaAnswerFailed(error.message ?: "AMA is unavailable."))
+                },
+            )
+        }
+    }
+
     private fun saveSettings(repository: SettingsRepository, settings: AiSettings) {
         viewModelScope.launch {
             val saved = runCatching { repository.saveAiSettings(settings) }
@@ -571,6 +588,12 @@ private fun TimeboxxingScreenState.amaQuestionFor(action: TimeboxxingAction): St
         amaInput.trim()
     } else {
         null
+    }
+
+private fun TimeboxxingAction.amaStructuredQuery(): AmaStructuredQuery? =
+    when (this) {
+        is TimeboxxingAction.SubmitAmaStructuredQuery -> query
+        else -> null
     }
 
 private fun TimeboxxingScreenState.settingsToSaveFor(action: TimeboxxingAction): AiSettings? =
