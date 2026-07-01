@@ -30,6 +30,7 @@ import com.timeboxxing.app.ui.timelineMinuteMarkerOffsetsDp
 import com.timeboxxing.app.ui.timelineNowScrollDirection
 import com.timeboxxing.app.ui.timelinePlacementsInViewport
 import com.timeboxxing.app.ui.timelineRowHeightDpForZoom
+import com.timeboxxing.app.ui.scheduleTimelineUsageMetrics
 import com.timeboxxing.app.ui.scheduleTimelineUsageEvents
 import com.timeboxxing.app.ui.timelineScrollToMinuteDp
 import com.timeboxxing.app.ui.timelineSegmentsForRow
@@ -301,23 +302,55 @@ class TimelineLayoutTest {
     }
 
     @Test
-    fun scheduleTimelineExcludesActiveEventsButKeepsCompletedAndIdle() {
+    fun scheduleTimelineExcludesActiveAndSubMinuteEventsButKeepsOneMinuteCompletedAndIdle() {
         val active = usageEvent(id = "active", durationMinutes = 3, isActive = true)
-        val completed = usageEvent(id = "completed", durationMinutes = 5)
+        val subMinute = usageEvent(id = "sub-minute", durationMinutes = 0)
+        val oneMinute = usageEvent(id = "one-minute", durationMinutes = 1)
+        val completed = usageEvent(id = "completed", durationMinutes = 2)
         val idle = usageEvent(
             id = "idle",
             durationMinutes = 5,
             sourceType = UsageSourceType.Idle,
         )
 
-        val visibleEvents = scheduleTimelineUsageEvents(listOf(active, completed, idle))
+        val visibleEvents = scheduleTimelineUsageEvents(listOf(active, subMinute, oneMinute, completed, idle))
         val grid = buildTimelineGrid(
             events = visibleEvents,
             zoomMinutes = 15,
         )
 
-        assertEquals(listOf("completed", "idle"), visibleEvents.map { it.id })
-        assertEquals(setOf("completed", "idle"), grid.placements.map { it.event.id }.toSet())
+        assertEquals(listOf("one-minute", "completed", "idle"), visibleEvents.map { it.id })
+        assertEquals(setOf("one-minute", "completed", "idle"), grid.placements.map { it.event.id }.toSet())
+    }
+
+    @Test
+    fun scheduleTimelineUsageMetricsUseVisibleNonIdleEvents() {
+        val subMinute = usageEvent(id = "sub-minute", durationMinutes = 0)
+        val oneMinute = usageEvent(id = "one-minute", durationMinutes = 1)
+        val assigned = usageEvent(
+            id = "assigned",
+            startMinute = oneMinute.startMinute + 1,
+            durationMinutes = 2,
+        )
+        val idle = usageEvent(
+            id = "idle",
+            startMinute = assigned.startMinute + assigned.durationMinutes,
+            durationMinutes = 5,
+            sourceType = UsageSourceType.Idle,
+        )
+        val visibleEvents = scheduleTimelineUsageEvents(listOf(subMinute, oneMinute, assigned, idle))
+
+        val metrics = scheduleTimelineUsageMetrics(
+            visibleEvents = visibleEvents,
+            assignedUsageIds = setOf("assigned"),
+            selectedUsageIds = setOf("sub-minute", "one-minute", "assigned", "idle"),
+        )
+
+        assertEquals(3, metrics.capturedMinutes)
+        assertEquals(1, metrics.unassignedMinutes)
+        assertEquals(3, metrics.selectedMinutes)
+        assertEquals(setOf("one-minute", "assigned"), metrics.selectedUsageIds)
+        assertEquals(2, metrics.selectedCount)
     }
 
     @Test

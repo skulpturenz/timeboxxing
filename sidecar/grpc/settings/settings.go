@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"sync"
+
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
@@ -15,7 +17,10 @@ const (
 type Server struct {
 	settingsv1.UnimplementedSettingsServiceServer
 
-	querier queries.Querier
+	querier  queries.Querier
+	database *db.Database
+
+	maintenanceMu sync.Mutex
 }
 
 type serverKey struct{}
@@ -38,7 +43,7 @@ func NewServer(registry *services.Services[any, any]) *Server {
 	if database != nil {
 		querier = database.WriteQuerier
 	}
-	server := &Server{querier: querier}
+	server := &Server{querier: querier, database: database}
 	RegisterServer(registry, server)
 	return server
 }

@@ -1,17 +1,29 @@
 package com.timeboxxing.data.grpc
 
+import com.google.protobuf.Timestamp
 import com.timeboxxing.domain.model.AiModelOption
 import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiProvider
 import com.timeboxxing.domain.model.AiSettings
+import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
+import com.timeboxxing.domain.model.DatabasePruneCounts
+import com.timeboxxing.domain.model.DatabasePruneRange
+import com.timeboxxing.domain.model.DatabasePruneResult
+import com.timeboxxing.domain.model.DatabaseVacuumResult
 import com.timeboxxing.domain.repository.SettingsRepository
 import com.timeboxxing.sidecar.settings.v1.AiProvider as AiProviderProto
 import com.timeboxxing.sidecar.settings.v1.AiSettings as AiSettingsProto
+import com.timeboxxing.sidecar.settings.v1.DatabaseMaintenanceStatus as DatabaseMaintenanceStatusProto
 import com.timeboxxing.sidecar.settings.v1.GetAiSettingsRequest
+import com.timeboxxing.sidecar.settings.v1.GetDatabaseMaintenanceStatusRequest
 import com.timeboxxing.sidecar.settings.v1.ListModelOptionsRequest
 import com.timeboxxing.sidecar.settings.v1.ModelOption
+import com.timeboxxing.sidecar.settings.v1.PruneDatabaseRangeRequest
+import com.timeboxxing.sidecar.settings.v1.PruneDatabaseRangeResponse
 import com.timeboxxing.sidecar.settings.v1.SaveAiSettingsRequest
 import com.timeboxxing.sidecar.settings.v1.SettingsServiceGrpcKt
+import com.timeboxxing.sidecar.settings.v1.VacuumDatabaseRequest
+import com.timeboxxing.sidecar.settings.v1.VacuumDatabaseResponse
 import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
 import io.grpc.Status
@@ -85,6 +97,53 @@ class GrpcSettingsRepository(
         )
     }
 
+    override suspend fun getDatabaseMaintenanceStatus(): DatabaseMaintenanceStatus {
+        val response = try {
+            stub
+                .withDeadlineAfter(10, TimeUnit.SECONDS)
+                .getDatabaseMaintenanceStatus(GetDatabaseMaintenanceStatusRequest.getDefaultInstance())
+        } catch (error: StatusRuntimeException) {
+            throw IllegalStateException(error.toSettingsErrorMessage(), error)
+        } catch (error: StatusException) {
+            throw IllegalStateException(error.toSettingsErrorMessage(), error)
+        }
+
+        return response.toDatabaseMaintenanceStatus()
+    }
+
+    override suspend fun pruneDatabaseRange(range: DatabasePruneRange): DatabasePruneResult {
+        val response = try {
+            stub
+                .withDeadlineAfter(30, TimeUnit.SECONDS)
+                .pruneDatabaseRange(
+                    PruneDatabaseRangeRequest.newBuilder()
+                        .setStartedAt(range.startedAtEpochMillis.toTimestamp())
+                        .setEndedAt(range.endedAtEpochMillis.toTimestamp())
+                        .build(),
+                )
+        } catch (error: StatusRuntimeException) {
+            throw IllegalStateException(error.toSettingsErrorMessage(), error)
+        } catch (error: StatusException) {
+            throw IllegalStateException(error.toSettingsErrorMessage(), error)
+        }
+
+        return response.toDatabasePruneResult()
+    }
+
+    override suspend fun vacuumDatabase(): DatabaseVacuumResult {
+        val response = try {
+            stub
+                .withDeadlineAfter(120, TimeUnit.SECONDS)
+                .vacuumDatabase(VacuumDatabaseRequest.getDefaultInstance())
+        } catch (error: StatusRuntimeException) {
+            throw IllegalStateException(error.toSettingsErrorMessage(), error)
+        } catch (error: StatusException) {
+            throw IllegalStateException(error.toSettingsErrorMessage(), error)
+        }
+
+        return response.toDatabaseVacuumResult()
+    }
+
     override fun close() {
         channel.shutdownNow()
         channel.awaitTermination(1, TimeUnit.SECONDS)
@@ -110,6 +169,30 @@ private fun AiSettingsProto.toAiSettings(): AiSettings =
         ollamaSecretExists = ollamaSecretExists,
     )
 
+internal fun DatabaseMaintenanceStatusProto.toDatabaseMaintenanceStatus(): DatabaseMaintenanceStatus =
+    DatabaseMaintenanceStatus(sizeBytes = sizeBytes)
+
+internal fun PruneDatabaseRangeResponse.toDatabasePruneResult(): DatabasePruneResult =
+    DatabasePruneResult(
+        status = DatabaseMaintenanceStatus(sizeBytes = sizeBytes),
+        counts = DatabasePruneCounts(
+            timesheetEntriesDeleted = timesheetEntriesDeleted,
+            usageLinksDeleted = usageLinksDeleted,
+            timesheetsDeleted = timesheetsDeleted,
+            transitionEventsDeleted = transitionEventsDeleted,
+            transitionMetadataDeleted = transitionMetadataDeleted,
+            semanticDocumentsDeleted = semanticDocumentsDeleted,
+            embeddingsDeleted = embeddingsDeleted,
+            applicationsDeleted = applicationsDeleted,
+        ),
+    )
+
+internal fun VacuumDatabaseResponse.toDatabaseVacuumResult(): DatabaseVacuumResult =
+    DatabaseVacuumResult(
+        sizeBeforeBytes = sizeBeforeBytes,
+        sizeAfterBytes = sizeAfterBytes,
+    )
+
 private fun AiProviderProto.toAiProvider(): AiProvider =
     when (this) {
         AiProviderProto.OLLAMA -> AiProvider.Ollama
@@ -121,6 +204,12 @@ private fun AiProvider.toProto(): AiProviderProto =
         AiProvider.OpenRouter -> AiProviderProto.OPENROUTER
         AiProvider.Ollama -> AiProviderProto.OLLAMA
     }
+
+private fun Long.toTimestamp(): Timestamp =
+    Timestamp.newBuilder()
+        .setSeconds(this / 1_000L)
+        .setNanos(((this % 1_000L) * 1_000_000L).toInt())
+        .build()
 
 internal fun StatusRuntimeException.toSettingsErrorMessage(): String = status.toSettingsErrorMessage()
 

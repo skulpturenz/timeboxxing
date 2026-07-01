@@ -7,6 +7,12 @@ import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.domain.model.CalendarDate
+import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
+import com.timeboxxing.domain.model.DatabasePruneCounts
+import com.timeboxxing.domain.model.DatabasePruneRange
+import com.timeboxxing.domain.model.DatabasePruneResult
+import com.timeboxxing.domain.model.DatabaseVacuumResult
 import com.timeboxxing.domain.model.DiagnosticsLogLine
 import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
@@ -135,6 +141,124 @@ class TimeboxxingViewModelTest {
         assertEquals(1, settingsRepository.savedSettings.size)
         assertFalse(viewModel.state.value.settingsSaving)
         assertEquals("Settings saved. Restarting sidecar...", viewModel.state.value.settingsSavedMessage)
+    }
+
+    @Test
+    fun readyRuntimeLoadsDatabaseMaintenanceStatus() = runTest {
+        val settingsRepository = FakeSettingsRepository(
+            status = DatabaseMaintenanceStatus(sizeBytes = 4096),
+        )
+        val viewModel = TimeboxxingViewModel(fakeRuntime(settingsRepository = settingsRepository))
+
+        advanceUntilIdle()
+
+        assertEquals(1, settingsRepository.statusCalls)
+        assertEquals(4096, viewModel.state.value.databaseMaintenanceStatus.sizeBytes)
+        assertFalse(viewModel.state.value.databaseMaintenanceLoading)
+    }
+
+    @Test
+    fun pruneDatabaseRangeUsesRepositoryAndRefreshesCurrentData() = runTest {
+        val settingsRepository = FakeSettingsRepository(
+            status = DatabaseMaintenanceStatus(sizeBytes = 4096),
+            pruneResult = DatabasePruneResult(
+                status = DatabaseMaintenanceStatus(sizeBytes = 2048),
+                counts = DatabasePruneCounts(
+                    timesheetEntriesDeleted = 1,
+                    transitionEventsDeleted = 1,
+                ),
+            ),
+            vacuumResult = DatabaseVacuumResult(
+                sizeBeforeBytes = 2048,
+                sizeAfterBytes = 1024,
+            ),
+        )
+        val usageRepository = FakeUsageHistoryRepository()
+        val timesheetRepository = FakeTimesheetRepository()
+        val viewModel = TimeboxxingViewModel(
+            fakeRuntime(
+                usageRepository = usageRepository,
+                settingsRepository = settingsRepository,
+                timesheetRepository = timesheetRepository,
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.UpdateDatabasePruneStartDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.UpdateDatabasePruneEndDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.PruneDatabaseRange)
+        advanceUntilIdle()
+
+        assertEquals(1, settingsRepository.pruneRanges.size)
+        assertEquals(1, settingsRepository.vacuumCalls)
+        assertEquals(2, settingsRepository.statusCalls)
+        assertEquals(2, usageRepository.getCalls)
+        assertEquals(2, timesheetRepository.listCalls)
+        assertFalse(viewModel.state.value.databasePruning)
+        assertFalse(viewModel.state.value.databaseVacuuming)
+        assertEquals(4096, viewModel.state.value.databaseMaintenanceStatus.sizeBytes)
+        assertEquals("Pruned 2 database rows and compacted the database.", viewModel.state.value.databaseMaintenanceMessage)
+    }
+
+    @Test
+    fun pruneDatabaseRangeSkipsVacuumWhenNoRowsDeleted() = runTest {
+        val settingsRepository = FakeSettingsRepository(
+            status = DatabaseMaintenanceStatus(sizeBytes = 4096),
+            pruneResult = DatabasePruneResult(
+                status = DatabaseMaintenanceStatus(sizeBytes = 4096),
+                counts = DatabasePruneCounts(),
+            ),
+        )
+        val viewModel = TimeboxxingViewModel(fakeRuntime(settingsRepository = settingsRepository))
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.UpdateDatabasePruneStartDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.UpdateDatabasePruneEndDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.PruneDatabaseRange)
+        advanceUntilIdle()
+
+        assertEquals(1, settingsRepository.pruneRanges.size)
+        assertEquals(0, settingsRepository.vacuumCalls)
+        assertEquals("No database rows matched that range.", viewModel.state.value.databaseMaintenanceMessage)
+    }
+
+    @Test
+    fun pruneDatabaseRangeReportsVacuumFailureAfterPrune() = runTest {
+        val settingsRepository = FakeSettingsRepository(
+            status = DatabaseMaintenanceStatus(sizeBytes = 4096),
+            pruneResult = DatabasePruneResult(
+                status = DatabaseMaintenanceStatus(sizeBytes = 2048),
+                counts = DatabasePruneCounts(timesheetEntriesDeleted = 1),
+            ),
+            vacuumError = IllegalStateException("disk is full"),
+        )
+        val usageRepository = FakeUsageHistoryRepository()
+        val timesheetRepository = FakeTimesheetRepository()
+        val viewModel = TimeboxxingViewModel(
+            fakeRuntime(
+                usageRepository = usageRepository,
+                settingsRepository = settingsRepository,
+                timesheetRepository = timesheetRepository,
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.UpdateDatabasePruneStartDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.UpdateDatabasePruneEndDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.PruneDatabaseRange)
+        advanceUntilIdle()
+
+        assertEquals(1, settingsRepository.pruneRanges.size)
+        assertEquals(1, settingsRepository.vacuumCalls)
+        assertFalse(viewModel.state.value.databasePruning)
+        assertFalse(viewModel.state.value.databaseVacuuming)
+        assertEquals(
+            "Database rows were pruned, but compaction failed: disk is full",
+            viewModel.state.value.databaseMaintenanceError,
+        )
+        assertEquals(2, settingsRepository.statusCalls)
+        assertEquals(2, usageRepository.getCalls)
+        assertEquals(2, timesheetRepository.listCalls)
     }
 
     @Test
@@ -352,8 +476,22 @@ private class FakeAmaRepository(
         )
 }
 
-private class FakeSettingsRepository : SettingsRepository {
+private class FakeSettingsRepository(
+    private val status: DatabaseMaintenanceStatus = DatabaseMaintenanceStatus(sizeBytes = 128),
+    private val pruneResult: DatabasePruneResult = DatabasePruneResult(
+        status = status,
+        counts = DatabasePruneCounts(),
+    ),
+    private val vacuumResult: DatabaseVacuumResult = DatabaseVacuumResult(
+        sizeBeforeBytes = status.sizeBytes,
+        sizeAfterBytes = status.sizeBytes,
+    ),
+    private val vacuumError: Throwable? = null,
+) : SettingsRepository {
     val savedSettings = mutableListOf<AiSettings>()
+    val pruneRanges = mutableListOf<DatabasePruneRange>()
+    var statusCalls = 0
+    var vacuumCalls = 0
 
     override suspend fun listModelOptions(): AiModelOptions = AiModelOptions()
 
@@ -362,6 +500,22 @@ private class FakeSettingsRepository : SettingsRepository {
     override suspend fun saveAiSettings(settings: AiSettings): AiSettings {
         savedSettings += settings
         return settings
+    }
+
+    override suspend fun getDatabaseMaintenanceStatus(): DatabaseMaintenanceStatus {
+        statusCalls++
+        return status
+    }
+
+    override suspend fun pruneDatabaseRange(range: DatabasePruneRange): DatabasePruneResult {
+        pruneRanges += range
+        return pruneResult
+    }
+
+    override suspend fun vacuumDatabase(): DatabaseVacuumResult {
+        vacuumCalls++
+        vacuumError?.let { throw it }
+        return vacuumResult
     }
 }
 

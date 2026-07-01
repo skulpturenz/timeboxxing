@@ -38,10 +38,11 @@ type Options struct {
 }
 
 type Database struct {
-	WriteQuerier queries.Querier
-	ReadQuerier  queries.Querier
-	WriteConn    *sql.DB
-	ReadConn     *sql.DB
+	WriteQuerier   queries.Querier
+	ReadQuerier    queries.Querier
+	WriteConn      *sql.DB
+	ReadConn       *sql.DB
+	DataSourceName string
 }
 
 type databaseKey struct{}
@@ -115,10 +116,11 @@ func newSqlite(ctx context.Context, dataSourceName string) (*Database, error) {
 	}
 
 	return &Database{
-		WriteQuerier: queries.New(writerConn),
-		ReadQuerier:  queries.New(readerConn),
-		WriteConn:    writerConn,
-		ReadConn:     readerConn,
+		WriteQuerier:   queries.New(writerConn),
+		ReadQuerier:    queries.New(readerConn),
+		WriteConn:      writerConn,
+		ReadConn:       readerConn,
+		DataSourceName: dataSourceName,
 	}, nil
 }
 

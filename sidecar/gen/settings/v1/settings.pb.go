@@ -9,6 +9,7 @@ package settingsv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -462,11 +463,339 @@ func (x *AiSettings) GetOllamaSecretExists() bool {
 	return false
 }
 
+type GetDatabaseMaintenanceStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDatabaseMaintenanceStatusRequest) Reset() {
+	*x = GetDatabaseMaintenanceStatusRequest{}
+	mi := &file_settings_v1_settings_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDatabaseMaintenanceStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDatabaseMaintenanceStatusRequest) ProtoMessage() {}
+
+func (x *GetDatabaseMaintenanceStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_v1_settings_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDatabaseMaintenanceStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetDatabaseMaintenanceStatusRequest) Descriptor() ([]byte, []int) {
+	return file_settings_v1_settings_proto_rawDescGZIP(), []int{6}
+}
+
+type DatabaseMaintenanceStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SizeBytes     int64                  `protobuf:"varint,1,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DatabaseMaintenanceStatus) Reset() {
+	*x = DatabaseMaintenanceStatus{}
+	mi := &file_settings_v1_settings_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatabaseMaintenanceStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatabaseMaintenanceStatus) ProtoMessage() {}
+
+func (x *DatabaseMaintenanceStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_v1_settings_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatabaseMaintenanceStatus.ProtoReflect.Descriptor instead.
+func (*DatabaseMaintenanceStatus) Descriptor() ([]byte, []int) {
+	return file_settings_v1_settings_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *DatabaseMaintenanceStatus) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+type PruneDatabaseRangeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	EndedAt       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PruneDatabaseRangeRequest) Reset() {
+	*x = PruneDatabaseRangeRequest{}
+	mi := &file_settings_v1_settings_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PruneDatabaseRangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PruneDatabaseRangeRequest) ProtoMessage() {}
+
+func (x *PruneDatabaseRangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_v1_settings_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PruneDatabaseRangeRequest.ProtoReflect.Descriptor instead.
+func (*PruneDatabaseRangeRequest) Descriptor() ([]byte, []int) {
+	return file_settings_v1_settings_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PruneDatabaseRangeRequest) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *PruneDatabaseRangeRequest) GetEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndedAt
+	}
+	return nil
+}
+
+type PruneDatabaseRangeResponse struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	SizeBytes                 int64                  `protobuf:"varint,1,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	TimesheetEntriesDeleted   int64                  `protobuf:"varint,2,opt,name=timesheet_entries_deleted,json=timesheetEntriesDeleted,proto3" json:"timesheet_entries_deleted,omitempty"`
+	UsageLinksDeleted         int64                  `protobuf:"varint,3,opt,name=usage_links_deleted,json=usageLinksDeleted,proto3" json:"usage_links_deleted,omitempty"`
+	TimesheetsDeleted         int64                  `protobuf:"varint,4,opt,name=timesheets_deleted,json=timesheetsDeleted,proto3" json:"timesheets_deleted,omitempty"`
+	TransitionEventsDeleted   int64                  `protobuf:"varint,5,opt,name=transition_events_deleted,json=transitionEventsDeleted,proto3" json:"transition_events_deleted,omitempty"`
+	TransitionMetadataDeleted int64                  `protobuf:"varint,6,opt,name=transition_metadata_deleted,json=transitionMetadataDeleted,proto3" json:"transition_metadata_deleted,omitempty"`
+	SemanticDocumentsDeleted  int64                  `protobuf:"varint,7,opt,name=semantic_documents_deleted,json=semanticDocumentsDeleted,proto3" json:"semantic_documents_deleted,omitempty"`
+	EmbeddingsDeleted         int64                  `protobuf:"varint,8,opt,name=embeddings_deleted,json=embeddingsDeleted,proto3" json:"embeddings_deleted,omitempty"`
+	ApplicationsDeleted       int64                  `protobuf:"varint,9,opt,name=applications_deleted,json=applicationsDeleted,proto3" json:"applications_deleted,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *PruneDatabaseRangeResponse) Reset() {
+	*x = PruneDatabaseRangeResponse{}
+	mi := &file_settings_v1_settings_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PruneDatabaseRangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PruneDatabaseRangeResponse) ProtoMessage() {}
+
+func (x *PruneDatabaseRangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_v1_settings_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PruneDatabaseRangeResponse.ProtoReflect.Descriptor instead.
+func (*PruneDatabaseRangeResponse) Descriptor() ([]byte, []int) {
+	return file_settings_v1_settings_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *PruneDatabaseRangeResponse) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetTimesheetEntriesDeleted() int64 {
+	if x != nil {
+		return x.TimesheetEntriesDeleted
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetUsageLinksDeleted() int64 {
+	if x != nil {
+		return x.UsageLinksDeleted
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetTimesheetsDeleted() int64 {
+	if x != nil {
+		return x.TimesheetsDeleted
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetTransitionEventsDeleted() int64 {
+	if x != nil {
+		return x.TransitionEventsDeleted
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetTransitionMetadataDeleted() int64 {
+	if x != nil {
+		return x.TransitionMetadataDeleted
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetSemanticDocumentsDeleted() int64 {
+	if x != nil {
+		return x.SemanticDocumentsDeleted
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetEmbeddingsDeleted() int64 {
+	if x != nil {
+		return x.EmbeddingsDeleted
+	}
+	return 0
+}
+
+func (x *PruneDatabaseRangeResponse) GetApplicationsDeleted() int64 {
+	if x != nil {
+		return x.ApplicationsDeleted
+	}
+	return 0
+}
+
+type VacuumDatabaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VacuumDatabaseRequest) Reset() {
+	*x = VacuumDatabaseRequest{}
+	mi := &file_settings_v1_settings_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VacuumDatabaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VacuumDatabaseRequest) ProtoMessage() {}
+
+func (x *VacuumDatabaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_v1_settings_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VacuumDatabaseRequest.ProtoReflect.Descriptor instead.
+func (*VacuumDatabaseRequest) Descriptor() ([]byte, []int) {
+	return file_settings_v1_settings_proto_rawDescGZIP(), []int{10}
+}
+
+type VacuumDatabaseResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SizeBeforeBytes int64                  `protobuf:"varint,1,opt,name=size_before_bytes,json=sizeBeforeBytes,proto3" json:"size_before_bytes,omitempty"`
+	SizeAfterBytes  int64                  `protobuf:"varint,2,opt,name=size_after_bytes,json=sizeAfterBytes,proto3" json:"size_after_bytes,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *VacuumDatabaseResponse) Reset() {
+	*x = VacuumDatabaseResponse{}
+	mi := &file_settings_v1_settings_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VacuumDatabaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VacuumDatabaseResponse) ProtoMessage() {}
+
+func (x *VacuumDatabaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_v1_settings_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VacuumDatabaseResponse.ProtoReflect.Descriptor instead.
+func (*VacuumDatabaseResponse) Descriptor() ([]byte, []int) {
+	return file_settings_v1_settings_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *VacuumDatabaseResponse) GetSizeBeforeBytes() int64 {
+	if x != nil {
+		return x.SizeBeforeBytes
+	}
+	return 0
+}
+
+func (x *VacuumDatabaseResponse) GetSizeAfterBytes() int64 {
+	if x != nil {
+		return x.SizeAfterBytes
+	}
+	return 0
+}
+
 var File_settings_v1_settings_proto protoreflect.FileDescriptor
 
 const file_settings_v1_settings_proto_rawDesc = "" +
 	"\n" +
-	"\x1asettings/v1/settings.proto\x12\vsettings.v1\"\x19\n" +
+	"\x1asettings/v1/settings.proto\x12\vsettings.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x19\n" +
 	"\x17ListModelOptionsRequest\"\xa2\x01\n" +
 	"\x18ListModelOptionsResponse\x12C\n" +
 	"\x10embedding_models\x18\x01 \x03(\v2\x18.settings.v1.ModelOptionR\x0fembeddingModels\x12A\n" +
@@ -496,18 +825,44 @@ const file_settings_v1_settings_proto_rawDesc = "" +
 	"\x12embedding_model_id\x18\x04 \x01(\x03R\x10embeddingModelId\x12*\n" +
 	"\x11semantic_model_id\x18\x05 \x01(\x03R\x0fsemanticModelId\x128\n" +
 	"\x18openrouter_secret_exists\x18\x06 \x01(\bR\x16openrouterSecretExists\x120\n" +
-	"\x14ollama_secret_exists\x18\a \x01(\bR\x12ollamaSecretExists*E\n" +
+	"\x14ollama_secret_exists\x18\a \x01(\bR\x12ollamaSecretExists\"%\n" +
+	"#GetDatabaseMaintenanceStatusRequest\":\n" +
+	"\x19DatabaseMaintenanceStatus\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x01 \x01(\x03R\tsizeBytes\"\x8d\x01\n" +
+	"\x19PruneDatabaseRangeRequest\x129\n" +
+	"\n" +
+	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
+	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xf2\x03\n" +
+	"\x1aPruneDatabaseRangeResponse\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x01 \x01(\x03R\tsizeBytes\x12:\n" +
+	"\x19timesheet_entries_deleted\x18\x02 \x01(\x03R\x17timesheetEntriesDeleted\x12.\n" +
+	"\x13usage_links_deleted\x18\x03 \x01(\x03R\x11usageLinksDeleted\x12-\n" +
+	"\x12timesheets_deleted\x18\x04 \x01(\x03R\x11timesheetsDeleted\x12:\n" +
+	"\x19transition_events_deleted\x18\x05 \x01(\x03R\x17transitionEventsDeleted\x12>\n" +
+	"\x1btransition_metadata_deleted\x18\x06 \x01(\x03R\x19transitionMetadataDeleted\x12<\n" +
+	"\x1asemantic_documents_deleted\x18\a \x01(\x03R\x18semanticDocumentsDeleted\x12-\n" +
+	"\x12embeddings_deleted\x18\b \x01(\x03R\x11embeddingsDeleted\x121\n" +
+	"\x14applications_deleted\x18\t \x01(\x03R\x13applicationsDeleted\"\x17\n" +
+	"\x15VacuumDatabaseRequest\"n\n" +
+	"\x16VacuumDatabaseResponse\x12*\n" +
+	"\x11size_before_bytes\x18\x01 \x01(\x03R\x0fsizeBeforeBytes\x12(\n" +
+	"\x10size_after_bytes\x18\x02 \x01(\x03R\x0esizeAfterBytes*E\n" +
 	"\n" +
 	"AiProvider\x12\x1b\n" +
 	"\x17AI_PROVIDER_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"OPENROUTER\x10\x01\x12\n" +
 	"\n" +
-	"\x06OLLAMA\x10\x022\x8e\x02\n" +
+	"\x06OLLAMA\x10\x022\xca\x04\n" +
 	"\x0fSettingsService\x12_\n" +
 	"\x10ListModelOptions\x12$.settings.v1.ListModelOptionsRequest\x1a%.settings.v1.ListModelOptionsResponse\x12K\n" +
 	"\rGetAiSettings\x12!.settings.v1.GetAiSettingsRequest\x1a\x17.settings.v1.AiSettings\x12M\n" +
-	"\x0eSaveAiSettings\x12\".settings.v1.SaveAiSettingsRequest\x1a\x17.settings.v1.AiSettingsB\xb4\x01\n" +
+	"\x0eSaveAiSettings\x12\".settings.v1.SaveAiSettingsRequest\x1a\x17.settings.v1.AiSettings\x12x\n" +
+	"\x1cGetDatabaseMaintenanceStatus\x120.settings.v1.GetDatabaseMaintenanceStatusRequest\x1a&.settings.v1.DatabaseMaintenanceStatus\x12e\n" +
+	"\x12PruneDatabaseRange\x12&.settings.v1.PruneDatabaseRangeRequest\x1a'.settings.v1.PruneDatabaseRangeResponse\x12Y\n" +
+	"\x0eVacuumDatabase\x12\".settings.v1.VacuumDatabaseRequest\x1a#.settings.v1.VacuumDatabaseResponseB\xb4\x01\n" +
 	"\x0fcom.settings.v1B\rSettingsProtoP\x01ZEgithub.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1;settingsv1\xa2\x02\x03SXX\xaa\x02\vSettings.V1\xca\x02\vSettings\\V1\xe2\x02\x17Settings\\V1\\GPBMetadata\xea\x02\fSettings::V1b\x06proto3"
 
 var (
@@ -523,32 +878,47 @@ func file_settings_v1_settings_proto_rawDescGZIP() []byte {
 }
 
 var file_settings_v1_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_settings_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_settings_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_settings_v1_settings_proto_goTypes = []any{
-	(AiProvider)(0),                  // 0: settings.v1.AiProvider
-	(*ListModelOptionsRequest)(nil),  // 1: settings.v1.ListModelOptionsRequest
-	(*ListModelOptionsResponse)(nil), // 2: settings.v1.ListModelOptionsResponse
-	(*ModelOption)(nil),              // 3: settings.v1.ModelOption
-	(*GetAiSettingsRequest)(nil),     // 4: settings.v1.GetAiSettingsRequest
-	(*SaveAiSettingsRequest)(nil),    // 5: settings.v1.SaveAiSettingsRequest
-	(*AiSettings)(nil),               // 6: settings.v1.AiSettings
+	(AiProvider)(0),                             // 0: settings.v1.AiProvider
+	(*ListModelOptionsRequest)(nil),             // 1: settings.v1.ListModelOptionsRequest
+	(*ListModelOptionsResponse)(nil),            // 2: settings.v1.ListModelOptionsResponse
+	(*ModelOption)(nil),                         // 3: settings.v1.ModelOption
+	(*GetAiSettingsRequest)(nil),                // 4: settings.v1.GetAiSettingsRequest
+	(*SaveAiSettingsRequest)(nil),               // 5: settings.v1.SaveAiSettingsRequest
+	(*AiSettings)(nil),                          // 6: settings.v1.AiSettings
+	(*GetDatabaseMaintenanceStatusRequest)(nil), // 7: settings.v1.GetDatabaseMaintenanceStatusRequest
+	(*DatabaseMaintenanceStatus)(nil),           // 8: settings.v1.DatabaseMaintenanceStatus
+	(*PruneDatabaseRangeRequest)(nil),           // 9: settings.v1.PruneDatabaseRangeRequest
+	(*PruneDatabaseRangeResponse)(nil),          // 10: settings.v1.PruneDatabaseRangeResponse
+	(*VacuumDatabaseRequest)(nil),               // 11: settings.v1.VacuumDatabaseRequest
+	(*VacuumDatabaseResponse)(nil),              // 12: settings.v1.VacuumDatabaseResponse
+	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
 }
 var file_settings_v1_settings_proto_depIdxs = []int32{
-	3, // 0: settings.v1.ListModelOptionsResponse.embedding_models:type_name -> settings.v1.ModelOption
-	3, // 1: settings.v1.ListModelOptionsResponse.semantic_models:type_name -> settings.v1.ModelOption
-	0, // 2: settings.v1.SaveAiSettingsRequest.provider:type_name -> settings.v1.AiProvider
-	0, // 3: settings.v1.AiSettings.provider:type_name -> settings.v1.AiProvider
-	1, // 4: settings.v1.SettingsService.ListModelOptions:input_type -> settings.v1.ListModelOptionsRequest
-	4, // 5: settings.v1.SettingsService.GetAiSettings:input_type -> settings.v1.GetAiSettingsRequest
-	5, // 6: settings.v1.SettingsService.SaveAiSettings:input_type -> settings.v1.SaveAiSettingsRequest
-	2, // 7: settings.v1.SettingsService.ListModelOptions:output_type -> settings.v1.ListModelOptionsResponse
-	6, // 8: settings.v1.SettingsService.GetAiSettings:output_type -> settings.v1.AiSettings
-	6, // 9: settings.v1.SettingsService.SaveAiSettings:output_type -> settings.v1.AiSettings
-	7, // [7:10] is the sub-list for method output_type
-	4, // [4:7] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	3,  // 0: settings.v1.ListModelOptionsResponse.embedding_models:type_name -> settings.v1.ModelOption
+	3,  // 1: settings.v1.ListModelOptionsResponse.semantic_models:type_name -> settings.v1.ModelOption
+	0,  // 2: settings.v1.SaveAiSettingsRequest.provider:type_name -> settings.v1.AiProvider
+	0,  // 3: settings.v1.AiSettings.provider:type_name -> settings.v1.AiProvider
+	13, // 4: settings.v1.PruneDatabaseRangeRequest.started_at:type_name -> google.protobuf.Timestamp
+	13, // 5: settings.v1.PruneDatabaseRangeRequest.ended_at:type_name -> google.protobuf.Timestamp
+	1,  // 6: settings.v1.SettingsService.ListModelOptions:input_type -> settings.v1.ListModelOptionsRequest
+	4,  // 7: settings.v1.SettingsService.GetAiSettings:input_type -> settings.v1.GetAiSettingsRequest
+	5,  // 8: settings.v1.SettingsService.SaveAiSettings:input_type -> settings.v1.SaveAiSettingsRequest
+	7,  // 9: settings.v1.SettingsService.GetDatabaseMaintenanceStatus:input_type -> settings.v1.GetDatabaseMaintenanceStatusRequest
+	9,  // 10: settings.v1.SettingsService.PruneDatabaseRange:input_type -> settings.v1.PruneDatabaseRangeRequest
+	11, // 11: settings.v1.SettingsService.VacuumDatabase:input_type -> settings.v1.VacuumDatabaseRequest
+	2,  // 12: settings.v1.SettingsService.ListModelOptions:output_type -> settings.v1.ListModelOptionsResponse
+	6,  // 13: settings.v1.SettingsService.GetAiSettings:output_type -> settings.v1.AiSettings
+	6,  // 14: settings.v1.SettingsService.SaveAiSettings:output_type -> settings.v1.AiSettings
+	8,  // 15: settings.v1.SettingsService.GetDatabaseMaintenanceStatus:output_type -> settings.v1.DatabaseMaintenanceStatus
+	10, // 16: settings.v1.SettingsService.PruneDatabaseRange:output_type -> settings.v1.PruneDatabaseRangeResponse
+	12, // 17: settings.v1.SettingsService.VacuumDatabase:output_type -> settings.v1.VacuumDatabaseResponse
+	12, // [12:18] is the sub-list for method output_type
+	6,  // [6:12] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_settings_v1_settings_proto_init() }
@@ -562,7 +932,7 @@ func file_settings_v1_settings_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_settings_v1_settings_proto_rawDesc), len(file_settings_v1_settings_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

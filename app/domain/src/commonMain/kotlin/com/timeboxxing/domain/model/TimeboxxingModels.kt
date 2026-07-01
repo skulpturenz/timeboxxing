@@ -203,6 +203,46 @@ data class AiSettings(
     val ollamaSecretExists: Boolean = false,
 )
 
+data class DatabaseMaintenanceStatus(
+    val sizeBytes: Long = 0,
+)
+
+data class DatabasePruneRange(
+    val startedAtEpochMillis: Long,
+    val endedAtEpochMillis: Long,
+)
+
+data class DatabasePruneCounts(
+    val timesheetEntriesDeleted: Long = 0,
+    val usageLinksDeleted: Long = 0,
+    val timesheetsDeleted: Long = 0,
+    val transitionEventsDeleted: Long = 0,
+    val transitionMetadataDeleted: Long = 0,
+    val semanticDocumentsDeleted: Long = 0,
+    val embeddingsDeleted: Long = 0,
+    val applicationsDeleted: Long = 0,
+) {
+    val totalDeletedRows: Long
+        get() = timesheetEntriesDeleted +
+            usageLinksDeleted +
+            timesheetsDeleted +
+            transitionEventsDeleted +
+            transitionMetadataDeleted +
+            semanticDocumentsDeleted +
+            embeddingsDeleted +
+            applicationsDeleted
+}
+
+data class DatabasePruneResult(
+    val status: DatabaseMaintenanceStatus,
+    val counts: DatabasePruneCounts,
+)
+
+data class DatabaseVacuumResult(
+    val sizeBeforeBytes: Long,
+    val sizeAfterBytes: Long,
+)
+
 data class TimeboxxingMockData(
     val usageDays: List<UsageDay>,
     val projects: List<Project>,

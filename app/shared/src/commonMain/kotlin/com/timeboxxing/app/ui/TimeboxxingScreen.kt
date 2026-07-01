@@ -57,6 +57,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
@@ -65,7 +67,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
@@ -87,7 +88,6 @@ import androidx.compose.material.icons.rounded.Minimize
 import androidx.compose.material.icons.rounded.QuestionAnswer
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
-import com.timeboxxing.data.time.currentCalendarDate
 import com.timeboxxing.domain.model.AmaAppUsageChart
 import com.timeboxxing.domain.model.AmaMessage
 import com.timeboxxing.domain.model.AmaMessageRole
@@ -96,11 +96,6 @@ import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaSource
 import com.timeboxxing.domain.model.CalendarDate
 import com.timeboxxing.domain.model.DiagnosticsLogLine
-import com.timeboxxing.domain.model.WeekdayShortLabels
-import com.timeboxxing.domain.model.calendarMonthGrid
-import com.timeboxxing.domain.model.monthYearLabel
-import com.timeboxxing.domain.model.plusMonths
-import com.timeboxxing.domain.model.startOfMonth
 import com.timeboxxing.app.presentation.TimeboxxingAction
 import com.timeboxxing.app.presentation.TimeboxxingScreenState
 import com.timeboxxing.app.presentation.TimeboxxingSection
@@ -298,6 +293,71 @@ fun TimeboxxingScreen(
                         modifier = Modifier.padding(24.dp),
                     )
                 }
+            }
+        }
+
+        if (state.databaseVacuuming) {
+            DatabaseVacuumOverlay(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(2f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DatabaseVacuumOverlay(
+    modifier: Modifier = Modifier,
+) {
+    var dotCount by remember { mutableStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(360)
+            dotCount = (dotCount + 1) % 4
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .background(TbTheme.colors.appBackground.copy(alpha = 0.76f))
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        TbCard(
+            modifier = Modifier
+                .widthIn(max = 360.dp)
+                .padding(24.dp),
+            color = TbTheme.colors.surface,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TbText(
+                    text = "Compacting database",
+                    style = TbTheme.typography.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TbText(
+                    text = "Reducing file size${".".repeat(dotCount)}",
+                    style = TbTheme.typography.body,
+                    color = TbTheme.colors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -623,192 +683,13 @@ private fun DatePickerMenu(
     state: TimeboxxingScreenState,
     onDateSelected: (CalendarDate) -> Unit,
 ) {
-    val selectedDate = state.selectedCalendarDate
-    val todayDate = currentCalendarDate()
-    var expanded by remember { mutableStateOf(false) }
-    var visibleMonth by remember(selectedDate) {
-        mutableStateOf((selectedDate ?: CalendarDate(1970, 1, 1)).startOfMonth())
-    }
-
-    TbMenu(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        anchor = {
-            TbButton(
-                modifier = Modifier.widthIn(min = 300.dp, max = 360.dp),
-                onClick = { expanded = true },
-                variant = TbButtonVariant.Secondary,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
-            ) {
-                TbText(
-                    text = state.dateLabel,
-                    style = TbTheme.typography.title2,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                TbIcon(
-                    imageVector = Icons.Rounded.ExpandMore,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .size(16.dp),
-                )
-            }
-        },
-        panelContent = {
-            CalendarPanel(
-                visibleMonth = visibleMonth,
-                selectedDate = selectedDate,
-                todayDate = todayDate,
-                onPreviousMonth = { visibleMonth = visibleMonth.plusMonths(-1) },
-                onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
-                onDateSelected = { date ->
-                    expanded = false
-                    onDateSelected(date)
-                },
-            )
-        },
+    CalendarDatePickerMenu(
+        selectedDate = state.selectedCalendarDate,
+        label = state.dateLabel,
+        onDateSelected = onDateSelected,
+        modifier = Modifier.widthIn(min = 300.dp, max = 360.dp),
+        textStyle = TbTheme.typography.title2,
     )
-}
-
-@Composable
-private fun CalendarPanel(
-    visibleMonth: CalendarDate,
-    selectedDate: CalendarDate?,
-    todayDate: CalendarDate,
-    onPreviousMonth: () -> Unit,
-    onNextMonth: () -> Unit,
-    onDateSelected: (CalendarDate) -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .width(286.dp)
-            .padding(6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TbIconButton(
-                icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                contentDescription = "Previous month",
-                onClick = onPreviousMonth,
-                variant = TbButtonVariant.Ghost,
-            )
-            TbText(
-                text = visibleMonth.monthYearLabel(),
-                style = TbTheme.typography.headline,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            TbIconButton(
-                icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = "Next month",
-                onClick = onNextMonth,
-                variant = TbButtonVariant.Ghost,
-            )
-        }
-
-        CalendarWeekdayRow()
-
-        calendarMonthGrid(visibleMonth).chunked(7).forEach { week ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                week.forEach { date ->
-                    CalendarDayButton(
-                        date = date,
-                        visibleMonth = visibleMonth,
-                        selected = date == selectedDate,
-                        today = date == todayDate,
-                        onClick = { onDateSelected(date) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CalendarWeekdayRow() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        WeekdayShortLabels.forEach { label ->
-            Box(
-                modifier = Modifier.size(34.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                TbText(
-                    text = label,
-                    style = TbTheme.typography.caption.copy(textAlign = TextAlign.Center),
-                    color = TbTheme.colors.tertiaryText,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CalendarDayButton(
-    date: CalendarDate,
-    visibleMonth: CalendarDate,
-    selected: Boolean,
-    today: Boolean,
-    onClick: () -> Unit,
-) {
-    val colors = TbTheme.colors
-    val inVisibleMonth = date.year == visibleMonth.year && date.month == visibleMonth.month
-    val interactionSource = remember { MutableInteractionSource() }
-    val hovered by interactionSource.collectIsHoveredAsState()
-    val pressed by interactionSource.collectIsPressedAsState()
-    val shape = RoundedCornerShape(TbTheme.radii.control)
-    val backgroundColor = when {
-        selected -> colors.accent
-        today -> colors.accentSubtle
-        pressed -> colors.controlFillHover
-        hovered -> colors.controlFill
-        else -> Color.Transparent
-    }
-    val border = if (today && !selected) BorderStroke(1.dp, colors.accent) else null
-    val textColor = when {
-        selected -> colors.accentText
-        today -> colors.text
-        inVisibleMonth -> colors.text
-        else -> colors.tertiaryText
-    }
-
-    TbSurface(
-        modifier = Modifier
-            .size(34.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-        color = backgroundColor,
-        shape = shape,
-        border = border,
-        contentColor = textColor,
-        contentAlignment = Alignment.Center,
-    ) {
-        TbText(
-            text = date.dayOfMonth.toString(),
-            style = TbTheme.typography.label.copy(
-                textAlign = TextAlign.Center,
-                fontWeight = if (today || selected) FontWeight.SemiBold else FontWeight.Medium,
-            ),
-            color = textColor,
-            maxLines = 1,
-        )
-    }
 }
 
 @Composable

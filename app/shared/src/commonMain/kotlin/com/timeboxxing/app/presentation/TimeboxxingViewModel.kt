@@ -2,11 +2,14 @@ package com.timeboxxing.app.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.timeboxxing.data.time.usageDayForCalendarDate
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.domain.model.DatabasePruneRange
 import com.timeboxxing.domain.model.TimesheetEntryDraft
 import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.UsageDay
+import com.timeboxxing.domain.model.plusDays
 import com.timeboxxing.domain.repository.AmaRepository
 import com.timeboxxing.domain.repository.ProjectRepository
 import com.timeboxxing.domain.repository.SettingsRepository
@@ -64,6 +67,7 @@ class TimeboxxingViewModel(
         val duplicateEntryToCreate = currentState.duplicateEntryToCreateFor(action)
         val entryToDelete = currentState.entryToDeleteFor(action)
         val timesheetToExport = currentState.timesheetToExportFor(action)
+        val databasePrune = currentState.databasePruneRangeFor(action)
 
         reduce(action)
 
@@ -95,6 +99,14 @@ class TimeboxxingViewModel(
         }
         if (timesheetToExport != null) {
             exportTimesheet(currentRepositories.timesheetRepository, timesheetToExport)
+        }
+        if (databasePrune != null) {
+            pruneDatabaseRange(
+                settingsRepository = currentRepositories.settingsRepository,
+                usageRepository = currentRepositories.usageHistoryRepository,
+                timesheetRepository = currentRepositories.timesheetRepository,
+                request = databasePrune,
+            )
         }
     }
 
@@ -194,6 +206,7 @@ class TimeboxxingViewModel(
             }.collectLatest { request ->
                 if (request.isReady) {
                     loadSettings(request.repository, request.showLoading)
+                    loadDatabaseMaintenance(request.repository, request.showLoading)
                 }
             }
         }
@@ -212,6 +225,7 @@ class TimeboxxingViewModel(
             }.collectLatest { request ->
                 if (request.isReady && request.selectedSection == TimeboxxingSection.Settings) {
                     loadSettings(request.repository, showLoading = true)
+                    loadDatabaseMaintenance(request.repository, showLoading = true)
                 }
             }
         }
@@ -264,6 +278,30 @@ class TimeboxxingViewModel(
                         error.message ?: "Usage sidecar is unavailable.",
                     ),
                 )
+            },
+        )
+    }
+
+    private suspend fun loadDatabaseMaintenance(
+        repository: SettingsRepository,
+        showLoading: Boolean,
+    ) {
+        if (showLoading) {
+            reduce(TimeboxxingAction.LoadDatabaseMaintenance)
+        }
+        val loaded = runCatching { repository.getDatabaseMaintenanceStatus() }
+        loaded.fold(
+            onSuccess = { status ->
+                reduce(TimeboxxingAction.DatabaseMaintenanceLoadSucceeded(status))
+            },
+            onFailure = { error ->
+                if (showLoading || _state.value.selectedSection == TimeboxxingSection.Settings) {
+                    reduce(
+                        TimeboxxingAction.DatabaseMaintenanceLoadFailed(
+                            error.message ?: "Database maintenance is unavailable.",
+                        ),
+                    )
+                }
             },
         )
     }
@@ -445,6 +483,44 @@ class TimeboxxingViewModel(
         }
     }
 
+    private fun pruneDatabaseRange(
+        settingsRepository: SettingsRepository,
+        usageRepository: UsageHistoryRepository,
+        timesheetRepository: TimesheetRepository,
+        request: DatabasePruneRequest,
+    ) {
+        viewModelScope.launch {
+            val pruned = runCatching { settingsRepository.pruneDatabaseRange(request.range) }
+            pruned.fold(
+                onSuccess = { result ->
+                    reduce(TimeboxxingAction.DatabasePruneSucceeded(result))
+                    var vacuumFailureMessage: String? = null
+                    if (result.counts.totalDeletedRows > 0L) {
+                        reduce(TimeboxxingAction.VacuumDatabase)
+                        val vacuumed = runCatching { settingsRepository.vacuumDatabase() }
+                        vacuumed.fold(
+                            onSuccess = { vacuumResult ->
+                                reduce(TimeboxxingAction.DatabaseVacuumSucceeded(vacuumResult, result.counts))
+                            },
+                            onFailure = { error ->
+                                vacuumFailureMessage = "Database rows were pruned, but compaction failed: ${error.message ?: "Please try again."}"
+                            },
+                        )
+                    }
+                    loadDatabaseMaintenance(settingsRepository, showLoading = false)
+                    vacuumFailureMessage?.let { message ->
+                        reduce(TimeboxxingAction.DatabaseVacuumFailed(message))
+                    }
+                    loadUsage(usageRepository, request.day)
+                    loadTimesheetEntries(timesheetRepository, request.day)
+                },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.DatabasePruneFailed(error.message ?: "Database range could not be pruned."))
+                },
+            )
+        }
+    }
+
     private fun reduce(action: TimeboxxingAction) {
         _state.update { reduceTimeboxxingState(it, action) }
     }
@@ -536,6 +612,11 @@ private data class TimesheetExportRequest(
     val format: TimesheetExportFormat,
 )
 
+private data class DatabasePruneRequest(
+    val range: DatabasePruneRange,
+    val day: UsageDay,
+)
+
 private fun TimeboxxingScreenState.draftEntryToCreateFor(action: TimeboxxingAction): TimesheetEntryCreateRequest? {
     if (action != TimeboxxingAction.AddDraftEntry || entrySaving || !hasValidDraftProject()) return null
     return TimesheetEntryCreateRequest(
@@ -581,6 +662,23 @@ private fun TimeboxxingScreenState.timesheetToExportFor(action: TimeboxxingActio
     if (action !is TimeboxxingAction.ExportTimesheet) return null
     if (entries.isEmpty() || timesheetExporting) return null
     return TimesheetExportRequest(selectedDay, action.format)
+}
+
+private fun TimeboxxingScreenState.databasePruneRangeFor(action: TimeboxxingAction): DatabasePruneRequest? {
+    if (action != TimeboxxingAction.PruneDatabaseRange || databasePruning || databaseVacuuming) return null
+    val startDate = databasePruneStartDate ?: return null
+    val endDate = databasePruneEndDate ?: return null
+    if (startDate > endDate) return null
+
+    val startedAt = usageDayForCalendarDate(startDate)
+    val endedAt = usageDayForCalendarDate(endDate.plusDays(1))
+    return DatabasePruneRequest(
+        range = DatabasePruneRange(
+            startedAtEpochMillis = startedAt.startedAtEpochMillis,
+            endedAtEpochMillis = endedAt.startedAtEpochMillis,
+        ),
+        day = selectedDay,
+    )
 }
 
 private fun TimeboxxingScreenState.hasValidDraftProject(): Boolean =

@@ -3,6 +3,10 @@ package com.timeboxxing.app
 import com.timeboxxing.domain.repository.SettingsRepository
 import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiSettings
+import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
+import com.timeboxxing.domain.model.DatabasePruneRange
+import com.timeboxxing.domain.model.DatabasePruneResult
+import com.timeboxxing.domain.model.DatabaseVacuumResult
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -74,6 +78,18 @@ private class FakeSettingsRepository(
         savedSettings = settings
         return settings.copy(openRouterApiKey = "", ollamaApiKey = "")
     }
+
+    override suspend fun getDatabaseMaintenanceStatus(): DatabaseMaintenanceStatus =
+        DatabaseMaintenanceStatus()
+
+    override suspend fun pruneDatabaseRange(range: DatabasePruneRange): DatabasePruneResult =
+        DatabasePruneResult(
+            status = DatabaseMaintenanceStatus(),
+            counts = com.timeboxxing.domain.model.DatabasePruneCounts(),
+        )
+
+    override suspend fun vacuumDatabase(): DatabaseVacuumResult =
+        DatabaseVacuumResult(sizeBeforeBytes = 0, sizeAfterBytes = 0)
 }
 
 private class FakeSecretStore(

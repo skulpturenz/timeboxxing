@@ -12,6 +12,10 @@ import com.timeboxxing.data.mock.mockTimeboxxingData
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.CalendarDate
+import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
+import com.timeboxxing.domain.model.DatabasePruneCounts
+import com.timeboxxing.domain.model.DatabasePruneResult
+import com.timeboxxing.domain.model.DatabaseVacuumResult
 import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetExportFormat
@@ -71,6 +75,78 @@ class TimeboxxingReducerTest {
         assertEquals(initial.aiSettings, state.aiSettings)
         assertEquals(null, state.settingsError)
         assertEquals(null, state.settingsSavedMessage)
+    }
+
+    @Test
+    fun databasePruneRangeRequiresValidDateRange() {
+        val initial = createInitialTimeboxxingState()
+        val withStart = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.UpdateDatabasePruneStartDate(CalendarDate(2025, 5, 2)),
+        )
+        val invalid = reduceTimeboxxingState(
+            withStart,
+            TimeboxxingAction.UpdateDatabasePruneEndDate(CalendarDate(2025, 5, 1)),
+        )
+
+        assertFalse(invalid.canPruneDatabaseRange)
+
+        val valid = reduceTimeboxxingState(
+            invalid,
+            TimeboxxingAction.UpdateDatabasePruneEndDate(CalendarDate(2025, 5, 2)),
+        )
+
+        assertTrue(valid.canPruneDatabaseRange)
+    }
+
+    @Test
+    fun databasePruneSuccessWithRowsWaitsForVacuumMessage() {
+        val pruning = createInitialTimeboxxingState().copy(
+            databasePruneStartDate = CalendarDate(2025, 5, 1),
+            databasePruneEndDate = CalendarDate(2025, 5, 1),
+        ).let { state ->
+            reduceTimeboxxingState(state, TimeboxxingAction.PruneDatabaseRange)
+        }
+
+        val state = reduceTimeboxxingState(
+            pruning,
+            TimeboxxingAction.DatabasePruneSucceeded(
+                DatabasePruneResult(
+                    status = DatabaseMaintenanceStatus(sizeBytes = 1024),
+                    counts = DatabasePruneCounts(
+                        timesheetEntriesDeleted = 1,
+                        usageLinksDeleted = 2,
+                    ),
+                ),
+            ),
+        )
+
+        assertFalse(state.databasePruning)
+        assertEquals(1024, state.databaseMaintenanceStatus.sizeBytes)
+        assertEquals(null, state.databaseMaintenanceMessage)
+    }
+
+    @Test
+    fun databaseVacuumStateUpdatesStatusAndMessage() {
+        val vacuuming = reduceTimeboxxingState(
+            createInitialTimeboxxingState(),
+            TimeboxxingAction.VacuumDatabase,
+        )
+
+        assertTrue(vacuuming.databaseVacuuming)
+        assertFalse(vacuuming.canPruneDatabaseRange)
+
+        val state = reduceTimeboxxingState(
+            vacuuming,
+            TimeboxxingAction.DatabaseVacuumSucceeded(
+                result = DatabaseVacuumResult(sizeBeforeBytes = 4096, sizeAfterBytes = 1024),
+                prunedCounts = DatabasePruneCounts(timesheetEntriesDeleted = 1, usageLinksDeleted = 2),
+            ),
+        )
+
+        assertFalse(state.databaseVacuuming)
+        assertEquals(1024, state.databaseMaintenanceStatus.sizeBytes)
+        assertEquals("Pruned 3 database rows and compacted the database.", state.databaseMaintenanceMessage)
     }
 
     @Test
@@ -991,6 +1067,76 @@ class TimeboxxingReducerTest {
 
         assertTrue(state.selectedUsageIds.isEmpty())
         assertTrue(state.selectedUsageEvents.isEmpty())
+    }
+
+    @Test
+    fun oneMinuteUsageCanBeSelected() {
+        val oneMinute = usageEvent(
+            id = "one-minute",
+            durationMinutes = 1,
+        )
+        val initial = createInitialTimeboxxingState().copy(usageEvents = listOf(oneMinute))
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.ToggleUsageSelection("one-minute"))
+
+        assertEquals(setOf("one-minute"), state.selectedUsageIds)
+        assertEquals(listOf(oneMinute), state.selectedUsageEvents)
+        assertEquals(1, state.selectedUsageMinutes)
+        assertEquals(1, state.draft.durationMinutes)
+    }
+
+    @Test
+    fun subMinuteUsageCannotBeSelected() {
+        val subMinute = usageEvent(
+            id = "sub-minute",
+            durationMinutes = 0,
+        )
+        val initial = createInitialTimeboxxingState().copy(usageEvents = listOf(subMinute))
+
+        val state = reduceTimeboxxingState(initial, TimeboxxingAction.ToggleUsageSelection("sub-minute"))
+
+        assertTrue(state.selectedUsageIds.isEmpty())
+        assertTrue(state.selectedUsageEvents.isEmpty())
+    }
+
+    @Test
+    fun selectedUsageIdsArePrunedWhenMergedUsageBecomesSubMinute() {
+        val usage = usageEvent(
+            id = "usage",
+            durationMinutes = 2,
+        )
+        val initial = createInitialTimeboxxingState().copy(usageEvents = listOf(usage))
+        val selected = reduceTimeboxxingState(initial, TimeboxxingAction.ToggleUsageSelection("usage"))
+        val subMinuteUpdate = usage.copy(durationMinutes = 0)
+
+        val state = reduceTimeboxxingState(
+            selected,
+            TimeboxxingAction.MergeUsageEvent(selected.selectedDay.startedAtEpochMillis, subMinuteUpdate),
+        )
+
+        assertTrue(state.selectedUsageIds.isEmpty())
+        assertTrue(state.selectedUsageEvents.isEmpty())
+        assertTrue(state.usageEvents.none { it.id == "usage" })
+    }
+
+    @Test
+    fun staleSubMinuteSelectionIsIgnoredBySelectedUsageEvents() {
+        val subMinute = usageEvent(
+            id = "sub-minute",
+            durationMinutes = 0,
+        )
+        val oneMinute = usageEvent(
+            id = "one-minute",
+            durationMinutes = 1,
+            startMinute = subMinute.startMinute + 1,
+        )
+        val state = createInitialTimeboxxingState().copy(
+            usageEvents = listOf(subMinute, oneMinute),
+            selectedUsageIds = setOf("sub-minute", "one-minute"),
+        )
+
+        assertEquals(listOf("one-minute"), state.selectedUsageEvents.map { it.id })
+        assertEquals(1, state.selectedUsageMinutes)
     }
 
     @Test

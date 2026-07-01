@@ -19,9 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SettingsService_ListModelOptions_FullMethodName = "/settings.v1.SettingsService/ListModelOptions"
-	SettingsService_GetAiSettings_FullMethodName    = "/settings.v1.SettingsService/GetAiSettings"
-	SettingsService_SaveAiSettings_FullMethodName   = "/settings.v1.SettingsService/SaveAiSettings"
+	SettingsService_ListModelOptions_FullMethodName             = "/settings.v1.SettingsService/ListModelOptions"
+	SettingsService_GetAiSettings_FullMethodName                = "/settings.v1.SettingsService/GetAiSettings"
+	SettingsService_SaveAiSettings_FullMethodName               = "/settings.v1.SettingsService/SaveAiSettings"
+	SettingsService_GetDatabaseMaintenanceStatus_FullMethodName = "/settings.v1.SettingsService/GetDatabaseMaintenanceStatus"
+	SettingsService_PruneDatabaseRange_FullMethodName           = "/settings.v1.SettingsService/PruneDatabaseRange"
+	SettingsService_VacuumDatabase_FullMethodName               = "/settings.v1.SettingsService/VacuumDatabase"
 )
 
 // SettingsServiceClient is the client API for SettingsService service.
@@ -31,6 +34,9 @@ type SettingsServiceClient interface {
 	ListModelOptions(ctx context.Context, in *ListModelOptionsRequest, opts ...grpc.CallOption) (*ListModelOptionsResponse, error)
 	GetAiSettings(ctx context.Context, in *GetAiSettingsRequest, opts ...grpc.CallOption) (*AiSettings, error)
 	SaveAiSettings(ctx context.Context, in *SaveAiSettingsRequest, opts ...grpc.CallOption) (*AiSettings, error)
+	GetDatabaseMaintenanceStatus(ctx context.Context, in *GetDatabaseMaintenanceStatusRequest, opts ...grpc.CallOption) (*DatabaseMaintenanceStatus, error)
+	PruneDatabaseRange(ctx context.Context, in *PruneDatabaseRangeRequest, opts ...grpc.CallOption) (*PruneDatabaseRangeResponse, error)
+	VacuumDatabase(ctx context.Context, in *VacuumDatabaseRequest, opts ...grpc.CallOption) (*VacuumDatabaseResponse, error)
 }
 
 type settingsServiceClient struct {
@@ -71,6 +77,36 @@ func (c *settingsServiceClient) SaveAiSettings(ctx context.Context, in *SaveAiSe
 	return out, nil
 }
 
+func (c *settingsServiceClient) GetDatabaseMaintenanceStatus(ctx context.Context, in *GetDatabaseMaintenanceStatusRequest, opts ...grpc.CallOption) (*DatabaseMaintenanceStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DatabaseMaintenanceStatus)
+	err := c.cc.Invoke(ctx, SettingsService_GetDatabaseMaintenanceStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *settingsServiceClient) PruneDatabaseRange(ctx context.Context, in *PruneDatabaseRangeRequest, opts ...grpc.CallOption) (*PruneDatabaseRangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PruneDatabaseRangeResponse)
+	err := c.cc.Invoke(ctx, SettingsService_PruneDatabaseRange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *settingsServiceClient) VacuumDatabase(ctx context.Context, in *VacuumDatabaseRequest, opts ...grpc.CallOption) (*VacuumDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacuumDatabaseResponse)
+	err := c.cc.Invoke(ctx, SettingsService_VacuumDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SettingsServiceServer is the server API for SettingsService service.
 // All implementations must embed UnimplementedSettingsServiceServer
 // for forward compatibility.
@@ -78,6 +114,9 @@ type SettingsServiceServer interface {
 	ListModelOptions(context.Context, *ListModelOptionsRequest) (*ListModelOptionsResponse, error)
 	GetAiSettings(context.Context, *GetAiSettingsRequest) (*AiSettings, error)
 	SaveAiSettings(context.Context, *SaveAiSettingsRequest) (*AiSettings, error)
+	GetDatabaseMaintenanceStatus(context.Context, *GetDatabaseMaintenanceStatusRequest) (*DatabaseMaintenanceStatus, error)
+	PruneDatabaseRange(context.Context, *PruneDatabaseRangeRequest) (*PruneDatabaseRangeResponse, error)
+	VacuumDatabase(context.Context, *VacuumDatabaseRequest) (*VacuumDatabaseResponse, error)
 	mustEmbedUnimplementedSettingsServiceServer()
 }
 
@@ -96,6 +135,15 @@ func (UnimplementedSettingsServiceServer) GetAiSettings(context.Context, *GetAiS
 }
 func (UnimplementedSettingsServiceServer) SaveAiSettings(context.Context, *SaveAiSettingsRequest) (*AiSettings, error) {
 	return nil, status.Error(codes.Unimplemented, "method SaveAiSettings not implemented")
+}
+func (UnimplementedSettingsServiceServer) GetDatabaseMaintenanceStatus(context.Context, *GetDatabaseMaintenanceStatusRequest) (*DatabaseMaintenanceStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDatabaseMaintenanceStatus not implemented")
+}
+func (UnimplementedSettingsServiceServer) PruneDatabaseRange(context.Context, *PruneDatabaseRangeRequest) (*PruneDatabaseRangeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PruneDatabaseRange not implemented")
+}
+func (UnimplementedSettingsServiceServer) VacuumDatabase(context.Context, *VacuumDatabaseRequest) (*VacuumDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VacuumDatabase not implemented")
 }
 func (UnimplementedSettingsServiceServer) mustEmbedUnimplementedSettingsServiceServer() {}
 func (UnimplementedSettingsServiceServer) testEmbeddedByValue()                         {}
@@ -172,6 +220,60 @@ func _SettingsService_SaveAiSettings_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SettingsService_GetDatabaseMaintenanceStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDatabaseMaintenanceStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).GetDatabaseMaintenanceStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_GetDatabaseMaintenanceStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).GetDatabaseMaintenanceStatus(ctx, req.(*GetDatabaseMaintenanceStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SettingsService_PruneDatabaseRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PruneDatabaseRangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).PruneDatabaseRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_PruneDatabaseRange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).PruneDatabaseRange(ctx, req.(*PruneDatabaseRangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SettingsService_VacuumDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VacuumDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).VacuumDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_VacuumDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).VacuumDatabase(ctx, req.(*VacuumDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SettingsService_ServiceDesc is the grpc.ServiceDesc for SettingsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +292,18 @@ var SettingsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SaveAiSettings",
 			Handler:    _SettingsService_SaveAiSettings_Handler,
+		},
+		{
+			MethodName: "GetDatabaseMaintenanceStatus",
+			Handler:    _SettingsService_GetDatabaseMaintenanceStatus_Handler,
+		},
+		{
+			MethodName: "PruneDatabaseRange",
+			Handler:    _SettingsService_PruneDatabaseRange_Handler,
+		},
+		{
+			MethodName: "VacuumDatabase",
+			Handler:    _SettingsService_VacuumDatabase_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

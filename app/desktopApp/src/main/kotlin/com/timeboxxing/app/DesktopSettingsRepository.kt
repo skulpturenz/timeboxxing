@@ -3,6 +3,10 @@ package com.timeboxxing.app
 import com.timeboxxing.domain.repository.SettingsRepository
 import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiSettings
+import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
+import com.timeboxxing.domain.model.DatabasePruneRange
+import com.timeboxxing.domain.model.DatabasePruneResult
+import com.timeboxxing.domain.model.DatabaseVacuumResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -45,6 +49,15 @@ internal class DesktopSettingsRepository(
             ollamaSecretExists = settings.ollamaApiKey.isNotBlank(),
         )
     }
+
+    override suspend fun getDatabaseMaintenanceStatus(): DatabaseMaintenanceStatus =
+        delegate.getDatabaseMaintenanceStatus()
+
+    override suspend fun pruneDatabaseRange(range: DatabasePruneRange): DatabasePruneResult =
+        delegate.pruneDatabaseRange(range)
+
+    override suspend fun vacuumDatabase(): DatabaseVacuumResult =
+        delegate.vacuumDatabase()
 
     private suspend fun SecretStore.saveOrDelete(key: SecretKey, value: String) {
         if (value.isBlank()) {

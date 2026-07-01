@@ -60,6 +60,7 @@ import com.timeboxxing.domain.model.UsageSourceType
 import com.timeboxxing.domain.model.formatClockTime
 import com.timeboxxing.domain.model.formatDuration
 import com.timeboxxing.app.presentation.TimeboxxingScreenState
+import com.timeboxxing.app.presentation.hasScheduleVisibleDuration
 import com.composeunstyled.AnchorAlignment
 import com.composeunstyled.AnchorSide
 import kotlinx.coroutines.launch
@@ -151,7 +152,6 @@ fun SchedulePane(
     headerAction: @Composable (() -> Unit)? = null,
 ) {
     val assignedUsageIds = state.entries.flatMap { it.sourceUsageIds }.toSet()
-    val selectedCount = state.selectedUsageIds.size
     val nowMinute = currentMinuteForSelectedDay(state)
     val focusedEntry = remember(state.scheduleFocusEntryId, state.entries) {
         state.scheduleFocusEntryId?.let { entryId ->
@@ -160,6 +160,13 @@ fun SchedulePane(
     }
     val visibleUsageEvents = remember(state.usageEvents) {
         scheduleTimelineUsageEvents(state.usageEvents)
+    }
+    val scheduleUsageMetrics = remember(visibleUsageEvents, assignedUsageIds, state.selectedUsageIds) {
+        scheduleTimelineUsageMetrics(
+            visibleEvents = visibleUsageEvents,
+            assignedUsageIds = assignedUsageIds,
+            selectedUsageIds = state.selectedUsageIds,
+        )
     }
     val timelineGrid = remember(visibleUsageEvents, state.zoomMinutes) {
         buildTimelineGrid(
@@ -258,19 +265,19 @@ fun SchedulePane(
             DayStatusStrip(
                 modifier = Modifier.padding(top = 16.dp),
                 zoomMinutes = state.zoomMinutes,
-                capturedMinutes = state.capturedMinutes,
-                unassignedMinutes = state.unassignedUsageMinutes,
-                selectedMinutes = state.selectedUsageMinutes,
-                selectedCount = selectedCount,
+                capturedMinutes = scheduleUsageMetrics.capturedMinutes,
+                unassignedMinutes = scheduleUsageMetrics.unassignedMinutes,
+                selectedMinutes = scheduleUsageMetrics.selectedMinutes,
+                selectedCount = scheduleUsageMetrics.selectedCount,
                 entryCount = state.entries.size,
                 loading = state.usageLoading,
             )
 
-            if (selectedCount > 0) {
+            if (scheduleUsageMetrics.selectedCount > 0) {
                 SelectionActionBar(
                     modifier = Modifier.padding(top = 12.dp),
-                    selectedCount = selectedCount,
-                    selectedMinutes = state.selectedUsageMinutes,
+                    selectedCount = scheduleUsageMetrics.selectedCount,
+                    selectedMinutes = scheduleUsageMetrics.selectedMinutes,
                     canCreateEntry = !state.entrySaving &&
                         (state.draft.projectId.isBlank() || state.projects.any { it.id == state.draft.projectId }),
                     onClearSelection = onClearSelection,
@@ -328,7 +335,7 @@ fun SchedulePane(
                     nowMinute = nowMinute,
                     viewportTopDp = viewportTopDp,
                     viewportHeightDp = viewportHeightDp,
-                    selectedUsageIds = state.selectedUsageIds,
+                    selectedUsageIds = scheduleUsageMetrics.selectedUsageIds,
                     assignedUsageIds = assignedUsageIds,
                     usageIconLoader = usageIconLoader,
                     listState = listState,
@@ -382,7 +389,35 @@ fun SchedulePane(
 }
 
 internal fun scheduleTimelineUsageEvents(events: List<UsageEvent>): List<UsageEvent> =
-    events.filterNot { it.isActive }
+    events.filter { event -> !event.isActive && event.hasScheduleVisibleDuration() }
+
+internal data class ScheduleTimelineUsageMetrics(
+    val capturedMinutes: Int,
+    val unassignedMinutes: Int,
+    val selectedMinutes: Int,
+    val selectedUsageIds: Set<String>,
+) {
+    val selectedCount: Int
+        get() = selectedUsageIds.size
+}
+
+internal fun scheduleTimelineUsageMetrics(
+    visibleEvents: List<UsageEvent>,
+    assignedUsageIds: Set<String>,
+    selectedUsageIds: Set<String>,
+): ScheduleTimelineUsageMetrics {
+    val capturedEvents = visibleEvents.filterNot { it.sourceType == UsageSourceType.Idle }
+    val selectedEvents = capturedEvents.filter { it.id in selectedUsageIds }
+
+    return ScheduleTimelineUsageMetrics(
+        capturedMinutes = capturedEvents.sumOf { it.durationMinutes },
+        unassignedMinutes = capturedEvents
+            .filterNot { it.id in assignedUsageIds }
+            .sumOf { it.durationMinutes },
+        selectedMinutes = selectedEvents.sumOf { it.durationMinutes },
+        selectedUsageIds = selectedEvents.map { it.id }.toSet(),
+    )
+}
 
 @Composable
 private fun DayStatusStrip(

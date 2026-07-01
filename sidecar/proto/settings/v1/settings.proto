@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package settings.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1;settingsv1";
 option java_multiple_files = true;
 option java_package = "com.timeboxxing.sidecar.settings.v1";
@@ -10,6 +12,9 @@ service SettingsService {
   rpc ListModelOptions(ListModelOptionsRequest) returns (ListModelOptionsResponse);
   rpc GetAiSettings(GetAiSettingsRequest) returns (AiSettings);
   rpc SaveAiSettings(SaveAiSettingsRequest) returns (AiSettings);
+  rpc GetDatabaseMaintenanceStatus(GetDatabaseMaintenanceStatusRequest) returns (DatabaseMaintenanceStatus);
+  rpc PruneDatabaseRange(PruneDatabaseRangeRequest) returns (PruneDatabaseRangeResponse);
+  rpc VacuumDatabase(VacuumDatabaseRequest) returns (VacuumDatabaseResponse);
 }
 
 message ListModelOptionsRequest {}
@@ -49,6 +54,36 @@ message AiSettings {
   int64 semantic_model_id = 5;
   bool openrouter_secret_exists = 6;
   bool ollama_secret_exists = 7;
+}
+
+message GetDatabaseMaintenanceStatusRequest {}
+
+message DatabaseMaintenanceStatus {
+  int64 size_bytes = 1;
+}
+
+message PruneDatabaseRangeRequest {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
+}
+
+message PruneDatabaseRangeResponse {
+  int64 size_bytes = 1;
+  int64 timesheet_entries_deleted = 2;
+  int64 usage_links_deleted = 3;
+  int64 timesheets_deleted = 4;
+  int64 transition_events_deleted = 5;
+  int64 transition_metadata_deleted = 6;
+  int64 semantic_documents_deleted = 7;
+  int64 embeddings_deleted = 8;
+  int64 applications_deleted = 9;
+}
+
+message VacuumDatabaseRequest {}
+
+message VacuumDatabaseResponse {
+  int64 size_before_bytes = 1;
+  int64 size_after_bytes = 2;
 }
 
 enum AiProvider {

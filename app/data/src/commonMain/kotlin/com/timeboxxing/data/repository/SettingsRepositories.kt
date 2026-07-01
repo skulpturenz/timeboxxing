@@ -4,6 +4,11 @@ import com.timeboxxing.domain.model.AiModelOption
 import com.timeboxxing.domain.model.AiModelOptions
 import com.timeboxxing.domain.model.AiProvider
 import com.timeboxxing.domain.model.AiSettings
+import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
+import com.timeboxxing.domain.model.DatabasePruneCounts
+import com.timeboxxing.domain.model.DatabasePruneRange
+import com.timeboxxing.domain.model.DatabasePruneResult
+import com.timeboxxing.domain.model.DatabaseVacuumResult
 import com.timeboxxing.domain.repository.SettingsRepository
 
 class StaticSettingsRepository : SettingsRepository {
@@ -26,6 +31,21 @@ class StaticSettingsRepository : SettingsRepository {
         AiSettings(provider = AiProvider.OpenRouter, openRouterSecretExists = true)
 
     override suspend fun saveAiSettings(settings: AiSettings): AiSettings = settings
+
+    override suspend fun getDatabaseMaintenanceStatus(): DatabaseMaintenanceStatus =
+        DatabaseMaintenanceStatus(sizeBytes = 18_432_000)
+
+    override suspend fun pruneDatabaseRange(range: DatabasePruneRange): DatabasePruneResult =
+        DatabasePruneResult(
+            status = DatabaseMaintenanceStatus(sizeBytes = 18_432_000),
+            counts = DatabasePruneCounts(),
+        )
+
+    override suspend fun vacuumDatabase(): DatabaseVacuumResult =
+        DatabaseVacuumResult(
+            sizeBeforeBytes = 18_432_000,
+            sizeAfterBytes = 12_288_000,
+        )
 }
 
 class UnavailableSettingsRepository(
@@ -40,6 +60,18 @@ class UnavailableSettingsRepository(
     }
 
     override suspend fun saveAiSettings(settings: AiSettings): AiSettings {
+        throw IllegalStateException(message)
+    }
+
+    override suspend fun getDatabaseMaintenanceStatus(): DatabaseMaintenanceStatus {
+        throw IllegalStateException(message)
+    }
+
+    override suspend fun pruneDatabaseRange(range: DatabasePruneRange): DatabasePruneResult {
+        throw IllegalStateException(message)
+    }
+
+    override suspend fun vacuumDatabase(): DatabaseVacuumResult {
         throw IllegalStateException(message)
     }
 }

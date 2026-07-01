@@ -12,6 +12,10 @@ import com.timeboxxing.domain.model.AiProvider
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.CalendarDate
+import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
+import com.timeboxxing.domain.model.DatabasePruneCounts
+import com.timeboxxing.domain.model.DatabasePruneResult
+import com.timeboxxing.domain.model.DatabaseVacuumResult
 import com.timeboxxing.domain.model.EntryDraft
 import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
@@ -28,6 +32,7 @@ private const val NoProjectColorArgb: Long = 0xFF6E7F80
 private const val InvalidDraftProjectNotice = "Choose an existing project or No project."
 private const val AddEntryBeforeExportNotice = "Add an entry before exporting."
 private const val UsageDayMinutes = 24 * 60
+internal const val MinimumScheduleUsageDurationMinutes = 1
 private const val SidecarUsageIdPrefix = "sidecar-"
 
 data class TimeboxxingScreenState(
@@ -61,6 +66,14 @@ data class TimeboxxingScreenState(
     val settingsSaving: Boolean = false,
     val settingsError: String? = null,
     val settingsSavedMessage: String? = null,
+    val databaseMaintenanceStatus: DatabaseMaintenanceStatus = DatabaseMaintenanceStatus(),
+    val databaseMaintenanceLoading: Boolean = false,
+    val databasePruning: Boolean = false,
+    val databaseVacuuming: Boolean = false,
+    val databasePruneStartDate: CalendarDate? = null,
+    val databasePruneEndDate: CalendarDate? = null,
+    val databaseMaintenanceError: String? = null,
+    val databaseMaintenanceMessage: String? = null,
     val appearanceMode: AppearanceMode = AppearanceMode.System,
     val diagnosticsEnabled: Boolean = false,
 ) {
@@ -100,6 +113,13 @@ data class TimeboxxingScreenState(
 
     val isAmaConfigured: Boolean
         get() = aiSettings.hasConfiguredAiSecret()
+
+    val canPruneDatabaseRange: Boolean
+        get() {
+            val startedAt = databasePruneStartDate ?: return false
+            val endedAt = databasePruneEndDate ?: return false
+            return !databasePruning && !databaseVacuuming && startedAt <= endedAt
+        }
 
     val visibleNavigationSections: List<TimeboxxingSection>
         get() = buildList {
@@ -231,6 +251,20 @@ sealed interface TimeboxxingAction {
     data object SaveSettings : TimeboxxingAction
     data class SettingsSaveSucceeded(val settings: AiSettings) : TimeboxxingAction
     data class SettingsSaveFailed(val message: String) : TimeboxxingAction
+    data object LoadDatabaseMaintenance : TimeboxxingAction
+    data class DatabaseMaintenanceLoadSucceeded(val status: DatabaseMaintenanceStatus) : TimeboxxingAction
+    data class DatabaseMaintenanceLoadFailed(val message: String) : TimeboxxingAction
+    data class UpdateDatabasePruneStartDate(val date: CalendarDate) : TimeboxxingAction
+    data class UpdateDatabasePruneEndDate(val date: CalendarDate) : TimeboxxingAction
+    data object PruneDatabaseRange : TimeboxxingAction
+    data class DatabasePruneSucceeded(val result: DatabasePruneResult) : TimeboxxingAction
+    data class DatabasePruneFailed(val message: String) : TimeboxxingAction
+    data object VacuumDatabase : TimeboxxingAction
+    data class DatabaseVacuumSucceeded(
+        val result: DatabaseVacuumResult,
+        val prunedCounts: DatabasePruneCounts,
+    ) : TimeboxxingAction
+    data class DatabaseVacuumFailed(val message: String) : TimeboxxingAction
 }
 
 fun createInitialTimeboxxingState(
@@ -299,6 +333,8 @@ fun reduceTimeboxxingState(
                 notice = if (selectedSection == TimeboxxingSection.Overview) state.notice else null,
                 settingsError = if (selectedSection == TimeboxxingSection.Settings) state.settingsError else null,
                 settingsSavedMessage = if (selectedSection == TimeboxxingSection.Settings) state.settingsSavedMessage else null,
+                databaseMaintenanceError = if (selectedSection == TimeboxxingSection.Settings) state.databaseMaintenanceError else null,
+                databaseMaintenanceMessage = if (selectedSection == TimeboxxingSection.Settings) state.databaseMaintenanceMessage else null,
             )
         }
 
@@ -691,6 +727,80 @@ fun reduceTimeboxxingState(
             settingsSaving = false,
             settingsError = action.message,
         )
+
+        TimeboxxingAction.LoadDatabaseMaintenance -> state.copy(
+            databaseMaintenanceLoading = true,
+            databaseMaintenanceError = null,
+        )
+
+        is TimeboxxingAction.DatabaseMaintenanceLoadSucceeded -> state.copy(
+            databaseMaintenanceStatus = action.status,
+            databaseMaintenanceLoading = false,
+            databaseMaintenanceError = null,
+        )
+
+        is TimeboxxingAction.DatabaseMaintenanceLoadFailed -> state.copy(
+            databaseMaintenanceLoading = false,
+            databaseMaintenanceError = action.message,
+        )
+
+        is TimeboxxingAction.UpdateDatabasePruneStartDate -> state.copy(
+            databasePruneStartDate = action.date,
+            databaseMaintenanceError = null,
+            databaseMaintenanceMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateDatabasePruneEndDate -> state.copy(
+            databasePruneEndDate = action.date,
+            databaseMaintenanceError = null,
+            databaseMaintenanceMessage = null,
+        )
+
+        TimeboxxingAction.PruneDatabaseRange -> {
+            if (!state.canPruneDatabaseRange) {
+                state
+            } else {
+                state.copy(
+                    databasePruning = true,
+                    databaseMaintenanceError = null,
+                    databaseMaintenanceMessage = null,
+                )
+            }
+        }
+
+        is TimeboxxingAction.DatabasePruneSucceeded -> state.copy(
+            databaseMaintenanceStatus = action.result.status,
+            databasePruning = false,
+            databaseMaintenanceError = null,
+            databaseMaintenanceMessage = if (action.result.counts.totalDeletedRows == 0L) {
+                databasePruneMessage(action.result.counts)
+            } else {
+                null
+            },
+        )
+
+        is TimeboxxingAction.DatabasePruneFailed -> state.copy(
+            databasePruning = false,
+            databaseMaintenanceError = action.message,
+        )
+
+        TimeboxxingAction.VacuumDatabase -> state.copy(
+            databaseVacuuming = true,
+            databaseMaintenanceError = null,
+            databaseMaintenanceMessage = null,
+        )
+
+        is TimeboxxingAction.DatabaseVacuumSucceeded -> state.copy(
+            databaseMaintenanceStatus = DatabaseMaintenanceStatus(sizeBytes = action.result.sizeAfterBytes),
+            databaseVacuuming = false,
+            databaseMaintenanceError = null,
+            databaseMaintenanceMessage = databaseVacuumMessage(action.prunedCounts),
+        )
+
+        is TimeboxxingAction.DatabaseVacuumFailed -> state.copy(
+            databaseVacuuming = false,
+            databaseMaintenanceError = action.message,
+        )
     }
 
 private fun AiSettings.hasConfiguredAiSecret(): Boolean =
@@ -723,6 +833,16 @@ private fun sanitizeAiSettings(settings: AiSettings, options: AiModelOptions): A
         semanticModelId = semanticModelID,
     )
 }
+
+private fun databasePruneMessage(counts: DatabasePruneCounts): String =
+    if (counts.totalDeletedRows == 0L) {
+        "No database rows matched that range."
+    } else {
+        "Pruned ${counts.totalDeletedRows} database rows. SQLite can reuse the freed space."
+    }
+
+private fun databaseVacuumMessage(counts: DatabasePruneCounts): String =
+    "Pruned ${counts.totalDeletedRows} database rows and compacted the database."
 
 private fun moveDate(state: TimeboxxingScreenState, delta: Int): TimeboxxingScreenState {
     val selectedDate = state.selectedCalendarDate
@@ -935,10 +1055,13 @@ private fun List<UsageEvent>.selectableUsageIds(): Set<String> =
     filter { it.isSelectableUsage() }.map { it.id }.toSet()
 
 private fun UsageEvent.isSelectableUsage(): Boolean =
-    !isActive && !isIdleUsage()
+    !isActive && !isIdleUsage() && hasScheduleVisibleDuration()
 
 private fun UsageEvent.isCapturedUsage(): Boolean =
     !isActive && !isIdleUsage()
+
+internal fun UsageEvent.hasScheduleVisibleDuration(): Boolean =
+    durationMinutes >= MinimumScheduleUsageDurationMinutes
 
 private fun UsageEvent.isIdleUsage(): Boolean =
     sourceType == UsageSourceType.Idle
