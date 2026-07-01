@@ -50,6 +50,7 @@ interface TimeboxxingRuntime {
     val initialNotice: String?
     val initialAppearanceMode: AppearanceMode
     val diagnosticsEnabled: Boolean
+    val dataDirectory: String
     val appearanceMode: StateFlow<AppearanceMode>
     val repositories: StateFlow<TimeboxxingRepositories>
     val sidecarStatus: StateFlow<TimeboxxingSidecarStatus>
@@ -65,6 +66,7 @@ class StaticTimeboxxingRuntime(
     private val data: com.timeboxxing.domain.model.TimeboxxingMockData = mockTimeboxxingData(),
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System,
     override val diagnosticsEnabled: Boolean = false,
+    override val dataDirectory: String = "",
 ) : TimeboxxingRuntime {
     override val usageDays: List<UsageDay> = data.usageDays
     override val initialNotice: String? = null

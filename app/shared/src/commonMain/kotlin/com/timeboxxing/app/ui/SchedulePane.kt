@@ -70,6 +70,8 @@ import kotlin.time.ExperimentalTime
 private val TimelineTimeLabelWidth = 72.dp
 private val TimelineRuleGap = 12.dp
 private val TimelineGridLineThickness = 1.dp
+private const val TimelineTimeLabelCenterOffsetDp = 10f
+private const val TimelineNowMarkerDotSizeDp = 7f
 private const val TimelineEndBoundaryHeightDp = 32f
 internal const val TimelineEventLayerZIndex = 0f
 internal const val TimelineNowMarkerLayerZIndex = 1f
@@ -548,7 +550,7 @@ private fun SelectionActionBar(
 @Composable
 private fun TimelineGridView(
     grid: TimelineGrid,
-    nowMinute: Int?,
+    nowMinute: Float?,
     viewportTopDp: Float,
     viewportHeightDp: Float,
     selectedUsageIds: Set<String>,
@@ -579,7 +581,7 @@ private fun TimelineGridView(
 @Composable
 private fun TimelineContentSurface(
     grid: TimelineGrid,
-    nowMinute: Int?,
+    nowMinute: Float?,
     viewportTopDp: Float,
     viewportHeightDp: Float,
     selectedUsageIds: Set<String>,
@@ -601,13 +603,14 @@ private fun TimelineContentSurface(
             .height((grid.contentHeightDp + TimelineEndBoundaryHeightDp).dp)
             .clipToBounds(),
     ) {
-        TimelineMinuteMarkersCanvas(grid = grid)
+        TimelineGridLinesCanvas(grid = grid)
 
         grid.rows.forEach { row ->
-            TimelineGridLineRow(
+            TimelineTimeLabelRow(
                 row = row,
                 emphasized = row.minute == grid.visibleStartMinute ||
                     row.minute == grid.visibleEndMinute ||
+                    row.minute % grid.zoomMinutes == 0 ||
                     row.minute % 60 == 0,
             )
         }
@@ -634,11 +637,11 @@ private fun TimelineContentSurface(
 }
 
 @Composable
-private fun TimelineMinuteMarkersCanvas(
+private fun TimelineGridLinesCanvas(
     grid: TimelineGrid,
 ) {
-    val lineColor = TbTheme.colors.separator
-    val markerOffsetsDp = remember(grid) { timelineMinuteMarkerOffsetsDp(grid) }
+    val colors = TbTheme.colors
+    val lineOffsets = remember(grid) { timelineGridLineOffsetsDp(grid) }
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -646,10 +649,14 @@ private fun TimelineMinuteMarkersCanvas(
     ) {
         val startX = TimelineTimeLabelWidth.toPx() + TimelineRuleGap.toPx()
         val lineHeight = TimelineGridLineThickness.toPx()
-        markerOffsetsDp.forEach { offsetDp ->
-            val y = offsetDp.dp.toPx()
+        lineOffsets.forEach { line ->
+            val y = line.offsetDp.dp.toPx()
             drawLine(
-                color = lineColor,
+                color = if (line.emphasized) {
+                    colors.separator
+                } else {
+                    colors.separator.copy(alpha = 0.54f)
+                },
                 start = Offset(startX, y),
                 end = Offset(size.width, y),
                 strokeWidth = lineHeight,
@@ -659,18 +666,18 @@ private fun TimelineMinuteMarkersCanvas(
 }
 
 @Composable
-private fun TimelineGridLineRow(
+private fun TimelineTimeLabelRow(
     row: TimelineRow,
     emphasized: Boolean,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .offset(y = row.offsetDp.dp),
+            .offset(y = (row.offsetDp - TimelineTimeLabelCenterOffsetDp).coerceAtLeast(0f).dp),
     ) {
-        TimelineGridLine(
-            minute = row.minute,
-            emphasized = emphasized,
+        TimeLabel(
+            label = formatClockTime(row.minute),
+            emphasized = emphasized || row.minute % 60 == 0,
         )
     }
 }
@@ -744,33 +751,12 @@ private fun TimelineEventPlacementRow(
 }
 
 @Composable
-private fun TimelineGridLine(
-    minute: Int,
-    emphasized: Boolean,
-) {
-    val isHour = minute % 60 == 0
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(TimelineRuleGap),
-    ) {
-        TimeLabel(formatClockTime(minute), emphasized = emphasized || isHour)
-        Box(
-            modifier = Modifier
-                .height(TimelineGridLineThickness)
-                .weight(1f)
-                .background(TbTheme.colors.separator),
-        )
-    }
-}
-
-@Composable
 private fun NowMarker(offsetDp: Float) {
     val accentColor = TbTheme.colors.accent
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .offset(y = offsetDp.dp)
+            .offset(y = (offsetDp - TimelineNowMarkerDotSizeDp / 2f).coerceAtLeast(0f).dp)
             .zIndex(TimelineNowMarkerLayerZIndex),
         horizontalArrangement = Arrangement.spacedBy(TimelineRuleGap),
         verticalAlignment = Alignment.CenterVertically,
@@ -787,7 +773,7 @@ private fun NowMarker(offsetDp: Float) {
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Canvas(modifier = Modifier.size(7.dp)) {
+            Canvas(modifier = Modifier.size(TimelineNowMarkerDotSizeDp.dp)) {
                 drawCircle(color = accentColor, radius = size.minDimension / 2f)
             }
             Box(
@@ -1226,12 +1212,12 @@ private suspend fun scrollTimelineToDp(
 }
 
 @OptIn(ExperimentalTime::class)
-private fun currentMinuteForSelectedDay(state: TimeboxxingScreenState): Int? {
+private fun currentMinuteForSelectedDay(state: TimeboxxingScreenState): Float? {
     val now = Clock.System.now().toEpochMilliseconds()
     if (now !in state.selectedDay.startedAtEpochMillis until state.selectedDay.endedAtEpochMillis) {
         return null
     }
-    return ((now - state.selectedDay.startedAtEpochMillis) / 60_000L).toInt().coerceIn(0, 24 * 60)
+    return ((now - state.selectedDay.startedAtEpochMillis).toFloat() / 60_000f).coerceIn(0f, 24f * 60f)
 }
 
 private fun colorForSource(sourceType: UsageSourceType): Color =

@@ -13,6 +13,7 @@ import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.Duration
 import kotlin.concurrent.thread
@@ -22,7 +23,13 @@ import kotlin.io.path.exists
 class SidecarProcessManager(
     private val env: Map<String, String> = System.getenv(),
     private val sessionLog: SidecarSessionLog = SidecarSessionLog(),
+    private val classLoader: ClassLoader = Thread.currentThread().contextClassLoader,
+    private val systemProperty: (String) -> String? = System::getProperty,
+    osName: String = System.getProperty("os.name"),
+    userHome: String = System.getProperty("user.home"),
 ) {
+    val dataDirectory: Path = resolveTimeboxxingDataDirectory(env, osName, userHome)
+
     suspend fun start(
         readinessDay: UsageDay,
         secrets: SidecarSecrets = SidecarSecrets(),
@@ -99,50 +106,17 @@ class SidecarProcessManager(
     }
 
     private fun resolveSidecarBinary(): File? {
-        env["TIMEBOXXING_SIDECAR_BINARY"]
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { return File(it) }
-
-        val resourceName = "sidecar/$sidecarExecutableName"
-        val classLoader = Thread.currentThread().contextClassLoader
-        val resource = classLoader.getResource(resourceName) ?: return null
-        if (resource.protocol == "file") {
-            return File(resource.toURI()).apply { setExecutable(true) }
-        }
-
-        val tempDir = Files.createTempDirectory("timeboxxing-sidecar-").toFile()
-        tempDir.deleteOnExit()
-        val tempFile = tempDir.resolve(sidecarExecutableName)
-        classLoader.getResourceAsStream(resourceName)?.use { input ->
-            Files.copy(input, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        } ?: return null
-        copyBundledSQLiteVectorExtension(classLoader, tempDir)
-        tempFile.setExecutable(true)
-        tempFile.deleteOnExit()
-        return tempFile
-    }
-
-    private fun copyBundledSQLiteVectorExtension(classLoader: ClassLoader, sidecarDir: File) {
-        val resourcePath = sqliteVectorResourcePath ?: return
-        val resourceName = "sidecar/sqlite-vector/$resourcePath"
-        val target = sidecarDir.toPath()
-            .resolve("sqlite-vector")
-            .resolve(resourcePath)
-        target.parent.createDirectories()
-        classLoader.getResourceAsStream(resourceName)?.use { input ->
-            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
-        } ?: return
-        target.toFile().deleteOnExit()
+        return resolveSidecarBinary(
+            env = env,
+            appResourcesDir = systemProperty(ComposeApplicationResourcesDirProperty),
+            classLoader = classLoader,
+        )
     }
 
     private fun sidecarDatabasePath() =
-        appDataDirectory().resolve("timeboxxing.db")
+        dataDirectory.also { if (!it.exists()) it.createDirectories() }
+            .resolve("timeboxxing.db")
 
-    private fun appDataDirectory() =
-        File(System.getProperty("user.home")).toPath()
-            .resolve(".timeboxxing")
-            .also { if (!it.exists()) it.createDirectories() }
 
     private fun findLoopbackPort(): Int =
         ServerSocket(0, 0, InetAddress.getByName("127.0.0.1")).use { it.localPort }
@@ -315,6 +289,112 @@ private val sqliteVectorResourcePath: String? = run {
 internal const val SQLiteVectorExtensionPathEnvVar = "SIDECAR_SQLITE_VECTOR_EXTENSION_PATH"
 internal const val OpenRouterApiKeyEnvVar = "SIDECAR_OPENROUTER_API_KEY"
 internal const val OllamaApiKeyEnvVar = "SIDECAR_OLLAMA_API_KEY"
+internal const val TimeboxxingSidecarBinaryEnvVar = "TIMEBOXXING_SIDECAR_BINARY"
+private const val ComposeApplicationResourcesDirProperty = "compose.application.resources.dir"
 
 private val openRouterKeyPattern = Regex("""sk-or-v1-[A-Za-z0-9_-]+""")
 private val semanticSecretEnvPattern = Regex("""((?:SIDECAR_OPENROUTER_API_KEY|SIDECAR_OLLAMA_API_KEY)\s*=\s*)\S+""")
+
+internal fun resolveTimeboxxingDataDirectory(
+    env: Map<String, String>,
+    osName: String,
+    userHome: String,
+): Path {
+    val home = userHome.ifBlank { "." }
+    val normalizedOs = osName.lowercase()
+    return when {
+        normalizedOs.contains("windows") -> {
+            val base = env["LOCALAPPDATA"]
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { File(it).toPath() }
+                ?: File(home).toPath().resolve("AppData").resolve("Local")
+            base.resolve("Timeboxxing")
+        }
+
+        normalizedOs.contains("mac") || normalizedOs.contains("darwin") -> {
+            File(home).toPath()
+                .resolve("Library")
+                .resolve("Application Support")
+                .resolve("Timeboxxing")
+        }
+
+        else -> {
+            val base = env["XDG_DATA_HOME"]
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { File(it).toPath() }
+                ?: File(home).toPath().resolve(".local").resolve("share")
+            base.resolve("timeboxxing")
+        }
+    }
+}
+
+internal fun resolveSidecarBinary(
+    env: Map<String, String>,
+    appResourcesDir: String?,
+    classLoader: ClassLoader,
+    executableName: String = sidecarExecutableName,
+): File? =
+    resolveInstalledSidecarBinary(appResourcesDir, executableName)
+        ?: resolveConfiguredSidecarBinary(env)
+        ?: resolveClasspathSidecarBinary(classLoader, executableName)
+
+internal fun resolveInstalledSidecarBinary(
+    appResourcesDir: String?,
+    executableName: String = sidecarExecutableName,
+): File? {
+    val resourcesDir = appResourcesDir
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: return null
+    val candidate = File(resourcesDir)
+        .resolve("sidecar")
+        .resolve(executableName)
+    return candidate
+        .takeIf { it.isFile }
+        ?.apply { setExecutable(true) }
+}
+
+private fun resolveConfiguredSidecarBinary(
+    env: Map<String, String>,
+): File? =
+    env[TimeboxxingSidecarBinaryEnvVar]
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { File(it) }
+
+private fun resolveClasspathSidecarBinary(
+    classLoader: ClassLoader,
+    executableName: String,
+): File? {
+    val resourceName = "sidecar/$executableName"
+    val resource = classLoader.getResource(resourceName) ?: return null
+    if (resource.protocol == "file") {
+        return File(resource.toURI()).apply { setExecutable(true) }
+    }
+
+    val tempDir = Files.createTempDirectory("timeboxxing-sidecar-").toFile()
+    tempDir.deleteOnExit()
+    val tempFile = tempDir.resolve(executableName)
+    classLoader.getResourceAsStream(resourceName)?.use { input ->
+        Files.copy(input, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    } ?: return null
+    copyBundledSQLiteVectorExtension(classLoader, tempDir)
+    tempFile.setExecutable(true)
+    tempFile.deleteOnExit()
+    return tempFile
+}
+
+private fun copyBundledSQLiteVectorExtension(classLoader: ClassLoader, sidecarDir: File) {
+    val resourcePath = sqliteVectorResourcePath ?: return
+    val resourceName = "sidecar/sqlite-vector/$resourcePath"
+    val target = sidecarDir.toPath()
+        .resolve("sqlite-vector")
+        .resolve(resourcePath)
+    target.parent.createDirectories()
+    classLoader.getResourceAsStream(resourceName)?.use { input ->
+        Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
+    } ?: return
+    target.toFile().deleteOnExit()
+}

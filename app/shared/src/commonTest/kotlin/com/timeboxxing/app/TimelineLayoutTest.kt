@@ -25,6 +25,7 @@ import com.timeboxxing.app.ui.buildTimelineGrid
 import com.timeboxxing.app.ui.timelineFirstEventScrollDp
 import com.timeboxxing.app.ui.timelineDpPerMinuteForZoom
 import com.timeboxxing.app.ui.timelineEntryScrollDp
+import com.timeboxxing.app.ui.timelineGridLineOffsetsDp
 import com.timeboxxing.app.ui.timelineMinuteOffsetDp
 import com.timeboxxing.app.ui.timelineMinuteMarkerOffsetsDp
 import com.timeboxxing.app.ui.timelineNowScrollDirection
@@ -37,6 +38,7 @@ import com.timeboxxing.app.ui.timelineSegmentsForRow
 import com.timeboxxing.app.ui.timelineSingleItemScrollTargetDp
 import com.timeboxxing.app.ui.timelineIntervalMarkerOffsets
 import com.timeboxxing.app.ui.SchedulePaneAutoScrollState
+import com.timeboxxing.app.ui.TimelineDayMinutes
 import com.timeboxxing.app.ui.TimelineScrollDirection
 import com.timeboxxing.app.ui.TbDarkColors
 import com.timeboxxing.app.ui.TbLightColors
@@ -215,6 +217,39 @@ class TimelineLayoutTest {
             assertFalse(offsets.any { offsetDp -> abs(offsetDp - row.offsetDp) < 0.001f })
         }
         assertWithin((grid.visibleEndMinute - 1) * grid.dpPerMinute, offsets.last())
+    }
+
+    @Test
+    fun timelineGridLineOffsetsCoverEveryMinuteEvenly() {
+        val grid = buildTimelineGrid(
+            events = emptyList(),
+            zoomMinutes = 15,
+        )
+        val lines = timelineGridLineOffsetsDp(grid)
+
+        assertEquals(TimelineDayMinutes + 1, lines.size)
+        assertEquals(grid.visibleStartMinute, lines.first().minute)
+        assertEquals(grid.visibleEndMinute, lines.last().minute)
+        lines.zipWithNext().forEach { (current, next) ->
+            assertEquals(current.minute + 1, next.minute)
+            assertWithin(grid.dpPerMinute, next.offsetDp - current.offsetDp)
+        }
+    }
+
+    @Test
+    fun timelineGridLineOffsetsEmphasizeBoundariesZoomAndHoursWithoutDuplicates() {
+        val grid = buildTimelineGrid(
+            events = emptyList(),
+            zoomMinutes = 15,
+        )
+        val lines = timelineGridLineOffsetsDp(grid)
+
+        assertEquals(lines.map { it.minute }.distinct(), lines.map { it.minute })
+        assertTrue(lines.first { it.minute == grid.visibleStartMinute }.emphasized)
+        assertTrue(lines.first { it.minute == 15 }.emphasized)
+        assertTrue(lines.first { it.minute == 60 }.emphasized)
+        assertTrue(lines.first { it.minute == grid.visibleEndMinute }.emphasized)
+        assertFalse(lines.first { it.minute == 1 }.emphasized)
     }
 
     @Test
@@ -618,6 +653,16 @@ class TimelineLayoutTest {
         )
 
         assertWithin(9 * 60 * grid.dpPerMinute, timelineMinuteOffsetDp(grid, 9 * 60))
+    }
+
+    @Test
+    fun timelineNowMarkerOffsetSupportsFractionalMinutePosition() {
+        val grid = buildTimelineGrid(
+            events = emptyList(),
+            zoomMinutes = 30,
+        )
+
+        assertWithin((9 * 60 + 0.5f) * grid.dpPerMinute, timelineMinuteOffsetDp(grid, 9 * 60 + 0.5f))
     }
 
     @Test

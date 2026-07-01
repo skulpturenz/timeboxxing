@@ -39,6 +39,7 @@ internal class DesktopTimeboxxingRuntime(
     override val usageDays = recentUsageDays()
     override val initialNotice: String = StartingSidecarMessage
     override val initialAppearanceMode: AppearanceMode = appearancePreferences.load()
+    override val dataDirectory: String = sidecarManager.dataDirectory.toString()
 
     private val _appearanceMode = MutableStateFlow(initialAppearanceMode)
     override val appearanceMode: StateFlow<AppearanceMode> = _appearanceMode

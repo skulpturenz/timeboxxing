@@ -1036,6 +1036,27 @@ class TimeboxxingReducerTest {
     }
 
     @Test
+    fun usageLoadPrefersActiveSnapshotOverMatchingCompletedUsage() {
+        val initial = createInitialTimeboxxingState()
+        val day = initial.selectedDay
+        val active = activeUsageEvent(durationMinutes = 4)
+        val matchingCompleted = active.copy(
+            id = "sidecar-41",
+            durationMinutes = 1,
+            isActive = false,
+        )
+
+        val state = reduceTimeboxxingState(
+            initial,
+            TimeboxxingAction.UsageLoadSucceeded(day.startedAtEpochMillis, listOf(matchingCompleted, active)),
+        )
+
+        assertEquals(listOf(active), state.usageEvents)
+        assertEquals(0, state.capturedMinutes)
+        assertEquals(0, state.unassignedUsageMinutes)
+    }
+
+    @Test
     fun completedUsageEventRemovesMatchingActiveSnapshot() {
         val initial = createInitialTimeboxxingState().copy(usageEvents = emptyList())
         val day = initial.selectedDay
@@ -1057,6 +1078,8 @@ class TimeboxxingReducerTest {
 
         assertEquals(listOf(completed), state.usageEvents)
         assertFalse(state.usageEvents.any { it.isActive })
+        assertEquals(5, state.capturedMinutes)
+        assertEquals(5, state.unassignedUsageMinutes)
     }
 
     @Test

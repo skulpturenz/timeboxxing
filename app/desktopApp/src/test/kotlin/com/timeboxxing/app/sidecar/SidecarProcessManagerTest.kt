@@ -1,5 +1,8 @@
 package com.timeboxxing.app.sidecar
 
+import java.io.File
+import java.net.URLClassLoader
+import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -9,6 +12,141 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SidecarProcessManagerTest {
+    @Test
+    fun macOsDataDirectoryUsesApplicationSupport() {
+        val dir = resolveTimeboxxingDataDirectory(
+            env = emptyMap(),
+            osName = "Mac OS X",
+            userHome = "/Users/tester",
+        )
+
+        assertEquals(
+            File("/Users/tester/Library/Application Support/Timeboxxing").toPath(),
+            dir,
+        )
+    }
+
+    @Test
+    fun windowsDataDirectoryUsesLocalAppDataWhenAvailable() {
+        val dir = resolveTimeboxxingDataDirectory(
+            env = mapOf("LOCALAPPDATA" to "/Users/tester/AppData/Local"),
+            osName = "Windows 11",
+            userHome = "/Users/tester",
+        )
+
+        assertEquals(
+            File("/Users/tester/AppData/Local/Timeboxxing").toPath(),
+            dir,
+        )
+    }
+
+    @Test
+    fun windowsDataDirectoryFallsBackToUserLocalAppData() {
+        val dir = resolveTimeboxxingDataDirectory(
+            env = emptyMap(),
+            osName = "Windows 11",
+            userHome = "/Users/tester",
+        )
+
+        assertEquals(
+            File("/Users/tester/AppData/Local/Timeboxxing").toPath(),
+            dir,
+        )
+    }
+
+    @Test
+    fun linuxDataDirectoryUsesXdgDataHomeWhenAvailable() {
+        val dir = resolveTimeboxxingDataDirectory(
+            env = mapOf("XDG_DATA_HOME" to "/Users/tester/.xdg-data"),
+            osName = "Linux",
+            userHome = "/Users/tester",
+        )
+
+        assertEquals(
+            File("/Users/tester/.xdg-data/timeboxxing").toPath(),
+            dir,
+        )
+    }
+
+    @Test
+    fun linuxDataDirectoryFallsBackToLocalShare() {
+        val dir = resolveTimeboxxingDataDirectory(
+            env = emptyMap(),
+            osName = "Linux",
+            userHome = "/Users/tester",
+        )
+
+        assertEquals(
+            File("/Users/tester/.local/share/timeboxxing").toPath(),
+            dir,
+        )
+    }
+
+    @Test
+    fun installedSidecarResourceWinsOverDevAndClasspathFallbacks() {
+        val appResources = tempDir("installed-resources")
+        val installedBinary = appResources.resolve("sidecar/timeboxxing-sidecar")
+        installedBinary.parentFile.mkdirs()
+        installedBinary.writeText("installed")
+        val devBinary = tempFile("dev-sidecar")
+        val classpathRoot = tempDir("classpath-resources")
+        classpathRoot.resolve("sidecar/timeboxxing-sidecar").apply {
+            parentFile.mkdirs()
+            writeText("classpath")
+        }
+
+        URLClassLoader(arrayOf(classpathRoot.toURI().toURL()), null).use { classLoader ->
+            val resolved = resolveSidecarBinary(
+                env = mapOf(TimeboxxingSidecarBinaryEnvVar to devBinary.absolutePath),
+                appResourcesDir = appResources.absolutePath,
+                classLoader = classLoader,
+                executableName = "timeboxxing-sidecar",
+            )
+
+            assertEquals(installedBinary.canonicalFile, resolved?.canonicalFile)
+        }
+    }
+
+    @Test
+    fun devSidecarOverrideIsUsedWhenInstalledResourceIsMissing() {
+        val devBinary = tempFile("dev-sidecar")
+        val classpathRoot = tempDir("classpath-resources")
+        classpathRoot.resolve("sidecar/timeboxxing-sidecar").apply {
+            parentFile.mkdirs()
+            writeText("classpath")
+        }
+
+        URLClassLoader(arrayOf(classpathRoot.toURI().toURL()), null).use { classLoader ->
+            val resolved = resolveSidecarBinary(
+                env = mapOf(TimeboxxingSidecarBinaryEnvVar to devBinary.absolutePath),
+                appResourcesDir = null,
+                classLoader = classLoader,
+                executableName = "timeboxxing-sidecar",
+            )
+
+            assertEquals(devBinary.canonicalFile, resolved?.canonicalFile)
+        }
+    }
+
+    @Test
+    fun classpathSidecarFallbackIsUsedWhenInstalledAndDevPathsAreMissing() {
+        val classpathRoot = tempDir("classpath-resources")
+        val classpathBinary = classpathRoot.resolve("sidecar/timeboxxing-sidecar")
+        classpathBinary.parentFile.mkdirs()
+        classpathBinary.writeText("classpath")
+
+        URLClassLoader(arrayOf(classpathRoot.toURI().toURL()), null).use { classLoader ->
+            val resolved = resolveSidecarBinary(
+                env = emptyMap(),
+                appResourcesDir = null,
+                classLoader = classLoader,
+                executableName = "timeboxxing-sidecar",
+            )
+
+            assertEquals(classpathBinary.canonicalFile, resolved?.canonicalFile)
+        }
+    }
+
     @Test
     fun childEnvironmentCopiesOnlySemanticSecrets() {
         val targetEnv = mutableMapOf(OpenRouterApiKeyEnvVar to "parent-secret")
@@ -112,4 +250,10 @@ class SidecarProcessManagerTest {
 
     private fun fixedClock(): Clock =
         Clock.fixed(Instant.parse("2026-06-29T10:15:30.123Z"), ZoneOffset.UTC)
+
+    private fun tempDir(prefix: String): File =
+        Files.createTempDirectory(prefix).toFile()
+
+    private fun tempFile(prefix: String): File =
+        Files.createTempFile(prefix, ".bin").toFile()
 }

@@ -35,6 +35,7 @@ class TimeboxxingViewModel(
         createSidecarTimeboxxingState(
             usageDays = runtime.usageDays,
             initialNotice = runtime.initialNotice,
+            dataDirectory = runtime.dataDirectory,
             appearanceMode = runtime.initialAppearanceMode,
         ).copy(diagnosticsEnabled = runtime.diagnosticsEnabled),
     )

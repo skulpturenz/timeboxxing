@@ -72,6 +72,18 @@ class TimeboxxingViewModelTest {
     }
 
     @Test
+    fun initialStateIncludesRuntimeDataDirectory() = runTest {
+        val viewModel = TimeboxxingViewModel(
+            fakeRuntime(dataDirectory = "/Users/tester/Library/Application Support/Timeboxxing"),
+        )
+
+        assertEquals(
+            "/Users/tester/Library/Application Support/Timeboxxing",
+            viewModel.state.value.dataDirectory,
+        )
+    }
+
+    @Test
     fun streamedUsageEventsAreMergedIntoState() = runTest {
         val usageRepository = FakeUsageHistoryRepository()
         val viewModel = TimeboxxingViewModel(fakeRuntime(usageRepository = usageRepository))
@@ -403,6 +415,7 @@ private fun fakeRuntime(
     projectRepository: ProjectRepository = FakeProjectRepository(),
     timesheetRepository: TimesheetRepository = FakeTimesheetRepository(),
     sidecarStatus: TimeboxxingSidecarStatus = TimeboxxingSidecarStatus.Ready,
+    dataDirectory: String = "",
 ): FakeTimeboxxingRuntime {
     val data = mockTimeboxxingData()
     return FakeTimeboxxingRuntime(
@@ -415,6 +428,7 @@ private fun fakeRuntime(
             timesheetRepository = timesheetRepository,
         ),
         sidecarStatus = sidecarStatus,
+        dataDirectory = dataDirectory,
     )
 }
 
@@ -422,6 +436,7 @@ private class FakeTimeboxxingRuntime(
     override val usageDays: List<UsageDay>,
     repositories: TimeboxxingRepositories,
     sidecarStatus: TimeboxxingSidecarStatus,
+    override val dataDirectory: String,
 ) : TimeboxxingRuntime {
     override val initialNotice: String? = null
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System

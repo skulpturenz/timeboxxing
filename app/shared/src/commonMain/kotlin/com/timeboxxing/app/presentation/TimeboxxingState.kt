@@ -74,6 +74,7 @@ data class TimeboxxingScreenState(
     val databasePruneEndDate: CalendarDate? = null,
     val databaseMaintenanceError: String? = null,
     val databaseMaintenanceMessage: String? = null,
+    val dataDirectory: String = "",
     val appearanceMode: AppearanceMode = AppearanceMode.System,
     val diagnosticsEnabled: Boolean = false,
 ) {
@@ -293,6 +294,7 @@ fun createInitialTimeboxxingState(
 fun createSidecarTimeboxxingState(
     usageDays: List<UsageDay>,
     initialNotice: String? = null,
+    dataDirectory: String = "",
     data: TimeboxxingMockData = mockTimeboxxingData(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
@@ -312,6 +314,7 @@ fun createSidecarTimeboxxingState(
         notice = initialNotice,
         nextEntryNumber = 1,
         usageDays = safeUsageDays,
+        dataDirectory = dataDirectory,
         appearanceMode = appearanceMode,
     )
 }
@@ -953,10 +956,11 @@ private fun mergeUsageEvent(
 }
 
 private fun normalizeUsageEvents(events: List<UsageEvent>): List<UsageEvent> {
-    val rawCompleted = events.filterNot { it.isActive }
-    val completed = linearizedCompletedUsageEvents(rawCompleted)
     val active = events.lastOrNull { it.isActive }
-        ?.takeUnless { activeEvent -> rawCompleted.any { activeEvent.matchesCompletedUsage(it) } }
+    val rawCompleted = events.filterNot { event ->
+        event.isActive || active?.matchesCompletedUsage(event) == true
+    }
+    val completed = linearizedCompletedUsageEvents(rawCompleted)
     return (completed + listOfNotNull(active)).sortedBy { it.startMinute }
 }
 

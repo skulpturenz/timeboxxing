@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -385,6 +386,25 @@ private fun DatabaseMaintenanceCard(
             }
             state.databaseMaintenanceMessage?.let { message ->
                 SettingsNotice(message = message, destructive = false)
+            }
+
+            if (state.dataDirectory.isNotBlank()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TbText(
+                        text = "Data directory",
+                        style = TbTheme.typography.label,
+                        color = TbTheme.colors.secondaryText,
+                    )
+                    SelectionContainer {
+                        TbText(
+                            text = state.dataDirectory,
+                            style = TbTheme.typography.bodySmall,
+                            color = TbTheme.colors.text,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
 
             Row(

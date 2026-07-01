@@ -41,6 +41,12 @@ data class TimelineRow(
     val offsetDp: Float,
 )
 
+data class TimelineGridLineOffset(
+    val minute: Int,
+    val offsetDp: Float,
+    val emphasized: Boolean,
+)
+
 data class TimelineEventPlacement(
     val event: UsageEvent,
     val startMinute: Int,
@@ -162,6 +168,25 @@ fun timelineMinuteMarkerOffsetsDp(
         .toList()
 }
 
+fun timelineGridLineOffsetsDp(
+    grid: TimelineGrid,
+): List<TimelineGridLineOffset> {
+    if (grid.visibleEndMinute < grid.visibleStartMinute || grid.dpPerMinute <= 0f) {
+        return emptyList()
+    }
+
+    return (grid.visibleStartMinute..grid.visibleEndMinute).map { minute ->
+        TimelineGridLineOffset(
+            minute = minute,
+            offsetDp = timelineMinuteOffsetDp(grid, minute),
+            emphasized = minute == grid.visibleStartMinute ||
+                minute == grid.visibleEndMinute ||
+                minute % grid.zoomMinutes == 0 ||
+                minute % 60 == 0,
+        )
+    }
+}
+
 fun timelineFirstEventScrollDp(
     grid: TimelineGrid,
     contextDp: Float = TimelineInitialScrollContextDp,
@@ -174,14 +199,33 @@ fun timelineMinuteOffsetDp(
     grid: TimelineGrid,
     minute: Int,
 ): Float =
+    timelineMinuteOffsetDp(grid, minute.toFloat())
+
+fun timelineMinuteOffsetDp(
+    grid: TimelineGrid,
+    minute: Float,
+): Float =
     minute
-        .coerceIn(grid.visibleStartMinute, grid.visibleEndMinute)
-        .minus(grid.visibleStartMinute)
+        .coerceIn(grid.visibleStartMinute.toFloat(), grid.visibleEndMinute.toFloat())
+        .minus(grid.visibleStartMinute.toFloat())
         .times(grid.dpPerMinute)
 
 fun timelineScrollToMinuteDp(
     grid: TimelineGrid,
     minute: Int,
+    viewportHeightDp: Float,
+    bottomPaddingDp: Float = 24f,
+): Float =
+    timelineScrollToMinuteDp(
+        grid = grid,
+        minute = minute.toFloat(),
+        viewportHeightDp = viewportHeightDp,
+        bottomPaddingDp = bottomPaddingDp,
+    )
+
+fun timelineScrollToMinuteDp(
+    grid: TimelineGrid,
+    minute: Float,
     viewportHeightDp: Float,
     bottomPaddingDp: Float = 24f,
 ): Float {
