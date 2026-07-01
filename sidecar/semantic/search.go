@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 )
 
 type Searcher struct {
-	queries  *queries.Queries
-	embedder Embedder
-	clock    func() time.Time
-	location *time.Location
+	conn        *sql.DB
+	vectorStore *SQLiteVectorStore
+	embedder    Embedder
+	clock       func() time.Time
+	location    *time.Location
 }
 
 type SearchResult struct {
@@ -28,12 +27,17 @@ type SearchResult struct {
 	Distance          float64
 }
 
-func NewSearcher(conn queries.DBTX, embedder Embedder) *Searcher {
+func NewSearcher(conn *sql.DB, embedder Embedder, vectorStore ...*SQLiteVectorStore) *Searcher {
+	store := NewSQLiteVectorStore(conn)
+	if len(vectorStore) > 0 && vectorStore[0] != nil {
+		store = vectorStore[0]
+	}
 	return &Searcher{
-		queries:  queries.New(conn),
-		embedder: embedder,
-		clock:    time.Now,
-		location: time.Local,
+		conn:        conn,
+		vectorStore: store,
+		embedder:    embedder,
+		clock:       time.Now,
+		location:    time.Local,
 	}
 }
 
@@ -58,18 +62,51 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 		return nil, err
 	}
 
+	if s.vectorStore == nil {
+		return nil, fmt.Errorf("sqlite-vector store is required")
+	}
+	hasEmbeddings, err := s.hasEmbeddings(ctx, s.embedder.Model())
+	if err != nil {
+		return nil, err
+	}
+	if !hasEmbeddings {
+		return nil, nil
+	}
+	if err := s.vectorStore.EnsureQuantized(ctx); err != nil {
+		return nil, fmt.Errorf("prepare sqlite-vector semantic search: %w", err)
+	}
+
 	candidateCount := candidateSourceCount(k)
-	rows, err := s.queries.SearchSemanticDocuments(ctx, queries.SearchSemanticDocumentsParams{
-		Embedding:      encoded,
-		EmbeddingModel: s.embedder.Model(),
-		K:              sql.NullInt64{Int64: candidateCount, Valid: true},
-	})
+	rows, err := s.conn.QueryContext(ctx, searchSemanticDocumentsSQL, encoded, s.embedder.Model(), candidateCount)
 	if err != nil {
 		return nil, fmt.Errorf("search semantic documents: %w", err)
 	}
+	defer rows.Close()
 
-	results := make([]SearchResult, 0, len(rows))
-	for _, row := range rows {
+	var results []SearchResult
+	for rows.Next() {
+		var row struct {
+			ID                int64
+			DocumentKey       string
+			DocumentType      string
+			TransitionEventID sql.NullInt64
+			StartedAt         sql.NullTime
+			EndedAt           sql.NullTime
+			Content           string
+			Distance          sql.NullFloat64
+		}
+		if err := rows.Scan(
+			&row.ID,
+			&row.DocumentKey,
+			&row.DocumentType,
+			&row.TransitionEventID,
+			&row.StartedAt,
+			&row.EndedAt,
+			&row.Content,
+			&row.Distance,
+		); err != nil {
+			return nil, fmt.Errorf("scan semantic search result: %w", err)
+		}
 		transitionEventID := int64(0)
 		if row.TransitionEventID.Valid {
 			transitionEventID = row.TransitionEventID.Int64
@@ -93,9 +130,31 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 			Distance:          row.Distance.Float64,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read semantic search results: %w", err)
+	}
 
 	return diversifySearchResults(query, results, int(k)), nil
 }
+
+const searchSemanticDocumentsSQL = `
+SELECT
+  semantic_documents.id,
+  semantic_documents.document_key,
+  semantic_documents.document_type,
+  semantic_documents.transition_event_id,
+  semantic_documents.started_at,
+  semantic_documents.ended_at,
+  semantic_documents.content,
+  vector_matches.distance
+FROM vector_quantize_scan('semantic_document_embeddings', 'embedding', ?) AS vector_matches
+JOIN semantic_document_embeddings
+  ON semantic_document_embeddings.rowid = vector_matches.rowid
+JOIN semantic_documents
+  ON semantic_documents.id = semantic_document_embeddings.semantic_document_id
+WHERE semantic_document_embeddings.embedding_model = ?
+ORDER BY vector_matches.distance
+LIMIT ?`
 
 func (s *Searcher) now() time.Time {
 	if s.clock == nil {
@@ -116,6 +175,17 @@ func candidateSourceCount(k int64) int64 {
 		count = 50
 	}
 	return count
+}
+
+func (s *Searcher) hasEmbeddings(ctx context.Context, embeddingModel string) (bool, error) {
+	var count int64
+	if err := s.conn.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM semantic_document_embeddings
+WHERE embedding_model = ?`, embeddingModel).Scan(&count); err != nil {
+		return false, fmt.Errorf("count semantic embeddings: %w", err)
+	}
+	return count > 0, nil
 }
 
 func diversifySearchResults(query string, candidates []SearchResult, limit int) []SearchResult {

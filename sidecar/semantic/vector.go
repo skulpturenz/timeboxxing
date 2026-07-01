@@ -1,8 +1,9 @@
 package semantic
 
 import (
-	"encoding/json"
+	"encoding/binary"
 	"fmt"
+	"math"
 )
 
 const StoreEmbeddingDimension = 4096
@@ -26,13 +27,13 @@ func NormalizeFloat32Vector(values []float32, dimension int) ([]float32, error) 
 	return normalized, nil
 }
 
-func EncodeFloat32Vector(values []float32) (string, error) {
+func EncodeFloat32Vector(values []float32) ([]byte, error) {
 	if len(values) == 0 {
-		return "", fmt.Errorf("embedding vector is empty")
+		return nil, fmt.Errorf("embedding vector is empty")
 	}
-	data, err := json.Marshal(values)
-	if err != nil {
-		return "", fmt.Errorf("encode embedding vector: %w", err)
+	data := make([]byte, len(values)*4)
+	for index, value := range values {
+		binary.LittleEndian.PutUint32(data[index*4:], math.Float32bits(value))
 	}
-	return string(data), nil
+	return data, nil
 }

@@ -15,6 +15,7 @@ class SidecarProcessManagerTest {
         val parentEnv = mapOf(
             OpenRouterApiKeyEnvVar to "parent-secret",
             OllamaApiKeyEnvVar to "parent-ollama-secret",
+            SQLiteVectorExtensionPathEnvVar to "/tmp/vector.dylib",
         )
 
         configureSidecarEnvironment(
@@ -28,6 +29,7 @@ class SidecarProcessManagerTest {
         assertEquals("127.0.0.1:12345", targetEnv["SIDECAR_GRPC_LISTEN_ADDRESS"])
         assertEquals("sqlite", targetEnv["SIDECAR_DATABASE_ENGINE"])
         assertEquals("/tmp/timeboxxing.db", targetEnv["SIDECAR_DATABASE_DSN"])
+        assertEquals("/tmp/vector.dylib", targetEnv[SQLiteVectorExtensionPathEnvVar])
         assertEquals("keychain-openrouter-secret", targetEnv[OpenRouterApiKeyEnvVar])
         assertEquals("parent-ollama-secret", targetEnv[OllamaApiKeyEnvVar])
         assertFalse("SIDECAR_OPENROUTER_BASE_URL" in targetEnv)

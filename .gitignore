@@ -52,6 +52,11 @@ pom.xml.asc
 *.dll
 *.so
 *.dylib
+!sidecar/db/sqlite-vector/
+!sidecar/db/sqlite-vector/**/
+!sidecar/db/sqlite-vector/**/vector.dll
+!sidecar/db/sqlite-vector/**/vector.dylib
+!sidecar/db/sqlite-vector/**/vector.so
 
 # Test binary, built with `go test -c`
 *.test

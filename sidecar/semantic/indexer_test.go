@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,7 +52,7 @@ func (failingEmbedder) Embed(context.Context, string) ([]float32, error) {
 
 func TestIndexerAndSearcher(t *testing.T) {
 	ctx := context.Background()
-	database := newSemanticTestDatabase(t, ctx)
+	database := newSemanticVectorTestDatabase(t, ctx)
 	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteConn)
 
 	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{})
@@ -103,7 +104,7 @@ func TestIndexerIsIdempotent(t *testing.T) {
 	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_documents", "document_type = 'event'"); count != 1 {
 		t.Fatalf("expected one semantic event document, got %d", count)
 	}
-	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_document_float32_embeddings", "semantic_document_id IN (SELECT id FROM semantic_documents WHERE document_type = 'event')"); count != 1 {
+	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_document_embeddings", "semantic_document_id IN (SELECT id FROM semantic_documents WHERE document_type = 'event')"); count != 1 {
 		t.Fatalf("expected one semantic event embedding, got %d", count)
 	}
 }
@@ -120,7 +121,7 @@ func TestIndexerDoesNotPersistOnEmbeddingFailure(t *testing.T) {
 	if count := countSemanticRows(t, ctx, database.ReadConn, "semantic_documents"); count != 0 {
 		t.Fatalf("expected no semantic documents, got %d", count)
 	}
-	if count := countSemanticRows(t, ctx, database.ReadConn, "semantic_document_float32_embeddings"); count != 0 {
+	if count := countSemanticRows(t, ctx, database.ReadConn, "semantic_document_embeddings"); count != 0 {
 		t.Fatalf("expected no semantic embeddings, got %d", count)
 	}
 }
@@ -140,9 +141,24 @@ func TestIndexerValidationFailures(t *testing.T) {
 
 func newSemanticTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 	t.Helper()
+	return newSemanticTestDatabaseWithSQLiteVector(t, ctx, "")
+}
+
+func newSemanticVectorTestDatabase(t *testing.T, ctx context.Context) *db.Database {
+	t.Helper()
+	extensionPath := os.Getenv("SIDECAR_SQLITE_VECTOR_EXTENSION_PATH")
+	if db.ResolveSQLiteVectorExtensionPath(extensionPath) == "" {
+		t.Skip("sqlite-vector extension is not bundled for this platform and SIDECAR_SQLITE_VECTOR_EXTENSION_PATH is not set")
+	}
+	return newSemanticTestDatabaseWithSQLiteVector(t, ctx, extensionPath)
+}
+
+func newSemanticTestDatabaseWithSQLiteVector(t *testing.T, ctx context.Context, extensionPath string) *db.Database {
+	t.Helper()
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine:                    db.EngineSqlite,
+		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
+		SQLiteVectorExtensionPath: extensionPath,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)

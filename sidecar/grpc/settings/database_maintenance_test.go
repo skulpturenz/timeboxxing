@@ -102,7 +102,7 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 	assertTableCount(t, ctx, database.WriteConn, "transition_events", 1)
 	assertTableCount(t, ctx, database.WriteConn, "transition_event_metadata", 1)
 	assertTableCount(t, ctx, database.WriteConn, "semantic_documents", 1)
-	assertTableCount(t, ctx, database.WriteConn, "semantic_document_float32_embeddings", 1)
+	assertTableCount(t, ctx, database.WriteConn, "semantic_document_embeddings", 1)
 	assertTableCount(t, ctx, database.WriteConn, "timesheet_entries", 1)
 	assertTableCount(t, ctx, database.WriteConn, "timesheets", 1)
 	assertTableCount(t, ctx, database.WriteConn, "applications", 2)

@@ -35,7 +35,6 @@ type Querier interface {
 	ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]TimesheetEntry, error)
 	ListTimesheetEntryUsageBlocks(ctx context.Context, timesheetEntryID string) ([]string, error)
 	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
-	SearchSemanticDocuments(ctx context.Context, arg SearchSemanticDocumentsParams) ([]SearchSemanticDocumentsRow, error)
 	UpsertAISettings(ctx context.Context, arg UpsertAISettingsParams) error
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
 	UpsertSemanticDocument(ctx context.Context, arg UpsertSemanticDocumentParams) (int64, error)

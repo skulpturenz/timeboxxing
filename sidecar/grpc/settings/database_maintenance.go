@@ -224,7 +224,7 @@ func deletePruneRows(ctx context.Context, tx *sql.Tx) (pruneCounts, error) {
 	var err error
 
 	counts.embeddingsDeleted, err = execDelete(ctx, tx, `
-DELETE FROM semantic_document_float32_embeddings
+DELETE FROM semantic_document_embeddings
 WHERE semantic_document_id IN (SELECT id FROM prune_semantic_documents)`)
 	if err != nil {
 		return counts, err

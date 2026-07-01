@@ -54,6 +54,12 @@ tasks:
     cmds:
       - go tool sqlc generate -f db/sqlc.yaml
 
+  update-sqlite-vector:
+    desc: Update bundled sqlite-vector native extensions
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - go run ./cmd/update-sqlite-vector
+
   generate-env-docs:
     desc: Generate docs for env configuration
     cmds:

@@ -18,6 +18,8 @@ var (
 	DatabaseDSN = ferrite.String("SIDECAR_DATABASE_DSN", "the database data source name").
 			WithDefault("test.db").
 			Required()
+	SQLiteVectorExtensionPath = ferrite.String("SIDECAR_SQLITE_VECTOR_EXTENSION_PATH", "an optional sqlite-vector extension path override for TurboQuant semantic search").
+					Optional()
 	OpenRouterAPIKey = ferrite.String("SIDECAR_OPENROUTER_API_KEY", "the OpenRouter API key used for semantic search and RAG").
 				WithSensitiveContent().
 				Optional()

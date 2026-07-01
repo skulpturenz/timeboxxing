@@ -11,7 +11,7 @@ import (
 )
 
 const createSemanticDocumentEmbedding = `-- name: CreateSemanticDocumentEmbedding :exec
-INSERT INTO semantic_document_float32_embeddings (
+INSERT INTO semantic_document_embeddings (
   semantic_document_id,
   embedding_model,
   embedding_dimension,
@@ -26,7 +26,7 @@ type CreateSemanticDocumentEmbeddingParams struct {
 	EmbeddingModel     string
 	EmbeddingDimension int64
 	EmbeddedAt         sql.NullTime
-	Embedding          string
+	Embedding          []byte
 }
 
 func (q *Queries) CreateSemanticDocumentEmbedding(ctx context.Context, arg CreateSemanticDocumentEmbeddingParams) error {

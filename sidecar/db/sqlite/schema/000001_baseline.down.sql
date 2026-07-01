@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS ai_settings;
 DROP TABLE IF EXISTS semantic_models;
 DROP TABLE IF EXISTS embedding_models;
-DROP TABLE IF EXISTS semantic_document_float32_embeddings;
+DROP TABLE IF EXISTS semantic_document_embeddings;
 DROP INDEX IF EXISTS semantic_documents_transition_event_idx;
 DROP INDEX IF EXISTS semantic_documents_type_started_idx;
 DROP TABLE IF EXISTS semantic_documents;

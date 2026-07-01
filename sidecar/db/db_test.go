@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,11 +11,45 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
 )
 
-func TestSqliteVecIsAvailable(t *testing.T) {
+func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 	ctx := context.Background()
+	configuredPath := os.Getenv("SIDECAR_SQLITE_VECTOR_EXTENSION_PATH")
+	resolvedPath := ResolveSQLiteVectorExtensionPath(configuredPath)
+	if resolvedPath == "" {
+		t.Skip("sqlite-vector extension is not bundled for this platform and SIDECAR_SQLITE_VECTOR_EXTENSION_PATH is not set")
+	}
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine:                    EngineSqlite,
+		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
+		SQLiteVectorExtensionPath: configuredPath,
+	})
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	defer database.Close()
+	if database.SQLiteVectorExtensionPath != resolvedPath {
+		t.Fatalf("expected sqlite-vector path %q, got %q", resolvedPath, database.SQLiteVectorExtensionPath)
+	}
+
+	var version string
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
+		t.Fatalf("query sqlite-vector version: %v", err)
+	}
+	if version == "" {
+		t.Fatal("expected sqlite-vector version")
+	}
+}
+
+func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
+	ctx := context.Background()
+	extensionPath := extractBundledSQLiteVectorExtension()
+	if extensionPath == "" {
+		t.Skip("sqlite-vector extension is not embedded for this platform")
+	}
+	database, err := New(ctx, Options{
+		Engine:                    EngineSqlite,
+		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
+		SQLiteVectorExtensionPath: extensionPath,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -22,11 +57,11 @@ func TestSqliteVecIsAvailable(t *testing.T) {
 	defer database.Close()
 
 	var version string
-	if err := database.WriteConn.QueryRowContext(ctx, `SELECT vec_version()`).Scan(&version); err != nil {
-		t.Fatalf("query sqlite-vec version: %v", err)
+	if err := database.WriteConn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
+		t.Fatalf("query sqlite-vector version: %v", err)
 	}
 	if version == "" {
-		t.Fatal("expected sqlite-vec version")
+		t.Fatal("expected sqlite-vector version")
 	}
 }
 

@@ -112,6 +112,7 @@ fun resolveGoBinary(): String {
 }
 
 val sidecarOutput = layout.buildDirectory.file("sidecar/$sidecarExecutableName")
+val sqliteVectorResources = rootProject.layout.projectDirectory.dir("../sidecar/db/sqlite-vector")
 val buildSidecar by tasks.registering(Exec::class) {
     val sidecarDir = rootProject.layout.projectDirectory.dir("../sidecar")
     workingDir = sidecarDir.asFile
@@ -124,6 +125,9 @@ tasks.named<ProcessResources>("processResources") {
     dependsOn(buildSidecar)
     from(sidecarOutput) {
         into("sidecar")
+    }
+    from(sqliteVectorResources) {
+        into("sidecar/sqlite-vector")
     }
 }
 

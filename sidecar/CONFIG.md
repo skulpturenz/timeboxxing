@@ -2,13 +2,14 @@
 
 This document describes the environment variables used by `sidecar`.
 
-| Name                            | Usage                       | Description                                                     |
-| ------------------------------- | --------------------------- | --------------------------------------------------------------- |
-| [`SIDECAR_DATABASE_DSN`]        | defaults to `test.db`       | the database data source name                                   |
-| [`SIDECAR_DATABASE_ENGINE`]     | defaults to `sqlite`        | the database engine used by the sidecar                         |
-| [`SIDECAR_GRPC_LISTEN_ADDRESS`] | defaults to `0.0.0.0:50051` | the host and port that the gRPC server listens on               |
-| [`SIDECAR_OLLAMA_API_KEY`]      | optional                    | the hosted Ollama bearer token used for semantic search and RAG |
-| [`SIDECAR_OPENROUTER_API_KEY`]  | optional                    | the OpenRouter API key used for semantic search and RAG         |
+| Name                                    | Usage                       | Description                                                          |
+| --------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| [`SIDECAR_DATABASE_DSN`]                | defaults to `test.db`       | the database data source name                                        |
+| [`SIDECAR_DATABASE_ENGINE`]             | defaults to `sqlite`        | the database engine used by the sidecar                              |
+| [`SIDECAR_GRPC_LISTEN_ADDRESS`]         | defaults to `0.0.0.0:50051` | the host and port that the gRPC server listens on                    |
+| [`SIDECAR_OLLAMA_API_KEY`]              | optional                    | the hosted Ollama bearer token used for semantic search and RAG      |
+| [`SIDECAR_OPENROUTER_API_KEY`]          | optional                    | the OpenRouter API key used for semantic search and RAG              |
+| [`SIDECAR_SQLITE_VECTOR_EXTENSION_PATH`] | optional                    | an optional sqlite-vector extension path override for TurboQuant semantic search |
 
 > [!TIP]
 > If an environment variable is set to an empty value, `sidecar` behaves as if
@@ -76,6 +77,18 @@ The `SIDECAR_OPENROUTER_API_KEY` variable **MAY** be left undefined.
 
 ⚠️ This variable is **sensitive**; its value may contain private information.
 
+## `SIDECAR_SQLITE_VECTOR_EXTENSION_PATH`
+
+> an optional sqlite-vector extension path override for TurboQuant semantic search
+
+The sidecar loads its bundled sqlite-vector extension by default. The
+`SIDECAR_SQLITE_VECTOR_EXTENSION_PATH` variable **MAY** be left undefined, or
+set to override the bundled extension path.
+
+```bash
+export SIDECAR_SQLITE_VECTOR_EXTENSION_PATH=/path/to/vector.dylib # (non-normative)
+```
+
 ---
 
 > [!NOTE]
@@ -95,3 +108,4 @@ The `SIDECAR_OPENROUTER_API_KEY` variable **MAY** be left undefined.
 [`sidecar_grpc_listen_address`]: #sidecar_grpc_listen_address
 [`sidecar_ollama_api_key`]: #sidecar_ollama_api_key
 [`sidecar_openrouter_api_key`]: #sidecar_openrouter_api_key
+[`sidecar_sqlite_vector_extension_path`]: #sidecar_sqlite_vector_extension_path

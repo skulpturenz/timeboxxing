@@ -101,7 +101,7 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 
 	waitForWorkerRowCount(t, ctx, database.ReadConn, "transition_events", 1)
 	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_documents", 7)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_float32_embeddings", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 7)
 }
 
 func countWorkerRows(t *testing.T, ctx context.Context, conn *sql.DB, table string) int {

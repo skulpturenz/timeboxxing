@@ -82,7 +82,7 @@ func TestBackfillerIndexesMissingTransitionEvents(t *testing.T) {
 	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_documents", "document_type = 'event'"); count != 2 {
 		t.Fatalf("expected two semantic event documents, got %d", count)
 	}
-	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_document_float32_embeddings", "semantic_document_id IN (SELECT id FROM semantic_documents WHERE document_type = 'event')"); count != 2 {
+	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_document_embeddings", "semantic_document_id IN (SELECT id FROM semantic_documents WHERE document_type = 'event')"); count != 2 {
 		t.Fatalf("expected two semantic event embeddings, got %d", count)
 	}
 

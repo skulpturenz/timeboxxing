@@ -53,9 +53,11 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	registry := services.New()
 	sidecarLogging.RegisterLogger(registry, logger)
 
+	sqliteVectorExtensionPath, _ := envs.SQLiteVectorExtensionPath.Value()
 	database, err := db.New(ctx, db.Options{
-		Engine:         envs.DatabaseEngine.Value(),
-		DataSourceName: envs.DatabaseDSN.Value(),
+		Engine:                    envs.DatabaseEngine.Value(),
+		DataSourceName:            envs.DatabaseDSN.Value(),
+		SQLiteVectorExtensionPath: sqliteVectorExtensionPath,
 	})
 	if err != nil {
 		return fmt.Errorf("create database: %w", err)
@@ -253,11 +255,20 @@ func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog
 		}, err
 	}
 
+	vectorStore := semantic.NewSQLiteVectorStore(database.ReadConn)
+	if err := vectorStore.Check(ctx); err != nil {
+		return &semantic.Runtime{
+			IndexStatus:    unavailableIndexStatus,
+			EmbeddingModel: embedder.Model(),
+			RAGModel:       generator.Model(),
+		}, err
+	}
+
 	indexer := semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder)
 	backfiller := semantic.NewBackfiller(database.ReadQuerier, indexer, embedder.Model())
 	backfillCoordinator := semantic.NewBackfillCoordinator(ctx, backfiller, logger.With("service", "semantic_backfill"))
 	indexStatus := semantic.NewIndexStatusService(database.ReadQuerier, backfillCoordinator, embedder.Model())
-	searcher := semantic.NewSearcher(database.ReadConn, embedder)
+	searcher := semantic.NewSearcher(database.ReadConn, embedder, vectorStore)
 
 	return &semantic.Runtime{
 		Answerer:       semantic.NewAnswerer(searcher, generator),

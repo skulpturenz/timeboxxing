@@ -44,16 +44,20 @@ CREATE INDEX semantic_documents_type_started_idx
 CREATE INDEX semantic_documents_transition_event_idx
   ON semantic_documents(transition_event_id);
 
-CREATE TABLE semantic_document_float32_embeddings (
+CREATE TABLE semantic_document_embeddings (
   id INTEGER PRIMARY KEY,
-  semantic_document_id INTEGER NOT NULL,
+  semantic_document_id INTEGER NOT NULL REFERENCES semantic_documents(id) ON DELETE CASCADE,
   embedding_model TEXT NOT NULL,
   embedding_dimension INTEGER NOT NULL,
   embedded_at TIMESTAMP,
-  embedding TEXT NOT NULL,
-  k INTEGER,
-  distance REAL
+  embedding BLOB NOT NULL
 );
+
+CREATE INDEX semantic_document_embeddings_model_idx
+  ON semantic_document_embeddings(embedding_model);
+
+CREATE UNIQUE INDEX semantic_document_embeddings_document_model_idx
+  ON semantic_document_embeddings(semantic_document_id, embedding_model);
 
 CREATE TABLE embedding_models (
   id INTEGER PRIMARY KEY NOT NULL,

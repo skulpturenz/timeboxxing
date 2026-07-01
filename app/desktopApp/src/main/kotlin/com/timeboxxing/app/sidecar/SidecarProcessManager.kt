@@ -111,14 +111,29 @@ class SidecarProcessManager(
             return File(resource.toURI()).apply { setExecutable(true) }
         }
 
-        val suffix = if (sidecarExecutableName.endsWith(".exe")) ".exe" else ""
-        val tempFile = Files.createTempFile("timeboxxing-sidecar-", suffix).toFile()
+        val tempDir = Files.createTempDirectory("timeboxxing-sidecar-").toFile()
+        tempDir.deleteOnExit()
+        val tempFile = tempDir.resolve(sidecarExecutableName)
         classLoader.getResourceAsStream(resourceName)?.use { input ->
             Files.copy(input, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
         } ?: return null
+        copyBundledSQLiteVectorExtension(classLoader, tempDir)
         tempFile.setExecutable(true)
         tempFile.deleteOnExit()
         return tempFile
+    }
+
+    private fun copyBundledSQLiteVectorExtension(classLoader: ClassLoader, sidecarDir: File) {
+        val resourcePath = sqliteVectorResourcePath ?: return
+        val resourceName = "sidecar/sqlite-vector/$resourcePath"
+        val target = sidecarDir.toPath()
+            .resolve("sqlite-vector")
+            .resolve(resourcePath)
+        target.parent.createDirectories()
+        classLoader.getResourceAsStream(resourceName)?.use { input ->
+            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
+        } ?: return
+        target.toFile().deleteOnExit()
     }
 
     private fun sidecarDatabasePath() =
@@ -216,14 +231,22 @@ internal fun configureSidecarEnvironment(
     targetEnv: MutableMap<String, String>,
     grpcListenAddress: String,
     databaseDsn: String,
+    sqliteVectorExtensionPath: String? = null,
     parentEnv: Map<String, String>,
     secrets: SidecarSecrets = SidecarSecrets(),
 ) {
     targetEnv["SIDECAR_GRPC_LISTEN_ADDRESS"] = grpcListenAddress
     targetEnv["SIDECAR_DATABASE_ENGINE"] = "sqlite"
     targetEnv["SIDECAR_DATABASE_DSN"] = databaseDsn
+    targetEnv.remove(SQLiteVectorExtensionPathEnvVar)
     targetEnv.remove(OpenRouterApiKeyEnvVar)
     targetEnv.remove(OllamaApiKeyEnvVar)
+    val vectorExtensionPath = sqliteVectorExtensionPath.orEmpty().ifBlank {
+        parentEnv[SQLiteVectorExtensionPathEnvVar].orEmpty()
+    }
+    if (vectorExtensionPath.isNotBlank()) {
+        targetEnv[SQLiteVectorExtensionPathEnvVar] = vectorExtensionPath
+    }
     val openRouterApiKey = secrets.openRouterApiKey.ifBlank { parentEnv[OpenRouterApiKeyEnvVar].orEmpty() }
     if (openRouterApiKey.isNotBlank()) {
         targetEnv[OpenRouterApiKeyEnvVar] = openRouterApiKey
@@ -261,6 +284,35 @@ private val sidecarExecutableName: String =
         "timeboxxing-sidecar"
     }
 
+private val sqliteVectorLibrarySuffix: String =
+    when {
+        System.getProperty("os.name").lowercase().contains("windows") -> ".dll"
+        System.getProperty("os.name").lowercase().contains("mac") -> ".dylib"
+        else -> ".so"
+    }
+
+private val sqliteVectorResourcePath: String? = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    val platform = when {
+        os.contains("mac") -> "darwin"
+        os.contains("windows") -> "windows"
+        os.contains("linux") -> "linux"
+        else -> null
+    }
+    val normalizedArch = when {
+        arch == "aarch64" || arch == "arm64" -> "arm64"
+        arch == "x86_64" || arch == "amd64" -> "amd64"
+        else -> null
+    }
+    if (platform == null || normalizedArch == null) {
+        null
+    } else {
+        "$platform-$normalizedArch/vector$sqliteVectorLibrarySuffix"
+    }
+}
+
+internal const val SQLiteVectorExtensionPathEnvVar = "SIDECAR_SQLITE_VECTOR_EXTENSION_PATH"
 internal const val OpenRouterApiKeyEnvVar = "SIDECAR_OPENROUTER_API_KEY"
 internal const val OllamaApiKeyEnvVar = "SIDECAR_OLLAMA_API_KEY"
 

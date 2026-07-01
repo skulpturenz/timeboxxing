@@ -53,15 +53,13 @@ type SemanticDocument struct {
 	Content           string
 }
 
-type SemanticDocumentFloat32Embedding struct {
+type SemanticDocumentEmbedding struct {
 	ID                 int64
 	SemanticDocumentID int64
 	EmbeddingModel     string
 	EmbeddingDimension int64
 	EmbeddedAt         sql.NullTime
-	Embedding          string
-	K                  sql.NullInt64
-	Distance           sql.NullFloat64
+	Embedding          []byte
 }
 
 type SemanticModel struct {

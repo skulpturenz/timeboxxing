@@ -7,6 +7,11 @@
 *.dll
 *.so
 *.dylib
+!db/sqlite-vector/
+!db/sqlite-vector/**/
+!db/sqlite-vector/**/vector.dll
+!db/sqlite-vector/**/vector.dylib
+!db/sqlite-vector/**/vector.so
 
 # Test binary, built with `go test -c`
 *.test

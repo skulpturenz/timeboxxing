@@ -44,14 +44,20 @@ CREATE INDEX IF NOT EXISTS semantic_documents_type_started_idx
 CREATE INDEX IF NOT EXISTS semantic_documents_transition_event_idx
   ON semantic_documents(transition_event_id);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS semantic_document_float32_embeddings USING vec0(
+CREATE TABLE IF NOT EXISTS semantic_document_embeddings (
   id INTEGER PRIMARY KEY,
-  semantic_document_id INTEGER NOT NULL,
+  semantic_document_id INTEGER NOT NULL REFERENCES semantic_documents(id) ON DELETE CASCADE,
   embedding_model TEXT NOT NULL,
   embedding_dimension INTEGER NOT NULL,
-  embedded_at TEXT,
-  embedding FLOAT[4096] distance_metric=cosine
+  embedded_at TIMESTAMP,
+  embedding BLOB NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS semantic_document_embeddings_model_idx
+  ON semantic_document_embeddings(embedding_model);
+
+CREATE UNIQUE INDEX IF NOT EXISTS semantic_document_embeddings_document_model_idx
+  ON semantic_document_embeddings(semantic_document_id, embedding_model);
 
 CREATE TABLE IF NOT EXISTS embedding_models (
   id INTEGER PRIMARY KEY NOT NULL,
