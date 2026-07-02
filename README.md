@@ -35,6 +35,7 @@ There are a few closed and open source alternatives such as:
 
 # Demo
 
-https://github.com/user-attachments/assets/7c45a838-1886-489e-be7d-6b19e407ecfb
+https://github.com/user-attachments/assets/c4d5069a-4499-4e6b-8a7f-3733d4de448a
+
 
 
