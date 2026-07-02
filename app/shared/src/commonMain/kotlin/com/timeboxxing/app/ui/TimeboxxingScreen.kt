@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -60,6 +61,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -114,11 +116,15 @@ import com.timeboxxing.domain.model.plusDays
 import com.timeboxxing.app.presentation.TimeboxxingAction
 import com.timeboxxing.app.presentation.TimeboxxingScreenState
 import com.timeboxxing.app.presentation.TimeboxxingSection
+import app.shared.generated.resources.Res
+import app.shared.generated.resources.timeboxxing_logo_dark
+import app.shared.generated.resources.timeboxxing_logo_light
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import com.mikepenz.markdown.model.markdownDimens
 import com.mikepenz.markdown.model.markdownPadding
+import org.jetbrains.compose.resources.painterResource
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
@@ -554,12 +560,8 @@ private fun AppNavigationPane(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (!compact) {
-            TbText(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                text = "Timeboxxing",
-                style = TbTheme.typography.title2,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            SidebarLogo(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             )
         } else {
             TbSurface(
@@ -586,6 +588,22 @@ private fun AppNavigationPane(
             )
         }
     }
+}
+
+@Composable
+private fun SidebarLogo(modifier: Modifier = Modifier) {
+    val logo = if (TbTheme.colors == TbDarkColors) {
+        Res.drawable.timeboxxing_logo_dark
+    } else {
+        Res.drawable.timeboxxing_logo_light
+    }
+
+    Image(
+        painter = painterResource(logo),
+        contentDescription = "Timeboxxing",
+        contentScale = ContentScale.Fit,
+        modifier = modifier.size(width = 42.dp, height = 46.dp),
+    )
 }
 
 @Composable
