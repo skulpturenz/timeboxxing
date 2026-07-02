@@ -32,3 +32,9 @@ App:
 There are a few closed and open source alternatives such as:
 - [memtime](https://www.memtime.com/)
 - [ActivityWatch](https://activitywatch.net)
+
+# Demo
+
+https://github.com/user-attachments/assets/7c45a838-1886-489e-be7d-6b19e407ecfb
+
+
