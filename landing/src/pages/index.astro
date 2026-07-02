@@ -2,35 +2,35 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { downloads, signupEndpoint } from "@lib/site";
 
-const title = "Timeboxxing | Usage history into useful time records";
+const title = "Timeboxxing | Bill from facts, not memory";
 const description =
-  "Timeboxxing is a desktop usage tracker for freelancers and focused workers who want cleaner timesheets, project records, and personal attention insight.";
+  "Timeboxxing is a desktop usage tracker for freelancers and focused workers who want cleaner billable records from real app activity.";
 
 const features = [
   {
     eyebrow: "Capture",
-    title: "See what your workday actually used",
+    title: "Your day, reconstructed automatically",
     copy:
-      "Timeboxxing turns desktop activity into a clear timeline so your day is no longer reconstructed from memory.",
+      "Apps, documents, browser work, meetings, and messages become a timeline you can actually review.",
   },
   {
-    eyebrow: "Assign",
-    title: "Turn usage into project entries",
+    eyebrow: "Convert",
+    title: "Billable entries without archaeology",
     copy:
-      "Select captured sessions, assign them to projects, add notes, and shape them into time entries that make sense.",
+      "Select the captured work that matters, assign it to a project, add context, and move on.",
   },
   {
     eyebrow: "Export",
-    title: "Send usable records downstream",
+    title: "Clean records for the rest of your workflow",
     copy:
-      "Export timesheets as JSON or CSV, keeping your billing and personal records portable from day one.",
+      "Export CSV or JSON when you are ready to invoice, reconcile, or keep a private work log.",
   },
 ];
 
 const trustItems = [
-  "Desktop-first tracking designed around your machine, not a team dashboard.",
-  "Downloads are always available; the email form is optional and never gates the app.",
-  "AI usage questions are optional and only appear when configured in the desktop app.",
+  "Desktop-first tracking for your own records, not a manager dashboard.",
+  "Downloads stay open. The optional email form never gates the app.",
+  "AI usage questions remain optional and only appear when configured in the desktop app.",
 ];
 
 const faqs = [
@@ -74,13 +74,31 @@ const faqs = [
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow">Desktop usage tracker for real working days</p>
-        <h1 id="hero-title">Turn app activity into cleaner time records.</h1>
-        <p class="hero-lede">
-          Timeboxxing helps freelancers and focused workers turn captured usage into project entries,
-          timesheets, and a calmer picture of where the day went.
+        <p class="eyebrow" data-hero-reveal style="--reveal-delay: 0ms">
+          Desktop usage tracker for billable work
         </p>
-        <div class="hero-actions" id="download">
+        <h1 id="hero-title" data-hero-reveal style="--reveal-delay: 80ms">
+          Bill from facts, not memory.
+        </h1>
+        <p class="hero-lede" data-hero-reveal style="--reveal-delay: 160ms">
+          Timeboxxing turns real app activity into project entries, timesheets, and a clearer picture
+          of where your attention went.
+        </p>
+        <dl class="hero-metrics" aria-label="Demo day metrics" data-hero-reveal style="--reveal-delay: 240ms">
+          <div>
+            <dt>Captured</dt>
+            <dd>4h 5m</dd>
+          </div>
+          <div>
+            <dt>Billable</dt>
+            <dd>2h 52m</dd>
+          </div>
+          <div>
+            <dt>Unassigned</dt>
+            <dd>45m</dd>
+          </div>
+        </dl>
+        <div class="hero-actions" id="download" data-hero-reveal style="--reveal-delay: 320ms">
           <a
             class="button button-primary"
             href={downloads.macos.href}
@@ -102,45 +120,52 @@ const faqs = [
           macOS and Windows installers are published from GitHub releases.
         </p>
       </div>
-      <div class="hero-visual" aria-label="Timeboxxing desktop app preview">
+      <figure
+        class="hero-visual"
+        aria-label="Timeboxxing desktop app preview"
+        data-hero-reveal
+        style="--reveal-delay: 220ms"
+      >
+        <span class="screenshot-badge">Real app capture</span>
         <img
           src="/images/timeboxxing-product-preview.png"
-          width="1536"
-          height="864"
-          alt="Dark Timeboxxing desktop app preview showing captured usage, project summaries, and time entry tools."
+          width="2560"
+          height="1720"
+          alt="Dark Timeboxxing desktop app showing a usage schedule, selected captured activity, time entry form, and project totals."
           loading="eager"
           decoding="async"
         />
-      </div>
+        <figcaption>Sanitized demo data rendered from the actual Timeboxxing desktop UI.</figcaption>
+      </figure>
     </section>
 
     <section class="proof-strip" aria-label="Product highlights">
-      <div>
-        <strong>Timeline first</strong>
-        <span>Captured activity grouped into a workday view.</span>
+      <div data-animate data-animate-delay="0ms">
+        <strong>No more end-of-day guessing</strong>
+        <span>Review the trail your work already left behind.</span>
       </div>
-      <div>
-        <strong>Project aware</strong>
-        <span>Assign sessions to clients, projects, or no project.</span>
+      <div data-animate data-animate-delay="80ms">
+        <strong>Built for solo operators</strong>
+        <span>Client work, admin, research, and meetings in one place.</span>
       </div>
-      <div>
-        <strong>Portable exports</strong>
-        <span>CSV and JSON records for the rest of your workflow.</span>
+      <div data-animate data-animate-delay="160ms">
+        <strong>Portable by default</strong>
+        <span>Keep CSV and JSON records close to the tools you use.</span>
       </div>
     </section>
 
     <section class="section intro-band" id="workflow" aria-labelledby="workflow-title">
-      <div class="section-heading">
+      <div class="section-heading" data-animate>
         <p class="eyebrow">Workflow</p>
-        <h2 id="workflow-title">Less archaeology. Better records.</h2>
+        <h2 id="workflow-title">A sharper loop from work done to work billed.</h2>
         <p>
-          Timeboxxing is for the messy middle of knowledge work: documents, calls,
-          chats, browser research, and the little switches that are hard to remember later.
+          Timeboxxing is for the messy middle of freelance work: documents, calls, chats,
+          research, and all the switching that becomes invisible by invoice time.
         </p>
       </div>
       <div class="feature-grid">
-        {features.map((feature) => (
-          <article class="feature-card">
+        {features.map((feature, index) => (
+          <article class="feature-card" data-animate data-animate-delay={`${index * 90}ms`}>
             <p>{feature.eyebrow}</p>
             <h3>{feature.title}</h3>
             <span>{feature.copy}</span>
@@ -150,20 +175,20 @@ const faqs = [
     </section>
 
     <section class="section split-band" aria-labelledby="personal-title">
-      <div class="section-heading compact">
+      <div class="section-heading compact" data-animate>
         <p class="eyebrow">Freelance billing + personal awareness</p>
-        <h2 id="personal-title">A tracker that respects the person using it.</h2>
+        <h2 id="personal-title">Know what to bill. Know what drained the day.</h2>
       </div>
       <div class="compare-layout">
-        <article class="use-case">
+        <article class="use-case" data-animate data-animate-delay="80ms">
           <span class="icon-chip" aria-hidden="true">01</span>
           <h3>For client work</h3>
           <p>
-            Build project entries from real usage sessions, then export structured records
-            before invoice time turns into guesswork.
+            Build project entries from real usage sessions and carry structured records into
+            invoicing instead of rebuilding your day from scattered clues.
           </p>
         </article>
-        <article class="use-case">
+        <article class="use-case" data-animate data-animate-delay="160ms">
           <span class="icon-chip" aria-hidden="true">02</span>
           <h3>For your own attention</h3>
           <p>
@@ -175,17 +200,17 @@ const faqs = [
     </section>
 
     <section class="section privacy-band" id="privacy" aria-labelledby="privacy-title">
-      <div class="section-heading">
+      <div class="section-heading" data-animate>
         <p class="eyebrow">Trust</p>
-        <h2 id="privacy-title">Private by posture, transparent by design.</h2>
+        <h2 id="privacy-title">Your work history should answer to you first.</h2>
         <p>
-          Timeboxxing starts as a desktop app for your own records. The landing page does
-          not add analytics or a hidden signup funnel.
+          Timeboxxing starts as a desktop app for your own records. The landing page keeps the
+          same posture: no hidden signup funnel, no analytics layer added here.
         </p>
       </div>
       <ul class="trust-list">
-        {trustItems.map((item) => (
-          <li>
+        {trustItems.map((item, index) => (
+          <li data-animate data-animate-delay={`${index * 80}ms`}>
             <span aria-hidden="true"></span>
             {item}
           </li>
@@ -193,13 +218,13 @@ const faqs = [
       </ul>
     </section>
 
-    <section class="section signup-band" aria-labelledby="signup-title">
+    <section class="section signup-band" aria-labelledby="signup-title" data-animate>
       <div>
         <p class="eyebrow">Updates</p>
-        <h2 id="signup-title">Get release notes when the signup endpoint is connected.</h2>
+        <h2 id="signup-title">Follow the launch without blocking the download.</h2>
         <p>
-          Downloads stay open. The email field is optional and only submits when a public
-          endpoint is configured.
+          The email field is optional and only submits when a public endpoint is configured.
+          The installers stay one click away.
         </p>
       </div>
       <form class="signup-form" data-signup-form data-endpoint={signupEndpoint} novalidate>
@@ -224,13 +249,13 @@ const faqs = [
     </section>
 
     <section class="section faq-band" id="faq" aria-labelledby="faq-title">
-      <div class="section-heading compact">
+      <div class="section-heading compact" data-animate>
         <p class="eyebrow">FAQ</p>
-        <h2 id="faq-title">Straight answers before install.</h2>
+        <h2 id="faq-title">Before you install, the useful bits.</h2>
       </div>
       <div class="faq-list">
         {faqs.map((faq, index) => (
-          <details class="faq-item" open={index === 0}>
+          <details class="faq-item" open={index === 0} data-animate data-animate-delay={`${index * 70}ms`}>
             <summary>{faq.question}</summary>
             <p>{faq.answer}</p>
           </details>
@@ -238,9 +263,9 @@ const faqs = [
       </div>
     </section>
 
-    <section class="final-cta" aria-labelledby="final-title">
-      <p class="eyebrow">Ready when your day gets complicated</p>
-      <h2 id="final-title">Start with the activity you already created.</h2>
+    <section class="final-cta" aria-labelledby="final-title" data-animate>
+      <p class="eyebrow">Ready when the day gets complicated</p>
+      <h2 id="final-title">Stop billing from memory. Start with the activity you already created.</h2>
       <div class="hero-actions">
         <a class="button button-primary" href={downloads.macos.href} data-download-link data-platform="macos">
           {downloads.macos.label}
@@ -258,6 +283,39 @@ const faqs = [
   </footer>
 
   <script>
+    const animatedElements = [...document.querySelectorAll<HTMLElement>("[data-animate]")];
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    if (animatedElements.length) {
+      animatedElements.forEach((element) => {
+        const delay = element.getAttribute("data-animate-delay");
+        if (delay) {
+          element.style.setProperty("--reveal-delay", delay);
+        }
+      });
+
+      if (prefersReducedMotion.matches || !("IntersectionObserver" in window)) {
+        animatedElements.forEach((element) => element.toggleAttribute("data-visible", true));
+      } else {
+        document.documentElement.classList.add("motion-ready");
+        const revealObserver = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              entry.target.toggleAttribute("data-visible", true);
+              revealObserver.unobserve(entry.target);
+            });
+          },
+          {
+            rootMargin: "0px 0px 10% 0px",
+            threshold: 0.04,
+          },
+        );
+
+        animatedElements.forEach((element) => revealObserver.observe(element));
+      }
+    }
+
     const platformNote = document.querySelector("[data-platform-note]");
     const downloadLinks = [...document.querySelectorAll("[data-download-link]")];
 

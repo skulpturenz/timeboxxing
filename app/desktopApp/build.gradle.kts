@@ -4,6 +4,7 @@ import org.gradle.api.provider.Property
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 
@@ -98,6 +99,23 @@ kotlin {
 
 tasks.named("compileKotlin") {
     dependsOn(generateDesktopBuildConfig)
+}
+
+val landingScreenshotSourceSet = sourceSets.create("landingScreenshot") {
+    kotlin.srcDir("src/landingScreenshot/kotlin")
+    compileClasspath += sourceSets.main.get().output + configurations.named("compileClasspath").get()
+    runtimeClasspath += output + compileClasspath + configurations.named("runtimeClasspath").get()
+}
+
+tasks.register<JavaExec>("runLandingScreenshot") {
+    group = "application"
+    description = "Runs a sanitized demo window for capturing landing page screenshots."
+    dependsOn(
+        tasks.named("compileKotlin"),
+        tasks.named(landingScreenshotSourceSet.classesTaskName),
+    )
+    mainClass.set("com.timeboxxing.app.LandingScreenshotMainKt")
+    classpath = landingScreenshotSourceSet.runtimeClasspath
 }
 
 fun resolveGoBinary(): String {

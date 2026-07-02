@@ -10,6 +10,7 @@
     "check": "env ASTRO_TELEMETRY_DISABLED=1 astro check"
   },
   "dependencies": {
+    "@fontsource/geist-sans": "^5.2.5",
     "astro": "^7.0.4"
   },
   "devDependencies": {
