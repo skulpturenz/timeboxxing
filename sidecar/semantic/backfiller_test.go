@@ -60,10 +60,11 @@ func TestListMissingSemanticEventDocumentIDsFindsMissingDocumentsAndEmbeddings(t
 	}
 }
 
-func TestBackfillerIndexesMissingTransitionEvents(t *testing.T) {
+func TestBackfillerEnqueuesMissingTransitionEvents(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
 	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{})
+	enqueuer := &recordingBackfillEnqueuer{}
 
 	firstID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
 	secondID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
@@ -71,30 +72,15 @@ func TestBackfillerIndexesMissingTransitionEvents(t *testing.T) {
 		t.Fatalf("index first event: %v", err)
 	}
 
-	result, err := NewBackfiller(database.ReadQuerier, indexer, fakeEmbedder{}.Model()).BackfillMissing(ctx, 10)
+	result, err := NewBackfiller(database.ReadQuerier, enqueuer, fakeEmbedder{}.Model()).BackfillMissing(ctx, 10)
 	if err != nil {
 		t.Fatalf("backfill missing transition events: %v", err)
 	}
-	if result != (BackfillResult{Checked: 1, Indexed: 1}) {
+	if result != (BackfillResult{Checked: 1, Enqueued: 1}) {
 		t.Fatalf("unexpected backfill result: %+v", result)
 	}
-
-	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_documents", "document_type = 'event'"); count != 2 {
-		t.Fatalf("expected two semantic event documents, got %d", count)
-	}
-	if count := countSemanticRowsWhere(t, ctx, database.ReadConn, "semantic_document_embeddings", "semantic_document_id IN (SELECT id FROM semantic_documents WHERE document_type = 'event')"); count != 2 {
-		t.Fatalf("expected two semantic event embeddings, got %d", count)
-	}
-
-	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModel: fakeEmbedder{}.Model(),
-		Limit:          10,
-	})
-	if err != nil {
-		t.Fatalf("list missing semantic event document ids: %v", err)
-	}
-	if len(ids) != 0 {
-		t.Fatalf("expected no missing ids after backfill, got %v", ids)
+	if !reflect.DeepEqual(enqueuer.ids, []int64{secondID}) {
+		t.Fatalf("expected enqueued ids %v, got %v", []int64{secondID}, enqueuer.ids)
 	}
 	if firstID == secondID {
 		t.Fatal("expected distinct transition events")
@@ -123,37 +109,20 @@ func TestBackfillerTreatsEmbeddingModelChangesAsMissing(t *testing.T) {
 		t.Fatalf("expected event to be missing for second model, got %v", ids)
 	}
 
+	enqueuer := &recordingBackfillEnqueuer{}
 	result, err := NewBackfiller(
 		database.ReadQuerier,
-		NewIndexer(database.WriteConn, database.ReadQuerier, secondModel),
+		enqueuer,
 		secondModel.Model(),
 	).BackfillMissing(ctx, 10)
 	if err != nil {
 		t.Fatalf("backfill second model: %v", err)
 	}
-	if result != (BackfillResult{Checked: 1, Indexed: 1}) {
+	if result != (BackfillResult{Checked: 1, Enqueued: 1}) {
 		t.Fatalf("unexpected backfill result: %+v", result)
 	}
-	ids, err = database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModel: secondModel.Model(),
-		Limit:          10,
-	})
-	if err != nil {
-		t.Fatalf("list missing after second model backfill: %v", err)
-	}
-	if len(ids) != 0 {
-		t.Fatalf("expected no missing ids for second model after backfill, got %v", ids)
-	}
-
-	ids, err = database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModel: firstModel.Model(),
-		Limit:          10,
-	})
-	if err != nil {
-		t.Fatalf("list missing after old model replacement: %v", err)
-	}
-	if !reflect.DeepEqual(ids, []int64{eventID}) {
-		t.Fatalf("expected old model embedding to be replaced, got missing ids %v", ids)
+	if !reflect.DeepEqual(enqueuer.ids, []int64{eventID}) {
+		t.Fatalf("expected enqueued ids %v, got %v", []int64{eventID}, enqueuer.ids)
 	}
 }
 
@@ -177,20 +146,20 @@ func TestBackfillerHasMissing(t *testing.T) {
 	}
 }
 
-func TestBackfillerContinuesAfterIndexFailure(t *testing.T) {
+func TestBackfillerContinuesAfterEnqueueFailure(t *testing.T) {
 	ctx := context.Background()
-	indexer := &recordingBackfillIndexer{failID: 2}
-	result, err := NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1, 2, 3}}, indexer, fakeEmbedder{}.Model()).BackfillMissing(ctx, 10)
+	enqueuer := &recordingBackfillEnqueuer{failID: 2}
+	result, err := NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1, 2, 3}}, enqueuer, fakeEmbedder{}.Model()).BackfillMissing(ctx, 10)
 	if err == nil {
 		t.Fatal("expected partial backfill error")
 	}
 
-	if result != (BackfillResult{Checked: 3, Indexed: 2, Failed: 1}) {
+	if result != (BackfillResult{Checked: 3, Enqueued: 2, Failed: 1}) {
 		t.Fatalf("unexpected backfill result: %+v", result)
 	}
-	wantIndexedIDs := []int64{1, 2, 3}
-	if !reflect.DeepEqual(indexer.ids, wantIndexedIDs) {
-		t.Fatalf("expected attempted ids %v, got %v", wantIndexedIDs, indexer.ids)
+	wantEnqueuedIDs := []int64{1, 2, 3}
+	if !reflect.DeepEqual(enqueuer.ids, wantEnqueuedIDs) {
+		t.Fatalf("expected attempted ids %v, got %v", wantEnqueuedIDs, enqueuer.ids)
 	}
 }
 
@@ -200,7 +169,7 @@ func TestBackfillCoordinatorStoresPartialFailure(t *testing.T) {
 		ctx,
 		NewBackfiller(
 			staticMissingTransitionEventLister{ids: []int64{1, 2, 3}},
-			&recordingBackfillIndexer{failID: 2},
+			&recordingBackfillEnqueuer{failID: 2},
 			fakeEmbedder{}.Model(),
 		),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -213,10 +182,10 @@ func TestBackfillCoordinatorStoresPartialFailure(t *testing.T) {
 	for {
 		status := coordinator.Status()
 		if !status.Running {
-			if status.LastResult != (BackfillResult{Checked: 3, Indexed: 2, Failed: 1}) {
+			if status.LastResult != (BackfillResult{Checked: 3, Enqueued: 2, Failed: 1}) {
 				t.Fatalf("unexpected final status: %+v", status)
 			}
-			if status.LastError != "Semantic indexing failed. Check sidecar logs." {
+			if status.LastError != "Semantic backfill failed. Check sidecar logs." {
 				t.Fatalf("unexpected last error %q", status.LastError)
 			}
 			return
@@ -232,13 +201,13 @@ func TestBackfillCoordinatorRunsOneBackfillAtATime(t *testing.T) {
 	ctx := context.Background()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	indexer := &blockingBackfillIndexer{
+	enqueuer := &blockingBackfillEnqueuer{
 		started: started,
 		release: release,
 	}
 	coordinator := NewBackfillCoordinator(
 		ctx,
-		NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1}}, indexer, fakeEmbedder{}.Model()),
+		NewBackfiller(staticMissingTransitionEventLister{ids: []int64{1}}, enqueuer, fakeEmbedder{}.Model()),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 
@@ -259,7 +228,7 @@ func TestBackfillCoordinatorRunsOneBackfillAtATime(t *testing.T) {
 	for {
 		status := coordinator.Status()
 		if !status.Running {
-			if status.LastResult != (BackfillResult{Checked: 1, Indexed: 1}) {
+			if status.LastResult != (BackfillResult{Checked: 1, Enqueued: 1}) {
 				t.Fatalf("unexpected final status: %+v", status)
 			}
 			return
@@ -280,30 +249,30 @@ func (s staticMissingTransitionEventLister) ListMissingSemanticEventDocumentIDs(
 	return s.ids, s.err
 }
 
-type recordingBackfillIndexer struct {
+type recordingBackfillEnqueuer struct {
 	ids    []int64
 	failID int64
 }
 
-func (r *recordingBackfillIndexer) IndexTransitionEvent(_ context.Context, transitionEventID int64) (int64, error) {
+func (r *recordingBackfillEnqueuer) EnqueueTransitionEvent(_ context.Context, transitionEventID int64) error {
 	r.ids = append(r.ids, transitionEventID)
 	if transitionEventID == r.failID {
-		return 0, fmt.Errorf("index failed")
+		return fmt.Errorf("enqueue failed")
 	}
-	return transitionEventID, nil
+	return nil
 }
 
-type blockingBackfillIndexer struct {
+type blockingBackfillEnqueuer struct {
 	started chan<- struct{}
 	release <-chan struct{}
 }
 
-func (b *blockingBackfillIndexer) IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error) {
+func (b *blockingBackfillEnqueuer) EnqueueTransitionEvent(ctx context.Context, transitionEventID int64) error {
 	close(b.started)
 	select {
 	case <-b.release:
-		return transitionEventID, nil
+		return nil
 	case <-ctx.Done():
-		return 0, ctx.Err()
+		return ctx.Err()
 	}
 }

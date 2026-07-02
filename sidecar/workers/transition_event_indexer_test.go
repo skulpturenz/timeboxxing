@@ -104,6 +104,70 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 7)
 }
 
+func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	databasePath := filepath.Join(t.TempDir(), "backfill-workers.db")
+	database, err := db.New(ctx, db.Options{
+		Engine:         db.EngineSqlite,
+		DataSourceName: databasePath,
+	})
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+
+	queueDSN := db.SqliteDataSourceName(databasePath)
+	transitionEventReportedQueue, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions{
+		ConnectionString: queueDSN,
+		QueueName:        TransitionEventReportedQueueName.String(),
+	})
+	if err != nil {
+		t.Fatalf("create transition event reported queue: %v", err)
+	}
+
+	registry := services.New()
+	logging.RegisterLogger(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	db.Register(registry, database)
+	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
+	transitions := componentTransitions.NewService(registry)
+	semantic.RegisterRuntime(registry, &semantic.Runtime{
+		Indexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
+	})
+
+	runtime := NewRuntime(registry)
+	cleanupIndexer := runtime.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
+	defer cleanupIndexer()
+
+	tab := "Backfill Notes"
+	url := "https://example.com/backfill"
+	eventID, err := transitions.RecordTransitionEvent(ctx, componentTransitions.RecordTransitionEventParams{
+		ApplicationName: "Google Chrome",
+		Reason:          "focus_change",
+		StartedAt:       time.Date(2026, 6, 13, 11, 0, 0, 0, time.UTC),
+		EndedAt:         time.Date(2026, 6, 13, 11, 5, 0, 0, time.UTC),
+		Browser:         true,
+		Tab:             &tab,
+		CDPURL:          &url,
+	})
+	if err != nil {
+		t.Fatalf("record transition event: %v", err)
+	}
+
+	enqueuer := NewTransitionEventReportedEnqueuer(transitionEventReportedQueue)
+	if err := enqueuer.EnqueueTransitionEvent(ctx, eventID); err != nil {
+		t.Fatalf("enqueue backfill transition event: %v", err)
+	}
+
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_documents", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 7)
+}
+
 func countWorkerRows(t *testing.T, ctx context.Context, conn *sql.DB, table string) int {
 	t.Helper()
 	var count int

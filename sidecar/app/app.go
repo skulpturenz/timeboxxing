@@ -75,6 +75,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	for _, cleanup := range startWorkers(ctx, registry, workerRuntime, semanticRuntime) {
 		defer cleanup()
 	}
+	startStartupSemanticBackfill(semanticRuntime)
 
 	monitorHandle, err := monitor.Start(ctx, logger.With("service", "monitor"), monitor.Config{})
 	if err != nil {
@@ -125,7 +126,7 @@ func buildQueues(ctx context.Context, registry *services.Services[any, any]) err
 }
 
 func buildSemanticRuntime(ctx context.Context, registry *services.Services[any, any], database *db.Database, logger *slog.Logger) *semantic.Runtime {
-	semanticRuntime, err := newSemanticRuntime(ctx, database, logger)
+	semanticRuntime, err := newSemanticRuntime(ctx, database, logger, transitionEventBackfillEnqueuerFromServices(registry))
 	if err != nil {
 		logger.WarnContext(ctx, "semantic services unavailable", "error", err)
 		unavailableReason := semanticStartupMessage(err)
@@ -146,7 +147,6 @@ func buildSemanticRuntime(ctx context.Context, registry *services.Services[any, 
 			"embedding_dimension", semantic.StoreEmbeddingDimension,
 		)
 		logger.InfoContext(ctx, "RAG answering enabled", "rag_model", semanticRuntime.RAGModel)
-		semanticRuntime.Backfilling.Start(startupSemanticBackfillLimit)
 	} else if semanticRuntime.IndexStatus != nil {
 		logger.WarnContext(ctx, "semantic index status enabled but answering disabled", "reason", semanticRuntime.UnavailableReason)
 	} else {
@@ -154,6 +154,20 @@ func buildSemanticRuntime(ctx context.Context, registry *services.Services[any, 
 	}
 
 	return semanticRuntime
+}
+
+func transitionEventBackfillEnqueuerFromServices(registry *services.Services[any, any]) semantic.TransitionEventEnqueuer {
+	queues, _ := workers.QueuesFromServices(registry)
+	if queues.TransitionEventReportedQueue == nil {
+		return nil
+	}
+	return workers.NewTransitionEventReportedEnqueuer(queues.TransitionEventReportedQueue)
+}
+
+func startStartupSemanticBackfill(runtime *semantic.Runtime) {
+	if runtime != nil && runtime.Answerer != nil && runtime.Backfilling != nil {
+		runtime.Backfilling.Start(startupSemanticBackfillLimit)
+	}
 }
 
 func startWorkers(ctx context.Context, registry *services.Services[any, any], runtime *workers.Runtime, semanticRuntime *semantic.Runtime) []func() {
@@ -223,7 +237,7 @@ func interceptorLogger(l *slog.Logger) grpcLogging.Logger {
 	})
 }
 
-func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog.Logger) (*semantic.Runtime, error) {
+func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog.Logger, backfillEnqueuer semantic.TransitionEventEnqueuer) (*semantic.Runtime, error) {
 	settings, err := semantic.LoadAISettings(ctx, database.ReadQuerier)
 	if err != nil {
 		return nil, err
@@ -265,7 +279,7 @@ func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog
 	}
 
 	indexer := semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder)
-	backfiller := semantic.NewBackfiller(database.ReadQuerier, indexer, embedder.Model())
+	backfiller := semantic.NewBackfiller(database.ReadQuerier, backfillEnqueuer, embedder.Model())
 	backfillCoordinator := semantic.NewBackfillCoordinator(ctx, backfiller, logger.With("service", "semantic_backfill"))
 	indexStatus := semantic.NewIndexStatusService(database.ReadQuerier, backfillCoordinator, embedder.Model())
 	searcher := semantic.NewSearcher(database.ReadConn, embedder, vectorStore)

@@ -66,7 +66,7 @@ func (c *BackfillCoordinator) Start(limit int64) bool {
 		} else {
 			c.logger.InfoContext(c.ctx, "semantic backfill completed",
 				"checked", result.Checked,
-				"indexed", result.Indexed,
+				"enqueued", result.Enqueued,
 				"failed", result.Failed,
 			)
 		}
@@ -101,5 +101,5 @@ func safeBackfillStatusMessage(err error) string {
 	if message, ok := AIRequestUserMessage(err); ok {
 		return message
 	}
-	return "Semantic indexing failed. Check sidecar logs."
+	return "Semantic backfill failed. Check sidecar logs."
 }

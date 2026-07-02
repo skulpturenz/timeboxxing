@@ -14,24 +14,24 @@ type MissingTransitionEventLister interface {
 	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg queries.ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
 }
 
-type TransitionEventIndexer interface {
-	IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error)
+type TransitionEventEnqueuer interface {
+	EnqueueTransitionEvent(ctx context.Context, transitionEventID int64) error
 }
 
 type Backfiller struct {
 	lister         MissingTransitionEventLister
-	indexer        TransitionEventIndexer
+	enqueuer       TransitionEventEnqueuer
 	embeddingModel string
 }
 
 type BackfillResult struct {
-	Checked int
-	Indexed int
-	Failed  int
+	Checked  int
+	Enqueued int
+	Failed   int
 }
 
-func NewBackfiller(lister MissingTransitionEventLister, indexer TransitionEventIndexer, embeddingModel string) *Backfiller {
-	return &Backfiller{lister: lister, indexer: indexer, embeddingModel: embeddingModel}
+func NewBackfiller(lister MissingTransitionEventLister, enqueuer TransitionEventEnqueuer, embeddingModel string) *Backfiller {
+	return &Backfiller{lister: lister, enqueuer: enqueuer, embeddingModel: embeddingModel}
 }
 
 func (b *Backfiller) HasMissing(ctx context.Context) (bool, error) {
@@ -56,8 +56,8 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 	if b.lister == nil {
 		return BackfillResult{}, fmt.Errorf("missing transition event lister is required")
 	}
-	if b.indexer == nil {
-		return BackfillResult{}, fmt.Errorf("transition event indexer is required")
+	if b.enqueuer == nil {
+		return BackfillResult{}, fmt.Errorf("transition event enqueuer is required")
 	}
 
 	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
@@ -71,13 +71,13 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 	result := BackfillResult{Checked: len(ids)}
 	var firstErr error
 	for index, id := range ids {
-		if _, err := b.indexer.IndexTransitionEvent(ctx, id); err != nil {
+		if err := b.enqueuer.EnqueueTransitionEvent(ctx, id); err != nil {
 			result.Failed++
 			if firstErr == nil {
 				firstErr = err
 			}
 		} else {
-			result.Indexed++
+			result.Enqueued++
 		}
 
 		if index < len(ids)-1 {
@@ -89,7 +89,7 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 		}
 	}
 	if result.Failed > 0 {
-		return result, fmt.Errorf("semantic backfill failed for %d of %d checked events: %w", result.Failed, result.Checked, firstErr)
+		return result, fmt.Errorf("semantic backfill enqueue failed for %d of %d checked events: %w", result.Failed, result.Checked, firstErr)
 	}
 
 	return result, nil

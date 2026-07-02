@@ -50,7 +50,7 @@ func TestIndexStatusServiceExposesBackfillFailure(t *testing.T) {
 		ctx,
 		NewBackfiller(
 			staticMissingTransitionEventLister{ids: []int64{1}},
-			&recordingBackfillIndexer{failID: 1},
+			&recordingBackfillEnqueuer{failID: 1},
 			fakeEmbedder{}.Model(),
 		),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -73,7 +73,7 @@ func TestIndexStatusServiceExposesBackfillFailure(t *testing.T) {
 	if status.State != IndexStateUnavailable {
 		t.Fatalf("expected unavailable status, got %+v", status)
 	}
-	if status.Message != "Semantic indexing failed. Check sidecar logs." {
+	if status.Message != "Semantic backfill failed. Check sidecar logs." {
 		t.Fatalf("unexpected status message %q", status.Message)
 	}
 }
