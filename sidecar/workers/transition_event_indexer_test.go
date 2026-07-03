@@ -61,6 +61,11 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create transition event queue: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := transitionEventQueue.Close(); err != nil {
+			t.Errorf("close transition event queue: %v", err)
+		}
+	})
 	transitionEventReportedQueue, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions{
 		ConnectionString: queueDSN,
 		QueueName:        TransitionEventReportedQueueName.String(),
@@ -68,6 +73,11 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create transition event reported queue: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := transitionEventReportedQueue.Close(); err != nil {
+			t.Errorf("close transition event reported queue: %v", err)
+		}
+	})
 
 	registry := services.New()
 	logging.RegisterLogger(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -130,6 +140,11 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create transition event reported queue: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := transitionEventReportedQueue.Close(); err != nil {
+			t.Errorf("close transition event reported queue: %v", err)
+		}
+	})
 
 	registry := services.New()
 	logging.RegisterLogger(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))

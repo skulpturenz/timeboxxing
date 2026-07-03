@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/goptics/sqliteq"
@@ -9,6 +10,7 @@ import (
 )
 
 type Queue[T any] struct {
+	manager sqliteq.Queues
 	backend *sqliteq.Queue
 	queue   varmq.PersistentQueue[T]
 }
@@ -19,18 +21,19 @@ type QueueOptions struct {
 }
 
 func New[T any](ctx context.Context, opts QueueOptions) (*Queue[T], error) {
-	db := sqliteq.New(opts.ConnectionString)
+	manager := sqliteq.New(opts.ConnectionString)
 	queueName := opts.QueueName
 	if queueName == "" {
 		queueName = "test"
 	}
 
-	queue, err := db.NewQueue(queueName)
+	queue, err := manager.NewQueue(queueName)
 	if err != nil {
+		_ = manager.Close()
 		return nil, err
 	}
 
-	return &Queue[T]{backend: queue}, nil
+	return &Queue[T]{manager: manager, backend: queue}, nil
 }
 
 func (q *Queue[T]) Add(item T) error {
@@ -53,7 +56,23 @@ func (q *Queue[T]) AddWorker(_ context.Context, wf func(j varmq.Job[T]), config 
 
 	cleanup := func() {
 		w.WaitUntilIdle()
+		_ = w.StopAndWait()
 	}
 
 	return cleanup
+}
+
+func (q *Queue[T]) Close() error {
+	if q == nil {
+		return nil
+	}
+
+	var errs []error
+	if q.queue != nil {
+		errs = append(errs, q.queue.Close())
+	}
+	if q.manager != nil {
+		errs = append(errs, q.manager.Close())
+	}
+	return errors.Join(errs...)
 }

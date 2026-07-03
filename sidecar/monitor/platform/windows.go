@@ -141,6 +141,10 @@ func queryFullProcessImageName(processHandle uintptr) string {
 }
 
 func windowsAppIdentity(appPath string) (identifier string, appName string) {
+	appPath = strings.TrimSpace(appPath)
+	if appPath == "" {
+		return "", ""
+	}
 	exe := strings.TrimSuffix(strings.ToLower(filepath.Base(appPath)), ".exe")
 	if exe == "" {
 		return "", ""
