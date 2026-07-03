@@ -1,6 +1,7 @@
 package com.timeboxxing.app
 
 import java.io.File
+import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
 internal interface SecretStore {
@@ -16,14 +17,24 @@ internal enum class SecretKey(
     Ollama("com.timeboxxing.app.ollama"),
 }
 
+internal enum class SecretPlatform { MacOs, Windows, Linux }
+
+internal fun detectSecretPlatform(): SecretPlatform = when {
+    isMacOs() -> SecretPlatform.MacOs
+    isWindows() -> SecretPlatform.Windows
+    else -> SecretPlatform.Linux
+}
+
 internal class DesktopSecretStore(
     private val commandRunner: SecretCommandRunner = ProcessSecretCommandRunner,
+    private val platform: SecretPlatform = detectSecretPlatform(),
+    private val secretsDir: Path = defaultSecretsDir(),
 ) : SecretStore {
     override suspend fun read(key: SecretKey): String =
-        when {
-            isMacOs() -> readMacSecret(key)
-            isWindows() -> readWindowsSecret(key)
-            else -> readLinuxSecret(key)
+        when (platform) {
+            SecretPlatform.MacOs -> readMacSecret(key)
+            SecretPlatform.Windows -> readWindowsSecret(key)
+            SecretPlatform.Linux -> readLinuxSecret(key)
         }
 
     override suspend fun write(key: SecretKey, value: String) {
@@ -32,18 +43,18 @@ internal class DesktopSecretStore(
             return
         }
 
-        when {
-            isMacOs() -> writeMacSecret(key, value)
-            isWindows() -> writeWindowsSecret(key, value)
-            else -> writeLinuxSecret(key, value)
+        when (platform) {
+            SecretPlatform.MacOs -> writeMacSecret(key, value)
+            SecretPlatform.Windows -> writeWindowsSecret(key, value)
+            SecretPlatform.Linux -> writeLinuxSecret(key, value)
         }
     }
 
     override suspend fun delete(key: SecretKey) {
-        when {
-            isMacOs() -> deleteMacSecret(key)
-            isWindows() -> deleteWindowsSecret(key)
-            else -> deleteLinuxSecret(key)
+        when (platform) {
+            SecretPlatform.MacOs -> deleteMacSecret(key)
+            SecretPlatform.Windows -> deleteWindowsSecret(key)
+            SecretPlatform.Linux -> deleteLinuxSecret(key)
         }
     }
 
@@ -110,15 +121,21 @@ internal class DesktopSecretStore(
     private fun readWindowsSecret(key: SecretKey): String {
         val file = windowsSecretFile(key).toFile()
         if (!file.exists()) return ""
+        // The path is passed via an environment variable rather than a trailing argument:
+        // `powershell -Command "<script>"` does NOT bind trailing args to $args, so $args[0]
+        // would be $null. $env:TIMEBOXXING_SECRET_FILE is unambiguous across PowerShell 5.1/7.
         val script = """
-            if (Test-Path -LiteralPath ${'$'}args[0]) {
-              ${'$'}secure = Get-Content -Raw -LiteralPath ${'$'}args[0] | ConvertTo-SecureString
+            if (Test-Path -LiteralPath ${'$'}env:$SecretFileEnvVar) {
+              ${'$'}secure = Get-Content -Raw -LiteralPath ${'$'}env:$SecretFileEnvVar | ConvertTo-SecureString
               ${'$'}bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR(${'$'}secure)
               try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR(${'$'}bstr) }
               finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR(${'$'}bstr) }
             }
         """.trimIndent()
-        return commandRunner.run(listOf("powershell", "-NoProfile", "-Command", script, file.absolutePath))
+        return commandRunner.run(
+            listOf("powershell", "-NoProfile", "-Command", script),
+            env = mapOf(SecretFileEnvVar to file.absolutePath),
+        )
             .takeIf { it.exitCode == 0 }
             ?.stdout
             .orEmpty()
@@ -132,9 +149,19 @@ internal class DesktopSecretStore(
             ${'$'}secret = [Console]::In.ReadToEnd()
             ConvertTo-SecureString ${'$'}secret -AsPlainText -Force |
               ConvertFrom-SecureString |
-              Set-Content -NoNewline -LiteralPath ${'$'}args[0]
+              Set-Content -NoNewline -LiteralPath ${'$'}env:$SecretFileEnvVar
         """.trimIndent()
-        commandRunner.run(listOf("powershell", "-NoProfile", "-Command", script, file.toFile().absolutePath), stdin = value)
+        val result = commandRunner.run(
+            listOf("powershell", "-NoProfile", "-Command", script),
+            stdin = value,
+            env = mapOf(SecretFileEnvVar to file.toFile().absolutePath),
+        )
+        // Surface real failures instead of silently reporting success — DesktopSettingsRepository
+        // runs inside the ViewModel's runCatching, which renders this as the settings error banner.
+        check(result.exitCode == 0) {
+            "Failed to store ${key.name} secret: " +
+                result.stderr.trim().ifBlank { "powershell exited ${result.exitCode}" }
+        }
     }
 
     private fun deleteWindowsSecret(key: SecretKey) {
@@ -142,11 +169,13 @@ internal class DesktopSecretStore(
     }
 
     private fun windowsSecretFile(key: SecretKey) =
-        File(System.getProperty("user.home")).toPath()
-            .resolve(".timeboxxing")
-            .resolve("secrets")
-            .resolve("${key.service}.dpapi")
+        secretsDir.resolve("${key.service}.dpapi")
 }
+
+private fun defaultSecretsDir(): Path =
+    File(System.getProperty("user.home")).toPath()
+        .resolve(".timeboxxing")
+        .resolve("secrets")
 
 internal data class SecretCommandResult(
     val exitCode: Int,
@@ -155,14 +184,14 @@ internal data class SecretCommandResult(
 )
 
 internal interface SecretCommandRunner {
-    fun run(command: List<String>, stdin: String? = null): SecretCommandResult
+    fun run(command: List<String>, stdin: String? = null, env: Map<String, String> = emptyMap()): SecretCommandResult
 }
 
 internal object ProcessSecretCommandRunner : SecretCommandRunner {
-    override fun run(command: List<String>, stdin: String?): SecretCommandResult {
-        val process = ProcessBuilder(command)
-            .redirectErrorStream(false)
-            .start()
+    override fun run(command: List<String>, stdin: String?, env: Map<String, String>): SecretCommandResult {
+        val builder = ProcessBuilder(command).redirectErrorStream(false)
+        if (env.isNotEmpty()) builder.environment().putAll(env)
+        val process = builder.start()
         if (stdin != null) {
             process.outputStream.bufferedWriter().use { writer ->
                 writer.write(stdin)
@@ -179,6 +208,7 @@ internal object ProcessSecretCommandRunner : SecretCommandRunner {
 }
 
 private const val KeychainAccount = "api-key"
+private const val SecretFileEnvVar = "TIMEBOXXING_SECRET_FILE"
 
 private fun isMacOs(): Boolean =
     System.getProperty("os.name").startsWith("Mac", ignoreCase = true)

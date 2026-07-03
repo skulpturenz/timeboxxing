@@ -301,8 +301,7 @@ func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog
 func buildAIClients(settings semantic.AISettings, embeddingSlug string, semanticSlug string) (semantic.Embedder, semantic.Generator, error) {
 	switch settings.Provider {
 	case semantic.ProviderOpenRouter:
-		apiKey, ok := envs.OpenRouterAPIKey.Value()
-		apiKey = strings.TrimSpace(apiKey)
+		apiKey, ok := envs.ResolvedOpenRouterAPIKey()
 		if !ok || apiKey == "" {
 			return nil, nil, fmt.Errorf("OpenRouter API key is not configured")
 		}
@@ -326,8 +325,7 @@ func buildAIClients(settings semantic.AISettings, embeddingSlug string, semantic
 		return embedder, generator, nil
 
 	case semantic.ProviderOllama:
-		apiKey, _ := envs.OllamaAPIKey.Value()
-		apiKey = strings.TrimSpace(apiKey)
+		apiKey, _ := envs.ResolvedOllamaAPIKey()
 		embedder, err := semantic.NewOllamaEmbedder(semantic.OllamaConfig{
 			APIKey:    apiKey,
 			BaseURL:   settings.OllamaBaseURL,

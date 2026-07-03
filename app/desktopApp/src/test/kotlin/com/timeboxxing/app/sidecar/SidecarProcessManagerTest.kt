@@ -150,10 +150,11 @@ class SidecarProcessManagerTest {
     }
 
     @Test
-    fun childEnvironmentCopiesOnlySemanticSecrets() {
+    fun childEnvironmentNeverCarriesApiKeys() {
         val targetEnv = mutableMapOf(
             GoEnvVar to "stale",
-            OpenRouterApiKeyEnvVar to "parent-secret",
+            OpenRouterApiKeyEnvVar to "inherited-openrouter-secret",
+            OllamaApiKeyEnvVar to "inherited-ollama-secret",
             SidecarSentryDsnEnvVar to "stale-sentry-dsn",
             "SIDECAR_OPENROUTER_BASE_URL" to "https://example.invalid",
             "SIDECAR_SENTRY_AUTH_TOKEN" to "stale-sidecar-auth-token",
@@ -172,7 +173,6 @@ class SidecarProcessManagerTest {
             grpcListenAddress = "127.0.0.1:12345",
             databaseDsn = "/tmp/timeboxxing.db",
             parentEnv = parentEnv,
-            secrets = SidecarSecrets(openRouterApiKey = "keychain-openrouter-secret"),
             javaEnv = JavaEnv.Test,
         )
 
@@ -180,14 +180,46 @@ class SidecarProcessManagerTest {
         assertEquals("sqlite", targetEnv["SIDECAR_DATABASE_ENGINE"])
         assertEquals("/tmp/timeboxxing.db", targetEnv["SIDECAR_DATABASE_DSN"])
         assertEquals("/tmp/vector.dylib", targetEnv[SQLiteVectorExtensionPathEnvVar])
-        assertEquals("keychain-openrouter-secret", targetEnv[OpenRouterApiKeyEnvVar])
-        assertEquals("parent-ollama-secret", targetEnv[OllamaApiKeyEnvVar])
+        // Secrets are handed over stdin, never via the environment — even an inherited copy is stripped.
+        assertFalse(OpenRouterApiKeyEnvVar in targetEnv)
+        assertFalse(OllamaApiKeyEnvVar in targetEnv)
         assertEquals("https://public@example.com/99", targetEnv[SidecarSentryDsnEnvVar])
         assertEquals("test", targetEnv[GoEnvVar])
         assertFalse("SIDECAR_OPENROUTER_BASE_URL" in targetEnv)
         assertFalse("SIDECAR_EMBEDDING_MODEL" in targetEnv)
         assertFalse("SIDECAR_SENTRY_AUTH_TOKEN" in targetEnv)
         assertFalse("SENTRY_AUTH_TOKEN" in targetEnv)
+    }
+
+    @Test
+    fun resolveSidecarSecretsPrefersKeychainThenParentEnv() {
+        val parentEnv = mapOf(
+            OpenRouterApiKeyEnvVar to "parent-openrouter",
+            OllamaApiKeyEnvVar to "parent-ollama",
+        )
+
+        val resolved = resolveSidecarSecrets(
+            secrets = SidecarSecrets(openRouterApiKey = "keychain-openrouter"),
+            parentEnv = parentEnv,
+        )
+
+        // Keychain value wins for OpenRouter; Ollama falls back to the parent environment.
+        assertEquals("keychain-openrouter", resolved.openRouterApiKey)
+        assertEquals("parent-ollama", resolved.ollamaApiKey)
+    }
+
+    @Test
+    fun buildSecretHandoffPayloadEmitsOnlyNonBlankSecrets() {
+        val payload = buildSecretHandoffPayload(
+            SidecarSecrets(openRouterApiKey = "or-key", ollamaApiKey = ""),
+        )
+
+        assertEquals("$OpenRouterApiKeyEnvVar=or-key\n", payload)
+    }
+
+    @Test
+    fun buildSecretHandoffPayloadIsEmptyWhenNoSecrets() {
+        assertEquals("", buildSecretHandoffPayload(SidecarSecrets()))
     }
 
     @Test

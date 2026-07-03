@@ -37,7 +37,8 @@ internal class SidecarProcessManager(
         readinessDay: UsageDay,
         secrets: SidecarSecrets = SidecarSecrets(),
     ): SidecarStartResult = withContext(Dispatchers.IO) {
-        val redactor = SecretRedactor(secrets.values())
+        val resolvedSecrets = resolveSidecarSecrets(secrets, env)
+        val redactor = SecretRedactor(resolvedSecrets.values())
 
         val binary = resolveSidecarBinary()
             ?: return@withContext SidecarStartResult.Failed(
@@ -54,11 +55,14 @@ internal class SidecarProcessManager(
                     grpcListenAddress = target,
                     databaseDsn = sidecarDatabasePath().toString(),
                     parentEnv = env,
-                    secrets = secrets,
                     javaEnv = javaEnv,
                 )
             }
             .start()
+        // Hand the API keys to the sidecar over stdin rather than via environment variables, so
+        // they never enter the child's environment block (which would otherwise be readable via
+        // /proc/<pid>/environ, inherited by grandchild processes, and scraped into crash reports).
+        writeSecretHandoff(process, resolvedSecrets)
         logTail.start(process)
 
         val repository = GrpcUsageHistoryRepository(target)
@@ -124,6 +128,17 @@ internal class SidecarProcessManager(
 
     private fun findLoopbackPort(): Int =
         ServerSocket(0, 0, InetAddress.getByName("127.0.0.1")).use { it.localPort }
+
+    private fun writeSecretHandoff(process: Process, secrets: SidecarSecrets) {
+        // `use` writes then closes stdin, giving the sidecar's startup read an EOF even when the
+        // payload is empty. A failure here (e.g. the process already died) is non-fatal — the
+        // readiness loop below reports the dead process.
+        runCatching {
+            process.outputStream.use { stream ->
+                stream.write(buildSecretHandoffPayload(secrets).toByteArray(Charsets.UTF_8))
+            }
+        }
+    }
 }
 
 sealed interface SidecarStartResult {
@@ -211,7 +226,6 @@ internal fun configureSidecarEnvironment(
     databaseDsn: String,
     sqliteVectorExtensionPath: String? = null,
     parentEnv: Map<String, String>,
-    secrets: SidecarSecrets = SidecarSecrets(),
     javaEnv: JavaEnv = JavaEnv.Local,
 ) {
     targetEnv["SIDECAR_GRPC_LISTEN_ADDRESS"] = grpcListenAddress
@@ -219,6 +233,8 @@ internal fun configureSidecarEnvironment(
     targetEnv["SIDECAR_DATABASE_DSN"] = databaseDsn
     targetEnv.remove(GoEnvVar)
     targetEnv.remove(SQLiteVectorExtensionPathEnvVar)
+    // API keys are handed to the sidecar over stdin (see writeSecretHandoff), never via the
+    // environment — strip any inherited copies so they can't leak through the child's env block.
     targetEnv.remove(OpenRouterApiKeyEnvVar)
     targetEnv.remove(OllamaApiKeyEnvVar)
     targetEnv.remove(SidecarSentryDsnEnvVar)
@@ -232,20 +248,38 @@ internal fun configureSidecarEnvironment(
     if (vectorExtensionPath.isNotBlank()) {
         targetEnv[SQLiteVectorExtensionPathEnvVar] = vectorExtensionPath
     }
-    val openRouterApiKey = secrets.openRouterApiKey.ifBlank { parentEnv[OpenRouterApiKeyEnvVar].orEmpty() }
-    if (openRouterApiKey.isNotBlank()) {
-        targetEnv[OpenRouterApiKeyEnvVar] = openRouterApiKey
-    }
-    val ollamaApiKey = secrets.ollamaApiKey.ifBlank { parentEnv[OllamaApiKeyEnvVar].orEmpty() }
-    if (ollamaApiKey.isNotBlank()) {
-        targetEnv[OllamaApiKeyEnvVar] = ollamaApiKey
-    }
     val sidecarSentryDsn = parentEnv[SidecarSentryDsnEnvVar]
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?: PlaceholderSidecarSentryDsn
     targetEnv[SidecarSentryDsnEnvVar] = sidecarSentryDsn
     targetEnv[GoEnvVar] = javaEnv.value
+}
+
+/**
+ * Resolves the effective secrets handed to the sidecar, applying the parent-environment fallback
+ * used for local development (e.g. exporting `SIDECAR_OPENROUTER_API_KEY` to run against a
+ * dev-built sidecar). The result is passed over stdin, not the environment.
+ */
+internal fun resolveSidecarSecrets(
+    secrets: SidecarSecrets,
+    parentEnv: Map<String, String>,
+): SidecarSecrets = SidecarSecrets(
+    openRouterApiKey = secrets.openRouterApiKey.ifBlank { parentEnv[OpenRouterApiKeyEnvVar].orEmpty() },
+    ollamaApiKey = secrets.ollamaApiKey.ifBlank { parentEnv[OllamaApiKeyEnvVar].orEmpty() },
+)
+
+/**
+ * Builds the newline-delimited `KEY=VALUE` payload handed to the sidecar over stdin. Only
+ * non-blank secrets are emitted; API keys never contain newlines, so line framing is safe.
+ */
+internal fun buildSecretHandoffPayload(secrets: SidecarSecrets): String = buildString {
+    if (secrets.openRouterApiKey.isNotBlank()) {
+        append(OpenRouterApiKeyEnvVar).append('=').append(secrets.openRouterApiKey).append('\n')
+    }
+    if (secrets.ollamaApiKey.isNotBlank()) {
+        append(OllamaApiKeyEnvVar).append('=').append(secrets.ollamaApiKey).append('\n')
+    }
 }
 
 internal class SecretRedactor(
