@@ -68,36 +68,20 @@ fun SettingsPane(
             .padding(horizontal = 28.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                TbText(
-                    text = "Settings",
-                    style = TbTheme.typography.largeTitle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                TbText(
-                    text = if (state.settingsLoading) "Loading" else activeProviderLabel(draft.provider),
-                    style = TbTheme.typography.body,
-                    color = TbTheme.colors.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            TbButton(
-                onClick = { onAction(TimeboxxingAction.SaveSettings) },
-                enabled = !state.settingsLoading && !state.settingsSaving && embeddingModels.isNotEmpty() && semanticModels.isNotEmpty(),
-            ) {
-                TbText(
-                    text = if (state.settingsSaving) "Saving" else "Save",
-                    style = TbTheme.typography.button,
-                )
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TbText(
+                text = "Settings",
+                style = TbTheme.typography.largeTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TbText(
+                text = if (state.settingsLoading) "Loading" else activeProviderLabel(draft.provider),
+                style = TbTheme.typography.body,
+                color = TbTheme.colors.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 
         state.settingsError?.let { message ->
@@ -143,6 +127,7 @@ fun SettingsPane(
                             onValueChange = { onAction(TimeboxxingAction.UpdateOpenRouterApiKey(it)) },
                             label = "OpenRouter API key",
                             singleLine = true,
+                            password = true,
                         )
                     }
 
@@ -158,6 +143,7 @@ fun SettingsPane(
                             onValueChange = { onAction(TimeboxxingAction.UpdateOllamaApiKey(it)) },
                             label = "Ollama bearer token",
                             singleLine = true,
+                            password = true,
                         )
                     }
                 }
@@ -179,6 +165,25 @@ fun SettingsPane(
                     provider = draft.provider,
                     onModelSelected = { onAction(TimeboxxingAction.UpdateSettingsSemanticModel(it)) },
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TbButton(
+                        onClick = { onAction(TimeboxxingAction.SaveSettings) },
+                        enabled = !state.settingsLoading &&
+                            !state.settingsSaving &&
+                            embeddingModels.isNotEmpty() &&
+                            semanticModels.isNotEmpty(),
+                    ) {
+                        TbText(
+                            text = if (state.settingsSaving) "Saving" else "Save",
+                            style = TbTheme.typography.button,
+                        )
+                    }
+                }
             }
         }
 

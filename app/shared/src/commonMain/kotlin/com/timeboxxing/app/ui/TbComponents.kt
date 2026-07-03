@@ -23,17 +23,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicSecureTextField
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -251,6 +259,38 @@ fun TbIconButton(
 }
 
 @Composable
+private fun TbInlineIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = TbTheme.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    TbTooltip(text = contentDescription) {
+        UnstyledButton(
+            onClick = onClick,
+            interactionSource = interactionSource,
+            modifier = modifier
+                .size(18.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(if (hovered || pressed) colors.controlFill else Color.Transparent),
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            TbIcon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(15.dp),
+                tint = if (hovered || pressed) colors.text else colors.secondaryText,
+            )
+        }
+    }
+}
+
+@Composable
 fun TbCheckbox(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -302,10 +342,16 @@ fun TbTextField(
     maxLines: Int = Int.MAX_VALUE,
     suffix: (@Composable () -> Unit)? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    password: Boolean = false,
     inputModifier: Modifier = Modifier,
 ) {
     val colors = TbTheme.colors
     val state = rememberTextFieldState(initialText = value)
+    val selectionColors = androidx.compose.foundation.text.selection.TextSelectionColors(
+        handleColor = colors.accent,
+        backgroundColor = colors.accent.copy(alpha = 0.24f),
+    )
+    var passwordVisible by remember(password, label) { mutableStateOf(false) }
 
     LaunchedEffect(value) {
         if (state.text.toString() != value) {
@@ -344,30 +390,63 @@ fun TbTextField(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
             ) {
-                UnstyledTextField(
-                    modifier = Modifier
-                        .weight(1f)
-                        .then(inputModifier),
-                    state = state,
-                    cursorBrush = SolidColor(colors.accent),
-                    selectionColors = androidx.compose.foundation.text.selection.TextSelectionColors(
-                        handleColor = colors.accent,
-                        backgroundColor = colors.accent.copy(alpha = 0.24f),
-                    ),
-                    textStyle = TbTheme.typography.body,
-                    textColor = colors.text,
-                    keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-                    lineLimits = if (singleLine) {
-                        TextFieldLineLimits.SingleLine
-                    } else {
-                        TextFieldLineLimits.MultiLine(minLines, maxLines)
-                    },
-                ) {
-                    TextInput(modifier = Modifier.fillMaxWidth())
+                if (password) {
+                    CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
+                        BasicSecureTextField(
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(inputModifier),
+                            state = state,
+                            cursorBrush = SolidColor(colors.accent),
+                            textStyle = TbTheme.typography.body.copy(color = colors.text),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            textObfuscationMode = if (passwordVisible) {
+                                TextObfuscationMode.Visible
+                            } else {
+                                TextObfuscationMode.Hidden
+                            },
+                        )
+                    }
+                } else {
+                    UnstyledTextField(
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(inputModifier),
+                        state = state,
+                        cursorBrush = SolidColor(colors.accent),
+                        selectionColors = selectionColors,
+                        textStyle = TbTheme.typography.body,
+                        textColor = colors.text,
+                        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                        lineLimits = if (singleLine) {
+                            TextFieldLineLimits.SingleLine
+                        } else {
+                            TextFieldLineLimits.MultiLine(minLines, maxLines)
+                        },
+                    ) {
+                        TextInput(modifier = Modifier.fillMaxWidth())
+                    }
                 }
-                if (suffix != null) {
-                    Box(modifier = Modifier.padding(top = if (singleLine) 0.dp else 1.dp)) {
-                        suffix()
+                if (suffix != null || password) {
+                    Row(
+                        modifier = Modifier.padding(top = if (singleLine) 0.dp else 1.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        suffix?.invoke()
+                        if (password) {
+                            val fieldName = label ?: "password"
+                            val action = if (passwordVisible) "Hide" else "Show"
+                            TbInlineIconButton(
+                                icon = if (passwordVisible) {
+                                    Icons.Rounded.VisibilityOff
+                                } else {
+                                    Icons.Rounded.Visibility
+                                },
+                                contentDescription = "$action $fieldName",
+                                onClick = { passwordVisible = !passwordVisible },
+                            )
+                        }
                     }
                 }
             }
