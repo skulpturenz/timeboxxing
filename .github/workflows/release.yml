@@ -220,7 +220,14 @@ jobs:
       - name: Package Windows installer
         if: runner.os == 'Windows'
         working-directory: app
-        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe -Ptimeboxxing.javaEnv="$env:JAVA_ENV" -Ptimeboxxing.packageVersion="$env:PACKAGE_VERSION"
+        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION"
+
+      - name: Dump packaging logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "== Compose/jpackage logs =="
+          find installer/packager/build/compose/logs -type f -print -exec cat {} \; 2>/dev/null || true
 
       - name: Collect macOS installer
         if: runner.os == 'macOS'

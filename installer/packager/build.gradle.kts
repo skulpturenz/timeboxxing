@@ -53,8 +53,27 @@ val javaEnvProvider = providers.gradleProperty("timeboxxing.javaEnv")
     }
     .orElse("local")
 
+// jpackage requires one to three dot-separated integers whose first component is >= 1
+// (macOS rejects a zero/negative leading version outright). Release tags can legitimately be
+// 0.x (e.g. v0.0.1), so add one to the major component for the installer/bundle version only —
+// the release tag and asset names are unaffected.
+fun normalizeInstallerVersion(raw: String): String {
+    val core = raw.trim().substringBefore('-').substringBefore('+')
+    val parts = core.split('.')
+    if (parts.isEmpty() || parts.size > 3) {
+        throw GradleException("Invalid package version '$raw'. Expected one to three integers separated by dots.")
+    }
+    val numbers = parts.map { part ->
+        part.toIntOrNull()?.takeIf { it >= 0 }
+            ?: throw GradleException("Invalid package version '$raw'. '$part' is not a non-negative integer.")
+    }.toMutableList()
+    numbers[0] = numbers[0] + 1
+    return numbers.joinToString(".")
+}
+
 val packageVersionProvider = providers.gradleProperty("timeboxxing.packageVersion")
     .orElse("1.0.0")
+    .map(::normalizeInstallerVersion)
 
 val generatedBuildConfigDir = layout.buildDirectory.dir("generated/timeboxxingBuildConfig/kotlin")
 val generateDesktopBuildConfig by tasks.registering {
