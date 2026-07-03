@@ -53,6 +53,9 @@ val javaEnvProvider = providers.gradleProperty("timeboxxing.javaEnv")
     }
     .orElse("local")
 
+val packageVersionProvider = providers.gradleProperty("timeboxxing.packageVersion")
+    .orElse("1.0.0")
+
 val generatedBuildConfigDir = layout.buildDirectory.dir("generated/timeboxxingBuildConfig/kotlin")
 val generateDesktopBuildConfig by tasks.registering {
     inputs.property("diagnosticsEnabled", diagnosticsEnabledProvider)
@@ -135,7 +138,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Exe)
             packageName = "Timeboxxing"
-            packageVersion = "1.0.0"
+            packageVersion = packageVersionProvider.get()
             description = "Timeboxxing desktop app"
             vendor = "Skulpture"
             appResourcesRootDir.set(installerResourcesRoot)

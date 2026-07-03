@@ -1,0 +1,290 @@
+name: Release
+
+on:
+  pull_request_target:
+    types:
+      - closed
+    branches:
+      - master
+      - staging/**
+      - canary/**
+  workflow_dispatch:
+    inputs:
+      release_label:
+        description: Release label to use for the manual release
+        required: true
+        type: choice
+        default: release/prerelease
+        options:
+          - release/major
+          - release/minor
+          - release/patch
+          - release/prerelease
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      release-label: ${{ steps.release-context.outputs.release-label }}
+      target-branch: ${{ steps.release-context.outputs.target-branch }}
+      release-tag: ${{ steps.bump.outputs.next-tag }}
+      release-version: ${{ steps.bump.outputs.next-version }}
+      package-version: ${{ steps.package-version.outputs.package-version }}
+      java-env: ${{ steps.java-env.outputs.java-env }}
+      release-sha: ${{ steps.release-sha.outputs.release-sha }}
+      release-body: ${{ steps.changelog.outputs.unreleased-content }}
+
+    steps:
+      - name: Match release label
+        id: pr-release-label
+        if: github.event_name == 'pull_request_target'
+        uses: zwaldowski/match-label-action@v6
+        with:
+          allowed: release/major, release/minor, release/patch, release/prerelease
+          default_match: release/prerelease
+
+      - name: Resolve release context
+        id: release-context
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_RELEASE_LABEL: ${{ inputs.release_label }}
+          MANUAL_TARGET_BRANCH: ${{ github.ref_name }}
+          PR_RELEASE_LABEL: ${{ steps.pr-release-label.outputs.match }}
+          PR_TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            release_label="${MANUAL_RELEASE_LABEL}"
+            target_branch="${MANUAL_TARGET_BRANCH}"
+          else
+            release_label="${PR_RELEASE_LABEL}"
+            target_branch="${PR_TARGET_BRANCH}"
+          fi
+
+          case "${release_label}" in
+            release/major|release/minor|release/patch|release/prerelease) ;;
+            *)
+              echo "Unsupported release label: ${release_label:-none}" >&2
+              exit 1
+              ;;
+          esac
+
+          case "${target_branch}" in
+            master|staging/*|canary/*) ;;
+            *)
+              echo "Unsupported release target branch: ${target_branch:-none}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "release-label=${release_label}" >> "${GITHUB_OUTPUT}"
+          echo "target-branch=${target_branch}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out target branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.release-context.outputs.target-branch }}
+
+      - name: Determine next release version
+        id: bump
+        uses: skulpturenz/kakak-bot/bump@master
+        with:
+          from: ${{ steps.release-context.outputs.release-label }}
+          label-prefix: release/
+          release-prefix: v
+
+      - name: Determine package version
+        id: package-version
+        env:
+          RELEASE_VERSION: ${{ steps.bump.outputs.next-version }}
+        run: |
+          package_version="${RELEASE_VERSION%%-*}"
+          echo "package-version=${package_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Determine Java environment
+        id: java-env
+        env:
+          TARGET_BRANCH: ${{ steps.release-context.outputs.target-branch }}
+        run: |
+          if [ "${TARGET_BRANCH}" = "master" ]; then
+            java_env="production"
+          else
+            java_env="development"
+          fi
+
+          echo "java-env=${java_env}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check release tag
+        env:
+          RELEASE_TAG: ${{ steps.bump.outputs.next-tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "Tag ${RELEASE_TAG} already exists locally." >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "Tag ${RELEASE_TAG} already exists on origin." >&2
+            exit 1
+          fi
+
+      - name: Update changelog
+        id: changelog
+        uses: skulpturenz/kakak-bot/changelog@master
+        with:
+          message: "chore: update changelog"
+          branch: ${{ steps.release-context.outputs.target-branch }}
+          output: CHANGELOG.md
+          token: ${{ github.token }}
+
+      - name: Resolve release SHA
+        id: release-sha
+        env:
+          CHANGELOG_SHA: ${{ steps.changelog.outputs.commit-sha }}
+        run: |
+          if [ -n "${CHANGELOG_SHA}" ]; then
+            release_sha="${CHANGELOG_SHA}"
+          else
+            release_sha="$(git rev-parse HEAD)"
+          fi
+
+          echo "release-sha=${release_sha}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build installer (${{ matrix.os }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            artifact-name: timeboxxing-macos
+          - os: windows-2025
+            artifact-name: timeboxxing-windows
+    env:
+      CGO_ENABLED: "1"
+      GO_BINARY: go
+      JAVA_ENV: ${{ needs.prepare.outputs.java-env }}
+      PACKAGE_VERSION: ${{ needs.prepare.outputs.package-version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
+
+    steps:
+      - name: Check out release SHA
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.release-sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.4"
+          cache: true
+          cache-dependency-path: sidecar/go.sum
+
+      - name: Add MSYS2 MinGW to PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
+
+      - name: Show C compiler
+        if: runner.os == 'Windows'
+        run: gcc --version
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Package macOS installer
+        if: runner.os == 'macOS'
+        working-directory: app
+        run: ./gradlew --no-daemon -p ../installer :packager:packageDmg -Ptimeboxxing.javaEnv="${JAVA_ENV}" -Ptimeboxxing.packageVersion="${PACKAGE_VERSION}"
+
+      - name: Package Windows installer
+        if: runner.os == 'Windows'
+        working-directory: app
+        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe -Ptimeboxxing.javaEnv="$env:JAVA_ENV" -Ptimeboxxing.packageVersion="$env:PACKAGE_VERSION"
+
+      - name: Collect macOS installer
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p release-assets
+          artifact="$(find installer/packager/build/compose/binaries/main/dmg -type f -name "*.dmg" | head -n 1)"
+          if [ -z "${artifact}" ]; then
+            echo "No DMG artifact found." >&2
+            exit 1
+          fi
+
+          cp "${artifact}" "release-assets/Timeboxxing-${RELEASE_TAG}-macOS.dmg"
+
+      - name: Collect Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          $artifact = Get-ChildItem -Path installer\packager\build\compose\binaries\main\exe -Filter *.exe -File | Select-Object -First 1
+          if (-not $artifact) {
+            throw "No EXE artifact found."
+          }
+
+          Copy-Item $artifact.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows.exe"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out release SHA
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.release-sha }}
+
+      - name: Download installer artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: timeboxxing-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: skulpturenz/kakak-bot/release@master
+        with:
+          version: ${{ needs.prepare.outputs.release-tag }}
+          body: |
+            ${{ needs.prepare.outputs.release-body }}
+          token: ${{ github.token }}
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
+        run: gh release upload "${RELEASE_TAG}" release-assets/* --clobber
