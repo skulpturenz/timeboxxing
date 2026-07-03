@@ -166,7 +166,12 @@ private fun runDesktopApplication(javaEnv: JavaEnv) {
                     }
                 }
 
-                PlatformMenu(onClose = ::exitApplication)
+                if (isMacOs) {
+                    // macOS relocates this to the system menu bar; on Windows/Linux it would
+                    // render as an out-of-place in-window "File" bar. Close/quit shortcuts are
+                    // handled independently by onPreviewKeyEvent, so nothing is lost here.
+                    PlatformMenu(onClose = ::exitApplication)
+                }
 
                 Column(
                     modifier = Modifier
@@ -395,12 +400,17 @@ private fun ComposeWindow.applyDesktopChrome(
     contentPane.background = awtBackground
     rootPane.background = awtBackground
 
-    if (!isMacOs()) return
+    if (isMacOs()) {
+        rootPane.putClientProperty("apple.awt.fullWindowContent", true)
+        rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
+        rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
+        rootPane.putClientProperty("apple.awt.windowAppearance", macOsWindowAppearanceName(darkTheme))
+        return
+    }
 
-    rootPane.putClientProperty("apple.awt.fullWindowContent", true)
-    rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
-    rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
-    rootPane.putClientProperty("apple.awt.windowAppearance", macOsWindowAppearanceName(darkTheme))
+    if (isWindows()) {
+        applyWindowsTitleBar(backgroundColor, darkTheme)
+    }
 }
 
 internal fun macOsWindowAppearanceName(darkTheme: Boolean): String =

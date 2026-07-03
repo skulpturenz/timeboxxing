@@ -22,6 +22,7 @@ dependencies {
     implementation(libs.koin.core)
     implementation(libs.kotlinx.coroutinesSwing)
     implementation(libs.sentry)
+    implementation(libs.jna)
 
     implementation(libs.compose.uiToolingPreview)
 }
@@ -166,6 +167,16 @@ compose.desktop {
                 bundleID = "com.skulpture.timeboxxing"
                 packageName = "Timeboxxing"
                 dockName = "Timeboxxing"
+            }
+
+            windows {
+                // Without these, jpackage installs the app but creates no way to launch it.
+                menuGroup = "Timeboxxing"   // Start Menu entry (--win-menu / --win-menu-group)
+                shortcut = true             // Desktop shortcut (--win-shortcut)
+                perUserInstall = true       // install into the user profile, no admin elevation
+                // Stable across every release so upgrades replace the prior install instead of
+                // duplicating it. Never regenerate this value.
+                upgradeUuid = "3bbf34bc-ad83-4284-a0f6-67c6c654c2c1"
             }
         }
     }

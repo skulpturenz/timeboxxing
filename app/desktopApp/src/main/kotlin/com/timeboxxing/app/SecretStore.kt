@@ -183,5 +183,5 @@ private const val KeychainAccount = "api-key"
 private fun isMacOs(): Boolean =
     System.getProperty("os.name").startsWith("Mac", ignoreCase = true)
 
-private fun isWindows(): Boolean =
+internal fun isWindows(): Boolean =
     System.getProperty("os.name").startsWith("Windows", ignoreCase = true)

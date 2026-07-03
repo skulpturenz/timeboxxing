@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.koin.core)
     implementation(libs.kotlinx.coroutinesSwing)
     implementation(libs.sentry)
+    implementation(libs.jna)
 
     implementation(libs.compose.uiToolingPreview)
 
