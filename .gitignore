@@ -30,6 +30,7 @@ Temporary Items
 pom.xml
 pom.xml.asc
 *.jar
+!app/gradle/wrapper/gradle-wrapper.jar
 *.class
 /lib/
 /classes/
