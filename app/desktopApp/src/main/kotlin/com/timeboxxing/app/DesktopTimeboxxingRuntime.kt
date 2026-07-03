@@ -20,6 +20,7 @@ import com.timeboxxing.domain.model.AppearanceMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -112,9 +113,13 @@ internal class DesktopTimeboxxingRuntime(
                     _sidecarStatus.value = TimeboxxingSidecarStatus.Failed(result.message)
                 }
             }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (throwable: Throwable) {
             DesktopSentry.captureException(throwable)
-            throw throwable
+            val message = throwable.message ?: "Usage sidecar failed to start."
+            _repositories.value = failedRepositories(message)
+            _sidecarStatus.value = TimeboxxingSidecarStatus.Failed(message)
         } finally {
             transaction.close()
         }

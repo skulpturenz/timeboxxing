@@ -183,3 +183,50 @@ tasks.matching {
 }.configureEach {
     dependsOn(syncInstallerResources)
 }
+
+// jpackage copies app content into the macOS .app with the executable bit stripped (0644), so the
+// bundled Go sidecar can't be spawned and the app hangs on its loading screen. Restore the exec bit
+// on the app image after createDistributable (which runs before packageDmg), so it works even when
+// launched from the read-only DMG. macOS only; Windows spawns a .exe (no exec bit needed).
+val isMacOs = System.getProperty("os.name").lowercase().contains("mac")
+val macAppImageSidecar =
+    layout.buildDirectory.file("compose/binaries/main/app/Timeboxxing.app/Contents/app/resources/sidecar/timeboxxing-sidecar")
+val macAppImageDir = layout.buildDirectory.dir("compose/binaries/main/app/Timeboxxing.app")
+
+fun runCommand(vararg command: String): Int {
+    val process = ProcessBuilder(*command).redirectErrorStream(true).start()
+    process.inputStream.bufferedReader().forEachLine { logger.lifecycle(it) }
+    return process.waitFor()
+}
+
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    doLast {
+        if (!isMacOs) {
+            return@doLast
+        }
+
+        val sidecar = macAppImageSidecar.get().asFile
+        if (!sidecar.isFile) {
+            throw GradleException("Bundled sidecar not found at $sidecar")
+        }
+        if (!sidecar.setExecutable(true, false)) {
+            throw GradleException("Failed to set the executable bit on $sidecar")
+        }
+
+        // Changing mode bits doesn't alter file content, so the ad-hoc resource seal (content-hash
+        // based) should stay valid. Verify, and only re-seal if the chmod actually invalidated it —
+        // preserving the entitlements the JVM relies on (allow-jit, disable-library-validation, ...).
+        val app = macAppImageDir.get().asFile.absolutePath
+        if (runCommand("codesign", "--verify", "--deep", "--strict", app) != 0) {
+            logger.lifecycle("Re-sealing ad-hoc signature for $app after setting sidecar exec bit")
+            val resealed = runCommand(
+                "codesign", "--force", "--sign", "-",
+                "--preserve-metadata=entitlements,requirements,flags",
+                app,
+            )
+            if (resealed != 0) {
+                throw GradleException("Failed to re-seal ad-hoc signature for $app")
+            }
+        }
+    }
+}
