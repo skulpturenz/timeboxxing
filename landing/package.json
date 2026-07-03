@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.7.0",
   "scripts": {
     "dev": "env ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "build": "env ASTRO_TELEMETRY_DISABLED=1 astro build",
