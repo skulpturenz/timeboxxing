@@ -60,6 +60,7 @@ All notable changes to this project will be documented in this file.
 - Mvp vibe slop - add gradle wrapper ([bc20165](bc201658e38ad27d08505d3ddf6acbca8f103c60))
 - Mvp vibe slop - fix sidecar tests on windows ([43cc9b9](43cc9b9337b6ac3aab38ac2a6bb96f3bd1d319d3))
 - Mvp vibe slop - release action ([f0247be](f0247bec3021399b8cbeb1ef91380621093a1cf4))
+- Mvp vibe slop - fix installer build ([6013cd3](6013cd32e793599e20149c6302d91e80976e27b9))
 
 ### Refactor
 
