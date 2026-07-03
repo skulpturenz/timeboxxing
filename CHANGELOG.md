@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[da9ccdf](da9ccdffd0d3b75033310a564171c2415593daaa)...[7631b34](7631b342f6ccdf7696f7f74a22530a74c8a86e1d)
+[aa7a2d2](aa7a2d2366fe6c38e5db0e8b2c0988ddc9874ba5)...[6e14707](6e1470724b1db7fb7e748d50f58cce3a3911902b)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - create shortcuts on windows, update title bar config ([84b428a](84b428a95d8e1ba7d91213eff2104a21e941eaaa))
+
+## 0.0.1-2 - 2026-07-03
+
+[da9ccdf](da9ccdffd0d3b75033310a564171c2415593daaa)...[aa7a2d2](aa7a2d2366fe6c38e5db0e8b2c0988ddc9874ba5)
 
 ### Miscellaneous Tasks
 
