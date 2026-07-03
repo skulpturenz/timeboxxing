@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[aa7a2d2](aa7a2d2366fe6c38e5db0e8b2c0988ddc9874ba5)...[6e14707](6e1470724b1db7fb7e748d50f58cce3a3911902b)
+[a6fdb34](a6fdb345cfd4740383d5a75c796fb93429d4d1cb)...[ff94c37](ff94c379d52f85d897af2f7860c67aefcdc5bcfa)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - fix setting secrets on windows, also improve secret handling on windows ([4f41da5](4f41da541e2757461388e7d73f8eefe97e82784d))
+
+## 0.0.1-3 - 2026-07-03
+
+[aa7a2d2](aa7a2d2366fe6c38e5db0e8b2c0988ddc9874ba5)...[a6fdb34](a6fdb345cfd4740383d5a75c796fb93429d4d1cb)
 
 ### Miscellaneous Tasks
 
