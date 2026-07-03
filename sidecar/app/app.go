@@ -29,6 +29,7 @@ import (
 	sidecarLogging "github.com/skulpturenz/timeboxxing/sidecar/logging"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
+	"github.com/skulpturenz/timeboxxing/sidecar/observability"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
@@ -209,10 +210,13 @@ func serveGRPC(ctx context.Context, registry *services.Services[any, any], logge
 	}
 	server := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
-			grpcLogging.UnaryServerInterceptor(interceptorLogger(rpcLogger), grpcLogging.WithFieldsFromContext(logTraceID)),
 			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandlerContext(grpcPanicRecoveryHandler)),
+			observability.UnaryServerInterceptor(),
+			grpcLogging.UnaryServerInterceptor(interceptorLogger(rpcLogger), grpcLogging.WithFieldsFromContext(logTraceID)),
 		),
 		grpc.ChainStreamInterceptor(
+			recovery.StreamServerInterceptor(recovery.WithRecoveryHandlerContext(grpcPanicRecoveryHandler)),
+			observability.StreamServerInterceptor(),
 			grpcLogging.StreamServerInterceptor(interceptorLogger(rpcLogger), grpcLogging.WithFieldsFromContext(logTraceID)),
 		),
 	)

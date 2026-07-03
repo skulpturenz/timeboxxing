@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+compose.resources {
+    packageOfResClass = "app.shared.generated.resources"
+}
+
 kotlin {
     jvm()
 

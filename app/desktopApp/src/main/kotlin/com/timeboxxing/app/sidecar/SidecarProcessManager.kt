@@ -5,6 +5,8 @@ import com.timeboxxing.data.grpc.GrpcProjectRepository
 import com.timeboxxing.data.grpc.GrpcSettingsRepository
 import com.timeboxxing.data.grpc.GrpcTimesheetRepository
 import com.timeboxxing.data.grpc.GrpcUsageHistoryRepository
+import com.timeboxxing.app.GoEnvVar
+import com.timeboxxing.app.JavaEnv
 import com.timeboxxing.domain.model.UsageDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -20,11 +22,12 @@ import kotlin.concurrent.thread
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 
-class SidecarProcessManager(
+internal class SidecarProcessManager(
     private val env: Map<String, String> = System.getenv(),
     private val sessionLog: SidecarSessionLog = SidecarSessionLog(),
     private val classLoader: ClassLoader = Thread.currentThread().contextClassLoader,
     private val systemProperty: (String) -> String? = System::getProperty,
+    private val javaEnv: JavaEnv = JavaEnv.Local,
     osName: String = System.getProperty("os.name"),
     userHome: String = System.getProperty("user.home"),
 ) {
@@ -52,6 +55,7 @@ class SidecarProcessManager(
                     databaseDsn = sidecarDatabasePath().toString(),
                     parentEnv = env,
                     secrets = secrets,
+                    javaEnv = javaEnv,
                 )
             }
             .start()
@@ -208,13 +212,20 @@ internal fun configureSidecarEnvironment(
     sqliteVectorExtensionPath: String? = null,
     parentEnv: Map<String, String>,
     secrets: SidecarSecrets = SidecarSecrets(),
+    javaEnv: JavaEnv = JavaEnv.Local,
 ) {
     targetEnv["SIDECAR_GRPC_LISTEN_ADDRESS"] = grpcListenAddress
     targetEnv["SIDECAR_DATABASE_ENGINE"] = "sqlite"
     targetEnv["SIDECAR_DATABASE_DSN"] = databaseDsn
+    targetEnv.remove(GoEnvVar)
     targetEnv.remove(SQLiteVectorExtensionPathEnvVar)
     targetEnv.remove(OpenRouterApiKeyEnvVar)
     targetEnv.remove(OllamaApiKeyEnvVar)
+    targetEnv.remove(SidecarSentryDsnEnvVar)
+    targetEnv.remove(SidecarSentryAuthTokenEnvVar)
+    targetEnv.remove(SentryAuthTokenEnvVar)
+    targetEnv.remove(OpenRouterBaseUrlEnvVar)
+    targetEnv.remove(SidecarEmbeddingModelEnvVar)
     val vectorExtensionPath = sqliteVectorExtensionPath.orEmpty().ifBlank {
         parentEnv[SQLiteVectorExtensionPathEnvVar].orEmpty()
     }
@@ -229,6 +240,12 @@ internal fun configureSidecarEnvironment(
     if (ollamaApiKey.isNotBlank()) {
         targetEnv[OllamaApiKeyEnvVar] = ollamaApiKey
     }
+    val sidecarSentryDsn = parentEnv[SidecarSentryDsnEnvVar]
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: PlaceholderSidecarSentryDsn
+    targetEnv[SidecarSentryDsnEnvVar] = sidecarSentryDsn
+    targetEnv[GoEnvVar] = javaEnv.value
 }
 
 internal class SecretRedactor(
@@ -289,11 +306,21 @@ private val sqliteVectorResourcePath: String? = run {
 internal const val SQLiteVectorExtensionPathEnvVar = "SIDECAR_SQLITE_VECTOR_EXTENSION_PATH"
 internal const val OpenRouterApiKeyEnvVar = "SIDECAR_OPENROUTER_API_KEY"
 internal const val OllamaApiKeyEnvVar = "SIDECAR_OLLAMA_API_KEY"
+internal const val SidecarSentryDsnEnvVar = "SIDECAR_SENTRY_DSN"
 internal const val TimeboxxingSidecarBinaryEnvVar = "TIMEBOXXING_SIDECAR_BINARY"
+private const val SidecarSentryAuthTokenEnvVar = "SIDECAR_SENTRY_AUTH_TOKEN"
+private const val SentryAuthTokenEnvVar = "SENTRY_AUTH_TOKEN"
+private const val OpenRouterBaseUrlEnvVar = "SIDECAR_OPENROUTER_BASE_URL"
+private const val SidecarEmbeddingModelEnvVar = "SIDECAR_EMBEDDING_MODEL"
 private const val ComposeApplicationResourcesDirProperty = "compose.application.resources.dir"
 
+// TODO(auth): Replace this placeholder DSN once the sidecar Sentry project/auth details are finalized.
+internal const val PlaceholderSidecarSentryDsn = "https://public@example.com/2"
+
 private val openRouterKeyPattern = Regex("""sk-or-v1-[A-Za-z0-9_-]+""")
-private val semanticSecretEnvPattern = Regex("""((?:SIDECAR_OPENROUTER_API_KEY|SIDECAR_OLLAMA_API_KEY)\s*=\s*)\S+""")
+private val semanticSecretEnvPattern = Regex(
+    """((?:SIDECAR_OPENROUTER_API_KEY|SIDECAR_OLLAMA_API_KEY|SIDECAR_SENTRY_AUTH_TOKEN|SENTRY_AUTH_TOKEN)\s*=\s*)\S+""",
+)
 
 internal fun resolveTimeboxxingDataDirectory(
     env: Map<String, String>,

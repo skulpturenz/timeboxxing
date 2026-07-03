@@ -7,12 +7,17 @@ import com.timeboxxing.app.sidecar.SidecarSessionLog
 import com.timeboxxing.app.ui.UsageIconLoader
 import org.koin.dsl.module
 
-internal val desktopTimeboxxingModule = module {
+internal fun desktopTimeboxxingModule(javaEnv: JavaEnv) = module {
     includes(timeboxxingPresentationModule)
     single { SidecarSessionLog() }
     single<SecretStore> { DesktopSecretStore() }
     single { AppearancePreferences() }
-    single { SidecarProcessManager(sessionLog = get()) }
+    single {
+        SidecarProcessManager(
+            sessionLog = get(),
+            javaEnv = javaEnv,
+        )
+    }
     single {
         DesktopTimeboxxingRuntime(
             secretStore = get(),

@@ -1,4 +1,5 @@
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
@@ -11,6 +12,9 @@ import org.gradle.api.tasks.TaskAction
 abstract class GenerateDesktopBuildConfigTask : DefaultTask() {
     @get:Input
     abstract val diagnosticsEnabled: Property<Boolean>
+
+    @get:Input
+    abstract val javaEnv: Property<String>
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -27,6 +31,7 @@ abstract class GenerateDesktopBuildConfigTask : DefaultTask() {
 
             internal object DesktopBuildConfig {
                 const val DiagnosticsEnabled: Boolean = ${diagnosticsEnabled.get()}
+                const val JavaEnv: String = "${javaEnv.get()}"
             }
             """.trimIndent() + "\n",
         )
@@ -52,6 +57,7 @@ dependencies {
     implementation(libs.koin.compose.viewmodel)
     implementation(libs.koin.core)
     implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.sentry)
 
     implementation(libs.compose.uiToolingPreview)
 
@@ -83,9 +89,21 @@ val diagnosticsEnabledProvider = providers.gradleProperty("timeboxxing.diagnosti
     .map { it.toBooleanStrict() }
     .orElse(defaultDiagnosticsEnabled)
 
+val javaEnvProvider = providers.gradleProperty("timeboxxing.javaEnv")
+    .orElse(providers.environmentVariable("JAVA_ENV"))
+    .map {
+        val normalized = it.trim().lowercase()
+        if (normalized !in setOf("production", "development", "test", "local")) {
+            throw GradleException("Invalid JAVA_ENV '$it'. Supported values: production, development, test, local.")
+        }
+        normalized
+    }
+    .orElse("local")
+
 val generatedBuildConfigDir = layout.buildDirectory.dir("generated/timeboxxingBuildConfig/kotlin")
 val generateDesktopBuildConfig by tasks.registering(GenerateDesktopBuildConfigTask::class) {
     diagnosticsEnabled.set(diagnosticsEnabledProvider)
+    javaEnv.set(javaEnvProvider)
     outputDir.set(generatedBuildConfigDir)
 }
 

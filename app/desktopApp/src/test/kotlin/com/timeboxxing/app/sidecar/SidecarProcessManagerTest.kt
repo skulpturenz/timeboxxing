@@ -1,5 +1,7 @@
 package com.timeboxxing.app.sidecar
 
+import com.timeboxxing.app.GoEnvVar
+import com.timeboxxing.app.JavaEnv
 import java.io.File
 import java.net.URLClassLoader
 import java.nio.file.Files
@@ -149,11 +151,20 @@ class SidecarProcessManagerTest {
 
     @Test
     fun childEnvironmentCopiesOnlySemanticSecrets() {
-        val targetEnv = mutableMapOf(OpenRouterApiKeyEnvVar to "parent-secret")
+        val targetEnv = mutableMapOf(
+            GoEnvVar to "stale",
+            OpenRouterApiKeyEnvVar to "parent-secret",
+            SidecarSentryDsnEnvVar to "stale-sentry-dsn",
+            "SIDECAR_OPENROUTER_BASE_URL" to "https://example.invalid",
+            "SIDECAR_SENTRY_AUTH_TOKEN" to "stale-sidecar-auth-token",
+            "SENTRY_AUTH_TOKEN" to "stale-auth-token",
+        )
         val parentEnv = mapOf(
             OpenRouterApiKeyEnvVar to "parent-secret",
             OllamaApiKeyEnvVar to "parent-ollama-secret",
             SQLiteVectorExtensionPathEnvVar to "/tmp/vector.dylib",
+            SidecarSentryDsnEnvVar to "https://public@example.com/99",
+            GoEnvVar to "LOCAL",
         )
 
         configureSidecarEnvironment(
@@ -162,6 +173,7 @@ class SidecarProcessManagerTest {
             databaseDsn = "/tmp/timeboxxing.db",
             parentEnv = parentEnv,
             secrets = SidecarSecrets(openRouterApiKey = "keychain-openrouter-secret"),
+            javaEnv = JavaEnv.Test,
         )
 
         assertEquals("127.0.0.1:12345", targetEnv["SIDECAR_GRPC_LISTEN_ADDRESS"])
@@ -170,8 +182,41 @@ class SidecarProcessManagerTest {
         assertEquals("/tmp/vector.dylib", targetEnv[SQLiteVectorExtensionPathEnvVar])
         assertEquals("keychain-openrouter-secret", targetEnv[OpenRouterApiKeyEnvVar])
         assertEquals("parent-ollama-secret", targetEnv[OllamaApiKeyEnvVar])
+        assertEquals("https://public@example.com/99", targetEnv[SidecarSentryDsnEnvVar])
+        assertEquals("test", targetEnv[GoEnvVar])
         assertFalse("SIDECAR_OPENROUTER_BASE_URL" in targetEnv)
         assertFalse("SIDECAR_EMBEDDING_MODEL" in targetEnv)
+        assertFalse("SIDECAR_SENTRY_AUTH_TOKEN" in targetEnv)
+        assertFalse("SENTRY_AUTH_TOKEN" in targetEnv)
+    }
+
+    @Test
+    fun childEnvironmentFallsBackToPlaceholderSentryDsn() {
+        val targetEnv = mutableMapOf<String, String>()
+
+        configureSidecarEnvironment(
+            targetEnv = targetEnv,
+            grpcListenAddress = "127.0.0.1:12345",
+            databaseDsn = "/tmp/timeboxxing.db",
+            parentEnv = emptyMap(),
+        )
+
+        assertEquals(PlaceholderSidecarSentryDsn, targetEnv[SidecarSentryDsnEnvVar])
+    }
+
+    @Test
+    fun childEnvironmentPropagatesInjectedJavaEnvAsGoEnv() {
+        val targetEnv = mutableMapOf(GoEnvVar to "stale")
+
+        configureSidecarEnvironment(
+            targetEnv = targetEnv,
+            grpcListenAddress = "127.0.0.1:12345",
+            databaseDsn = "/tmp/timeboxxing.db",
+            parentEnv = mapOf(GoEnvVar to "staging"),
+            javaEnv = JavaEnv.Production,
+        )
+
+        assertEquals("production", targetEnv[GoEnvVar])
     }
 
     @Test
@@ -184,6 +229,18 @@ class SidecarProcessManagerTest {
         assertFalse(redacted.contains("literal-secret"))
         assertFalse(redacted.contains("ollama-secret"))
         assertFalse(redacted.contains("sk-or-v1-fakeplaceholder"))
+        assertTrue(redacted.contains("[REDACTED]"))
+    }
+
+    @Test
+    fun startupLogRedactionRemovesSentryAuthTokens() {
+        val redactor = SecretRedactor(emptyList())
+        val message = "SIDECAR_SENTRY_AUTH_TOKEN=sidecar-token SENTRY_AUTH_TOKEN=release-token"
+
+        val redacted = redactor.redact(message)
+
+        assertFalse(redacted.contains("sidecar-token"))
+        assertFalse(redacted.contains("release-token"))
         assertTrue(redacted.contains("[REDACTED]"))
     }
 

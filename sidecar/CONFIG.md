@@ -4,16 +4,36 @@ This document describes the environment variables used by `sidecar`.
 
 | Name                                    | Usage                       | Description                                                          |
 | --------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| [`GO_ENV`]                              | defaults to `production`    | the runtime environment used for telemetry                           |
 | [`SIDECAR_DATABASE_DSN`]                | defaults to `test.db`       | the database data source name                                        |
 | [`SIDECAR_DATABASE_ENGINE`]             | defaults to `sqlite`        | the database engine used by the sidecar                              |
 | [`SIDECAR_GRPC_LISTEN_ADDRESS`]         | defaults to `0.0.0.0:50051` | the host and port that the gRPC server listens on                    |
 | [`SIDECAR_OLLAMA_API_KEY`]              | optional                    | the hosted Ollama bearer token used for semantic search and RAG      |
 | [`SIDECAR_OPENROUTER_API_KEY`]          | optional                    | the OpenRouter API key used for semantic search and RAG              |
+| [`SIDECAR_SENTRY_DSN`]                  | optional                    | the Sentry DSN used for sidecar error, trace, and log telemetry      |
 | [`SIDECAR_SQLITE_VECTOR_EXTENSION_PATH`] | optional                    | an optional sqlite-vector extension path override for TurboQuant semantic search |
 
 > [!TIP]
 > If an environment variable is set to an empty value, `sidecar` behaves as if
 > that variable is left undefined.
+
+## `GO_ENV`
+
+> the runtime environment used for telemetry
+
+The `GO_ENV` variable **MAY** be left undefined, in which case the sidecar uses
+`production`. Supported values are `production`, `development`, `test`, and
+`local`.
+
+`GO_ENV` is the only supported way to set the sidecar Sentry environment.
+Unsupported values fail sidecar configuration validation.
+
+```bash
+export GO_ENV=production  # (default)
+export GO_ENV=development # (non-normative)
+export GO_ENV=test        # (non-normative)
+export GO_ENV=local       # (non-normative)
+```
 
 ## `SIDECAR_DATABASE_DSN`
 
@@ -77,6 +97,18 @@ The `SIDECAR_OPENROUTER_API_KEY` variable **MAY** be left undefined.
 
 ⚠️ This variable is **sensitive**; its value may contain private information.
 
+## `SIDECAR_SENTRY_DSN`
+
+> the Sentry DSN used for sidecar error, trace, and log telemetry
+
+The `SIDECAR_SENTRY_DSN` variable **MAY** be left undefined, in which case the
+sidecar uses the built-in placeholder DSN until real Sentry project details are
+configured.
+
+```bash
+export SIDECAR_SENTRY_DSN=https://public@example.com/2 # (placeholder default)
+```
+
 ## `SIDECAR_SQLITE_VECTOR_EXTENSION_PATH`
 
 > an optional sqlite-vector extension path override for TurboQuant semantic search
@@ -92,8 +124,8 @@ export SIDECAR_SQLITE_VECTOR_EXTENSION_PATH=/path/to/vector.dylib # (non-normati
 ---
 
 > [!NOTE]
-> This document only describes environment variables declared using [Ferrite].
-> `sidecar` may consume other undocumented environment variables.
+> Sidecar environment variables are declared using [Ferrite], including
+> telemetry variables such as `GO_ENV` and `SIDECAR_SENTRY_DSN`.
 
 > [!IMPORTANT]
 > Some of the example values given in this document are **non-normative**.
@@ -103,9 +135,11 @@ export SIDECAR_SQLITE_VECTOR_EXTENSION_PATH=/path/to/vector.dylib # (non-normati
 <!-- references -->
 
 [ferrite]: https://github.com/dogmatiq/ferrite
+[`go_env`]: #go_env
 [`sidecar_database_dsn`]: #sidecar_database_dsn
 [`sidecar_database_engine`]: #sidecar_database_engine
 [`sidecar_grpc_listen_address`]: #sidecar_grpc_listen_address
 [`sidecar_ollama_api_key`]: #sidecar_ollama_api_key
 [`sidecar_openrouter_api_key`]: #sidecar_openrouter_api_key
+[`sidecar_sentry_dsn`]: #sidecar_sentry_dsn
 [`sidecar_sqlite_vector_extension_path`]: #sidecar_sqlite_vector_extension_path

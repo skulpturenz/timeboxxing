@@ -11,6 +11,7 @@ koin = "4.1.0"
 markdownRenderer = "0.43.0"
 protobuf = "4.35.1"
 protobufGradlePlugin = "0.10.0"
+sentry = "8.47.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -40,6 +41,7 @@ koin-test = { module = "io.insert-koin:koin-test" }
 markdown-renderer = { module = "com.mikepenz:multiplatform-markdown-renderer", version.ref = "markdownRenderer" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
 protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
+sentry = { module = "io.sentry:sentry", version.ref = "sentry" }
 
 [plugins]
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }

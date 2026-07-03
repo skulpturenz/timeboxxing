@@ -18,6 +18,7 @@ import com.timeboxxing.data.repository.UnavailableUsageHistoryRepository
 import com.timeboxxing.data.time.recentUsageDays
 import com.timeboxxing.domain.model.AppearanceMode
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -33,7 +34,11 @@ internal class DesktopTimeboxxingRuntime(
     private val sidecarSessionLog: SidecarSessionLog,
     override val diagnosticsEnabled: Boolean,
 ) : TimeboxxingRuntime, AutoCloseable {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+            DesktopSentry.captureException(throwable)
+        },
+    )
     private var sidecarConnection: SidecarConnection? = null
 
     override val usageDays = recentUsageDays()
@@ -68,42 +73,50 @@ internal class DesktopTimeboxxingRuntime(
     }
 
     override suspend fun restartSidecar() {
-        _sidecarStatus.value = TimeboxxingSidecarStatus.Starting
-        closeSidecarConnection()
-        _repositories.value = startingRepositories()
+        val transaction = DesktopSentry.startTransaction("sidecar.start", "task")
+        try {
+            _sidecarStatus.value = TimeboxxingSidecarStatus.Starting
+            closeSidecarConnection()
+            _repositories.value = startingRepositories()
 
-        val secrets = withContext(Dispatchers.IO) {
-            SidecarSecrets(
-                openRouterApiKey = secretStore.read(SecretKey.OpenRouter),
-                ollamaApiKey = secretStore.read(SecretKey.Ollama),
-            )
-        }
-
-        when (val result = sidecarManager.start(usageDays[usageDays.size / 2], secrets)) {
-            is SidecarStartResult.Started -> {
-                sidecarConnection = result.connection
-                _repositories.value = TimeboxxingRepositories(
-                    usageHistoryRepository = result.connection.repository,
-                    amaRepository = result.connection.amaRepository,
-                    settingsRepository = DesktopSettingsRepository(
-                        delegate = result.connection.settingsRepository,
-                        secretStore = secretStore,
-                        onSettingsSaved = {
-                            scope.launch {
-                                restartSidecar()
-                            }
-                        },
-                    ),
-                    projectRepository = result.connection.projectRepository,
-                    timesheetRepository = result.connection.timesheetRepository,
+            val secrets = withContext(Dispatchers.IO) {
+                SidecarSecrets(
+                    openRouterApiKey = secretStore.read(SecretKey.OpenRouter),
+                    ollamaApiKey = secretStore.read(SecretKey.Ollama),
                 )
-                _sidecarStatus.value = TimeboxxingSidecarStatus.Ready
             }
 
-            is SidecarStartResult.Failed -> {
-                _repositories.value = failedRepositories(result.message)
-                _sidecarStatus.value = TimeboxxingSidecarStatus.Failed(result.message)
+            when (val result = sidecarManager.start(usageDays[usageDays.size / 2], secrets)) {
+                is SidecarStartResult.Started -> {
+                    sidecarConnection = result.connection
+                    _repositories.value = TimeboxxingRepositories(
+                        usageHistoryRepository = result.connection.repository,
+                        amaRepository = result.connection.amaRepository,
+                        settingsRepository = DesktopSettingsRepository(
+                            delegate = result.connection.settingsRepository,
+                            secretStore = secretStore,
+                            onSettingsSaved = {
+                                scope.launch {
+                                    restartSidecar()
+                                }
+                            },
+                        ),
+                        projectRepository = result.connection.projectRepository,
+                        timesheetRepository = result.connection.timesheetRepository,
+                    )
+                    _sidecarStatus.value = TimeboxxingSidecarStatus.Ready
+                }
+
+                is SidecarStartResult.Failed -> {
+                    _repositories.value = failedRepositories(result.message)
+                    _sidecarStatus.value = TimeboxxingSidecarStatus.Failed(result.message)
+                }
             }
+        } catch (throwable: Throwable) {
+            DesktopSentry.captureException(throwable)
+            throw throwable
+        } finally {
+            transaction.close()
         }
     }
 

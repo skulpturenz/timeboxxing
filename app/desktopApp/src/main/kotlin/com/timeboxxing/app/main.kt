@@ -86,6 +86,20 @@ private val MacWindowControlsInset = 28.dp
 
 @Suppress("UNUSED_PARAMETER")
 fun main(args: Array<String>) {
+    val javaEnv = JavaEnv.parse(DesktopBuildConfig.JavaEnv)
+        ?: error("Generated DesktopBuildConfig.JavaEnv has unsupported value '${DesktopBuildConfig.JavaEnv}'")
+    DesktopSentry.init(javaEnv = javaEnv)
+    try {
+        runDesktopApplication(javaEnv)
+    } catch (throwable: Throwable) {
+        DesktopSentry.captureException(throwable)
+        throw throwable
+    } finally {
+        DesktopSentry.close()
+    }
+}
+
+private fun runDesktopApplication(javaEnv: JavaEnv) {
     configureDesktopSystemProperties()
 
     application {
@@ -105,7 +119,7 @@ fun main(args: Array<String>) {
         ) {
             KoinApplication(
                 application = {
-                    modules(desktopTimeboxxingModule)
+                    modules(desktopTimeboxxingModule(javaEnv))
                 },
             ) {
                 val runtime = koinInject<DesktopTimeboxxingRuntime>()

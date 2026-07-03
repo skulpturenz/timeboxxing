@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.Sync
+import org.gradle.api.GradleException
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -20,6 +21,7 @@ dependencies {
     implementation(libs.koin.compose.viewmodel)
     implementation(libs.koin.core)
     implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.sentry)
 
     implementation(libs.compose.uiToolingPreview)
 }
@@ -40,9 +42,21 @@ val diagnosticsEnabledProvider = providers.gradleProperty("timeboxxing.diagnosti
     .map { it.toBooleanStrict() }
     .orElse(defaultDiagnosticsEnabled)
 
+val javaEnvProvider = providers.gradleProperty("timeboxxing.javaEnv")
+    .orElse(providers.environmentVariable("JAVA_ENV"))
+    .map {
+        val normalized = it.trim().lowercase()
+        if (normalized !in setOf("production", "development", "test", "local")) {
+            throw GradleException("Invalid JAVA_ENV '$it'. Supported values: production, development, test, local.")
+        }
+        normalized
+    }
+    .orElse("local")
+
 val generatedBuildConfigDir = layout.buildDirectory.dir("generated/timeboxxingBuildConfig/kotlin")
 val generateDesktopBuildConfig by tasks.registering {
     inputs.property("diagnosticsEnabled", diagnosticsEnabledProvider)
+    inputs.property("javaEnv", javaEnvProvider)
     outputs.dir(generatedBuildConfigDir)
     doLast {
         val outputFile = generatedBuildConfigDir.get()
@@ -55,6 +69,7 @@ val generateDesktopBuildConfig by tasks.registering {
 
             internal object DesktopBuildConfig {
                 const val DiagnosticsEnabled: Boolean = ${diagnosticsEnabledProvider.get()}
+                const val JavaEnv: String = "${javaEnvProvider.get()}"
             }
             """.trimIndent() + "\n",
         )

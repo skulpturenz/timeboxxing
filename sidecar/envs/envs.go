@@ -5,7 +5,26 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 )
 
+type GoEnv string
+
+const (
+	GoEnvProduction  GoEnv = "production"
+	GoEnvDevelopment GoEnv = "development"
+	GoEnvTest        GoEnv = "test"
+	GoEnvLocal       GoEnv = "local"
+)
+
+// TODO(auth): Replace this placeholder DSN once the sidecar Sentry project/auth details are finalized.
+const PlaceholderSidecarSentryDSN = "https://public@example.com/2"
+
 var (
+	RuntimeEnvironment = ferrite.StringAs[GoEnv]("GO_ENV", "the runtime environment used for telemetry").
+				WithConstraint("must be production, development, test, or local", isSupportedGoEnv).
+				WithDefault(GoEnvProduction).
+				Required()
+	SentryDSN = ferrite.String("SIDECAR_SENTRY_DSN", "the Sentry DSN used for sidecar error, trace, and log telemetry").
+			WithDefault(PlaceholderSidecarSentryDSN).
+			Required()
 	GrpcListenAddress = ferrite.NetworkAddress("SIDECAR_GRPC_LISTEN_ADDRESS", "the host and port that the gRPC server listens on").
 				WithDefault("0.0.0.0:50051").
 				Required()
@@ -30,4 +49,13 @@ var (
 
 func init() {
 	ferrite.Init()
+}
+
+func isSupportedGoEnv(value GoEnv) bool {
+	switch value {
+	case GoEnvProduction, GoEnvDevelopment, GoEnvTest, GoEnvLocal:
+		return true
+	default:
+		return false
+	}
 }
