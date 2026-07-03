@@ -9,7 +9,9 @@ import (
 
 	"github.com/lmittmann/tint"
 	"github.com/skulpturenz/timeboxxing/sidecar/app"
+	"github.com/skulpturenz/timeboxxing/sidecar/envs"
 	"github.com/skulpturenz/timeboxxing/sidecar/observability"
+	"github.com/skulpturenz/timeboxxing/sidecar/secrets"
 )
 
 func main() {
@@ -28,6 +30,11 @@ func main() {
 	if sentryErr != nil {
 		logger.ErrorContext(ctx, "initialize sentry", "error", sentryErr)
 	}
+
+	// Receive API keys handed off by the parent process over stdin, keeping them out of the
+	// environment block. Falls back to environment variables when stdin is not piped (dev runs).
+	handoff := secrets.LoadFromStdin()
+	envs.SetSecretOverrides(handoff.OpenRouterAPIKey, handoff.OllamaAPIKey)
 
 	if err := app.Run(ctx, logger); err != nil {
 		observability.CaptureException(err)
