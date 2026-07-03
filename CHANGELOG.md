@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+[da9ccdf](da9ccdffd0d3b75033310a564171c2415593daaa)...[7631b34](7631b342f6ccdf7696f7f74a22530a74c8a86e1d)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - set executable flags ([22c0c92](22c0c92cbda80d958ffa120943dc36d5ebdc4bcf))
+
 ## 0.0.1-0 - 2026-07-03
 
 ### Bug Fixes
