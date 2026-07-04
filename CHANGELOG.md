@@ -4,7 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[d78a803](d78a803f90eb1e7a46abd9bfa3b41c0910398ba7)...[ac718d7](ac718d7fcf6c68f66209066766b4226a5327579b)
+[10062b0](10062b009db608eee97ede13f58202383e6be005)...[b997627](b997627a6d2ccd4a032671c14dfe76e8f7872f12)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - attempt fix for failing arm64 win build ([3fe99f0](3fe99f050d5b224d1b0145d74849a057e3d0c5dd))
+- Mvp vibe slop - update build workflow ([3552152](35521520be8ed3a384b7826020d7845248a828a1))
+
+## 0.0.1-9 - 2026-07-04
+
+[d78a803](d78a803f90eb1e7a46abd9bfa3b41c0910398ba7)...[10062b0](10062b009db608eee97ede13f58202383e6be005)
 
 ### Miscellaneous Tasks
 
