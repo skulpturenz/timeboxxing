@@ -166,33 +166,15 @@ jobs:
     name: Build installer (${{ matrix.os }})
     needs: prepare
     runs-on: ${{ matrix.os }}
-    # The experimental Windows arm64 leg must never fail the release: publish (needs: build)
-    # still runs, and the other three assets ship, if this leg fails.
-    continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15      # Apple Silicon
-            arch: arm64
-            artifact-name: timeboxxing-macos-arm64
-            java-distribution: corretto
-          - os: macos-15-intel   # Intel
-            arch: amd64
-            artifact-name: timeboxxing-macos-amd64
-            java-distribution: corretto
+          - os: macos-15
+            artifact-name: timeboxxing-macos
           - os: windows-2025
-            arch: amd64
-            artifact-name: timeboxxing-windows-amd64
-            java-distribution: corretto
-          # Native Windows arm64. Upstream sqlite-vector ships no windows-arm64 build, so we compile
-          # the extension here from source (it has a NEON path). Marked experimental → non-blocking.
-          - os: windows-11-arm
-            arch: arm64
-            artifact-name: timeboxxing-windows-arm64
-            java-distribution: microsoft
-            experimental: true
+            artifact-name: timeboxxing-windows
     env:
       CGO_ENABLED: "1"
       GO_BINARY: go
@@ -200,7 +182,6 @@ jobs:
       PACKAGE_VERSION: ${{ needs.prepare.outputs.package-version }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.release-version }}
       RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
-      ARCH: ${{ matrix.arch }}
 
     steps:
       - name: Check out release SHA
@@ -216,53 +197,19 @@ jobs:
           cache: true
           cache-dependency-path: sidecar/go.sum
 
-      - name: Add MSYS2 MinGW to PATH (Windows amd64)
-        if: runner.os == 'Windows' && matrix.arch == 'amd64'
+      - name: Add MSYS2 MinGW to PATH
+        if: runner.os == 'Windows'
         shell: pwsh
         run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
 
-      - name: Set up CLANGARM64 toolchain (Windows arm64)
-        if: runner.os == 'Windows' && matrix.arch == 'arm64'
-        id: msys2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: CLANGARM64
-          update: true
-          install: >-
-            git
-            make
-            mingw-w64-clang-aarch64-toolchain
-
-      - name: Build sqlite-vector for Windows arm64
-        if: runner.os == 'Windows' && matrix.arch == 'arm64'
-        shell: msys2 {0}
-        env:
-          # Keep in sync with the provenance in sidecar/db/sqlite-vector/README.md.
-          SQLITE_VECTOR_TAG: "1.0.0"
-        run: |
-          set -euo pipefail
-          workdir="$(mktemp -d)"
-          git clone --depth 1 --branch "${SQLITE_VECTOR_TAG}" \
-            https://github.com/sqliteai/sqlite-vector "${workdir}"
-          make -C "${workdir}" CC=clang
-          dest="sidecar/db/sqlite-vector/windows-arm64"
-          mkdir -p "${dest}"
-          cp "${workdir}/dist/vector.dll" "${dest}/vector.dll"
-          ls -l "${dest}"
-
-      - name: Add CLANGARM64 to PATH (Windows arm64)
-        if: runner.os == 'Windows' && matrix.arch == 'arm64'
-        shell: pwsh
-        run: echo "${{ steps.msys2.outputs.msys2-location }}\clangarm64\bin" >> $env:GITHUB_PATH
-
       - name: Show C compiler
         if: runner.os == 'Windows'
-        run: ${{ matrix.arch == 'arm64' && 'clang --version' || 'gcc --version' }}
+        run: gcc --version
 
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
-          distribution: ${{ matrix.java-distribution }}
+          distribution: corretto
           java-version: "21"
 
       - name: Set up Gradle
@@ -276,9 +223,6 @@ jobs:
       - name: Package Windows installer
         if: runner.os == 'Windows'
         working-directory: app
-        env:
-          # arm64 uses the CLANGARM64 clang for the sidecar's cgo build; amd64 uses MSYS2 mingw gcc.
-          CC: ${{ matrix.arch == 'arm64' && 'clang' || 'gcc' }}
         run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:RELEASE_VERSION"
 
       - name: Dump packaging logs on failure
@@ -298,7 +242,7 @@ jobs:
             exit 1
           fi
 
-          cp "${artifact}" "release-assets/Timeboxxing-${RELEASE_TAG}-macOS-${ARCH}.dmg"
+          cp "${artifact}" "release-assets/Timeboxxing-${RELEASE_TAG}-macOS.dmg"
 
       - name: Collect Windows installer
         if: runner.os == 'Windows'
@@ -310,7 +254,7 @@ jobs:
             throw "No EXE artifact found."
           }
 
-          Copy-Item $artifact.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows-$($env:ARCH).exe"
+          Copy-Item $artifact.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows.exe"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7

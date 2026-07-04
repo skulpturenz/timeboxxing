@@ -204,15 +204,8 @@ internal class DesktopAppUpdater(
     }
 
     private fun assetUrlRegex(): Regex? = when (currentPlatform()) {
-        // Release assets are arch-qualified, e.g. Timeboxxing-<tag>-macOS-arm64.dmg. Each build
-        // matches its own arch: a native arm64 JVM reports os.arch=aarch64, while an amd64 build
-        // (including one under Windows-on-arm x64 emulation) reports amd64 and gets the amd64 asset.
-        Platform.MacOs -> currentArchToken()?.let { arch ->
-            Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-macOS-$arch\\.dmg)\"")
-        }
-        Platform.Windows -> currentArchToken()?.let { arch ->
-            Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-Windows-$arch\\.exe)\"")
-        }
+        Platform.MacOs -> Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-macOS\\.dmg)\"")
+        Platform.Windows -> Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-Windows\\.exe)\"")
         Platform.Unsupported -> null
     }
 
@@ -226,14 +219,6 @@ internal class DesktopAppUpdater(
             else -> Platform.Unsupported
         }
     }
-
-    /** Normalizes the JVM `os.arch` to the release asset arch token. Mirrors SidecarProcessManager. */
-    private fun currentArchToken(): String? =
-        when (System.getProperty("os.arch").orEmpty().lowercase()) {
-            "aarch64", "arm64" -> "arm64"
-            "x86_64", "amd64" -> "amd64"
-            else -> null
-        }
 
     /** Compares dotted numeric versions, ignoring any `-prerelease`/`+build` suffix. */
     private fun compareVersions(a: String, b: String): Int {
