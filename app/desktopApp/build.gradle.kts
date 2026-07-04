@@ -188,6 +188,10 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.timeboxxing.app"
             packageVersion = "1.0.0"
+            // Keep in sync with installer/packager: the updater needs java.net.http (HttpClient,
+            // loaded at startup) and jdk.crypto.ec (TLS ECDHE to GitHub); neither is in jlink's
+            // default module set, so the packaged app crashes on launch without them.
+            modules("java.net.http", "jdk.crypto.ec")
         }
     }
 }

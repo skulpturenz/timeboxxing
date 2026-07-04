@@ -172,6 +172,12 @@ compose.desktop {
             vendor = "Skulpture"
             appResourcesRootDir.set(installerResourcesRoot)
 
+            // jlink strips the runtime image to a default module set. The updater uses
+            // java.net.http.HttpClient (java.net.http), which loads at startup, and reaches GitHub
+            // over HTTPS with ECDHE cipher suites (jdk.crypto.ec) — neither is in the default set,
+            // so both must be requested explicitly or the app crashes on launch / TLS handshake.
+            modules("java.net.http", "jdk.crypto.ec")
+
             macOS {
                 bundleID = "com.skulpture.timeboxxing"
                 packageName = "Timeboxxing"
