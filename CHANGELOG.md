@@ -4,11 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[68ba300](68ba300f38acec9abde7384192efd32493317df1)...[f260fce](f260fce052701627ab5bcec34dfd32ae8ac5efef)
+[68ba300](68ba300f38acec9abde7384192efd32493317df1)...[4ac05bb](4ac05bb0a144fed8377b97736c88e3e078ead539)
 
 ### Miscellaneous Tasks
 
 - Authenticate as gh app in releases ([5fc5c8b](5fc5c8b67986aa1f035ba844c5a11e135189b071))
+- Update release workflow to use kakak-bot ([4173cf5](4173cf5216f020ed5b1d085b59eba9bcf5da3da1))
 
 ## 0.0.1-5 - 2026-07-04
 
