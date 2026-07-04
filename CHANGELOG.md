@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[a6fdb34](a6fdb345cfd4740383d5a75c796fb93429d4d1cb)...[ff94c37](ff94c379d52f85d897af2f7860c67aefcdc5bcfa)
+[047bc3e](047bc3e1904f4ca25386ebff0aa8d9a83ca709f3)...[da8234c](da8234c55d32451deb1bbd196d4a799ca5a27b15)
+
+### Miscellaneous Tasks
+
+- Update release workflow (#7) ([b8ef89c](b8ef89c83221b30e6eb942da2dc47f78a2518558))
+
+## 0.0.1-4 - 2026-07-03
+
+[a6fdb34](a6fdb345cfd4740383d5a75c796fb93429d4d1cb)...[047bc3e](047bc3e1904f4ca25386ebff0aa8d9a83ca709f3)
 
 ### Miscellaneous Tasks
 
