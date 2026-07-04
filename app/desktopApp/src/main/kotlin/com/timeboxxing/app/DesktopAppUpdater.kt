@@ -204,15 +204,12 @@ internal class DesktopAppUpdater(
     }
 
     private fun assetUrlRegex(): Regex? = when (currentPlatform()) {
-        // Release assets are arch-qualified, e.g. Timeboxxing-<tag>-macOS-arm64.dmg. Each build
-        // matches its own arch: a native arm64 JVM reports os.arch=aarch64, while an amd64 build
-        // (including one under Windows-on-arm x64 emulation) reports amd64 and gets the amd64 asset.
+        // Release assets are arch-qualified, e.g. Timeboxxing-<tag>-macOS-arm64.dmg.
         Platform.MacOs -> currentArchToken()?.let { arch ->
             Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-macOS-$arch\\.dmg)\"")
         }
-        Platform.Windows -> currentArchToken()?.let { arch ->
-            Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-Windows-$arch\\.exe)\"")
-        }
+        // Windows ships amd64 only; an amd64 JVM under Windows-arm64 emulation reports os.arch=amd64.
+        Platform.Windows -> Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-Windows-amd64\\.exe)\"")
         Platform.Unsupported -> null
     }
 
