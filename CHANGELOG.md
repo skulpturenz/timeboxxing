@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[b7a16b4](b7a16b4fac3b51dc323b38fa9609ddd67a92dadb)...[28cd84a](28cd84a7a4565e1874a4d03c3947f2fcb2fc7308)
+[d78a803](d78a803f90eb1e7a46abd9bfa3b41c0910398ba7)...[ac718d7](ac718d7fcf6c68f66209066766b4226a5327579b)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - build arm64 sqlite-vector. new macs on m1 run arm64 windows vm ([5506c53](5506c535e114aba5f7ebf09c860871246492ac27))
+
+## 0.0.1-8 - 2026-07-04
+
+[b7a16b4](b7a16b4fac3b51dc323b38fa9609ddd67a92dadb)...[d78a803](d78a803f90eb1e7a46abd9bfa3b41c0910398ba7)
 
 ### Miscellaneous Tasks
 
