@@ -145,6 +145,8 @@ jobs:
           message: "chore: update changelog"
           branch: ${{ steps.release-context.outputs.target-branch }}
           output: CHANGELOG.md
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           token: ${{ github.token }}
 
       - name: Resolve release SHA
@@ -289,4 +291,6 @@ jobs:
           body: |
             ${{ needs.prepare.outputs.release-body }}
           assets: release-assets/*
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           token: ${{ github.token }}
