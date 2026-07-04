@@ -16,29 +16,13 @@ jobs:
   build:
     name: App build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Keep the experimental Windows arm64 leg non-blocking, mirroring the release workflow.
-    continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15      # Apple Silicon
-            arch: arm64
-            java-distribution: corretto
-          - os: macos-15-intel   # Intel
-            arch: amd64
-            java-distribution: corretto
-          - os: windows-2025
-            arch: amd64
-            java-distribution: corretto
-          # Native Windows arm64. `assemble` compiles the sidecar (cgo) with the CLANGARM64
-          # toolchain; it does not need the windows-arm64 sqlite-vector build (a packaging concern),
-          # so that step is intentionally omitted here. Marked experimental → non-blocking.
-          - os: windows-11-arm
-            arch: arm64
-            java-distribution: microsoft
-            experimental: true
+        os:
+          - macos-15
+          - windows-2025
     env:
       CGO_ENABLED: "1"
       GO_BINARY: go
@@ -54,34 +38,19 @@ jobs:
           cache: true
           cache-dependency-path: sidecar/go.sum
 
-      - name: Add MSYS2 MinGW to PATH (Windows amd64)
-        if: runner.os == 'Windows' && matrix.arch == 'amd64'
+      - name: Add MSYS2 MinGW to PATH
+        if: runner.os == 'Windows'
         shell: pwsh
         run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
 
-      - name: Set up CLANGARM64 toolchain (Windows arm64)
-        if: runner.os == 'Windows' && matrix.arch == 'arm64'
-        id: msys2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: CLANGARM64
-          update: true
-          install: >-
-            mingw-w64-clang-aarch64-toolchain
-
-      - name: Add CLANGARM64 to PATH (Windows arm64)
-        if: runner.os == 'Windows' && matrix.arch == 'arm64'
-        shell: pwsh
-        run: echo "${{ steps.msys2.outputs.msys2-location }}\clangarm64\bin" >> $env:GITHUB_PATH
-
       - name: Show C compiler
         if: runner.os == 'Windows'
-        run: ${{ matrix.arch == 'arm64' && 'clang --version' || 'gcc --version' }}
+        run: gcc --version
 
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
-          distribution: ${{ matrix.java-distribution }}
+          distribution: corretto
           java-version: "21"
 
       - name: Set up Gradle
@@ -95,7 +64,4 @@ jobs:
       - name: Assemble app
         if: runner.os == 'Windows'
         working-directory: app
-        env:
-          # arm64 compiles the sidecar's cgo with CLANGARM64 clang; amd64 uses MSYS2 mingw gcc.
-          CC: ${{ matrix.arch == 'arm64' && 'clang' || 'gcc' }}
         run: .\gradlew.bat --no-daemon assemble
