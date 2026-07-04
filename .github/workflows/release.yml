@@ -244,9 +244,7 @@ jobs:
           workdir="$(mktemp -d)"
           git clone --depth 1 --branch "${SQLITE_VECTOR_TAG}" \
             https://github.com/sqliteai/sqlite-vector "${workdir}"
-          # The Makefile's first (default) target only writes the .def file; "extension" is the
-          # target that actually links dist/vector.dll.
-          make -C "${workdir}" extension CC=clang
+          make -C "${workdir}" CC=clang
           dest="sidecar/db/sqlite-vector/windows-arm64"
           mkdir -p "${dest}"
           cp "${workdir}/dist/vector.dll" "${dest}/vector.dll"
