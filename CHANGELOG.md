@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[68ba300](68ba300f38acec9abde7384192efd32493317df1)...[4ac05bb](4ac05bb0a144fed8377b97736c88e3e078ead539)
+[041fc40](041fc409e5ccb9625c3b8c9e66c8c657e38af661)...[94a3ee8](94a3ee84b0c39f3d2396a7fe54e9109f026a1eb8)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - check for updates ([4332dc8](4332dc85cde3a31145f03523970f4f2b2544247f))
+
+## 0.0.1-6 - 2026-07-04
+
+[68ba300](68ba300f38acec9abde7384192efd32493317df1)...[041fc40](041fc409e5ccb9625c3b8c9e66c8c657e38af661)
 
 ### Miscellaneous Tasks
 
