@@ -4,11 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[b7a16b4](b7a16b4fac3b51dc323b38fa9609ddd67a92dadb)...[09506e9](09506e97d4ccb36449ad7e1fa8093df6c865c267)
+[b7a16b4](b7a16b4fac3b51dc323b38fa9609ddd67a92dadb)...[28cd84a](28cd84a7a4565e1874a4d03c3947f2fcb2fc7308)
 
 ### Miscellaneous Tasks
 
 - Mvp vibe slop - multiarch ([8864088](8864088b744f5617f83c5cfcbc8b7aed61661bda))
+- Mvp vibe slop - fix launch errors after installing ([2ad8220](2ad82208cc812d917de18fdcb249a94f10583e97))
+- Mvp vibe slop - update release workflow, macos-13 -> macos-15 ([68649bd](68649bdabd69d72ba252e57f0420d718b111149c))
 
 ## 0.0.1-7 - 2026-07-04
 
