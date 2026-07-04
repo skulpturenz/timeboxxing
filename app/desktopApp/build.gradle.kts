@@ -16,6 +16,9 @@ abstract class GenerateDesktopBuildConfigTask : DefaultTask() {
     @get:Input
     abstract val javaEnv: Property<String>
 
+    @get:Input
+    abstract val appVersion: Property<String>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -32,6 +35,7 @@ abstract class GenerateDesktopBuildConfigTask : DefaultTask() {
             internal object DesktopBuildConfig {
                 const val DiagnosticsEnabled: Boolean = ${diagnosticsEnabled.get()}
                 const val JavaEnv: String = "${javaEnv.get()}"
+                const val AppVersion: String = "${appVersion.get()}"
             }
             """.trimIndent() + "\n",
         )
@@ -101,10 +105,18 @@ val javaEnvProvider = providers.gradleProperty("timeboxxing.javaEnv")
     }
     .orElse("local")
 
+// The un-normalized release version (e.g. "0.0.5") the running build reports for update checks.
+// Distinct from timeboxxing.packageVersion, which jpackage normalizes (major bumped to >= 1).
+val appVersionProvider = providers.gradleProperty("timeboxxing.appVersion")
+    .orElse(providers.gradleProperty("timeboxxing.packageVersion"))
+    .map { it.trim() }
+    .orElse("0.0.0")
+
 val generatedBuildConfigDir = layout.buildDirectory.dir("generated/timeboxxingBuildConfig/kotlin")
 val generateDesktopBuildConfig by tasks.registering(GenerateDesktopBuildConfigTask::class) {
     diagnosticsEnabled.set(diagnosticsEnabledProvider)
     javaEnv.set(javaEnvProvider)
+    appVersion.set(appVersionProvider)
     outputDir.set(generatedBuildConfigDir)
 }
 

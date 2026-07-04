@@ -82,6 +82,7 @@ data class TimeboxxingScreenState(
     val dataDirectory: String = "",
     val appearanceMode: AppearanceMode = AppearanceMode.System,
     val diagnosticsEnabled: Boolean = false,
+    val update: AppUpdateUiState = AppUpdateUiState(),
 ) {
     val dateLabels: List<String>
         get() = usageDays.map { it.label }
@@ -175,6 +176,18 @@ data class ScheduleFocusTarget(
     val usageId: String?,
     val requestId: Long,
 )
+
+data class AppUpdateUiState(
+    val currentVersion: String = "",
+    val checkInProgress: Boolean = false,
+    val available: AvailableUpdate? = null,
+    val error: String? = null,
+    val downloadProgress: Float? = null,
+    val installing: Boolean = false,
+) {
+    val busy: Boolean
+        get() = checkInProgress || downloadProgress != null || installing
+}
 
 enum class TimeboxxingSection {
     Overview,
@@ -283,6 +296,13 @@ sealed interface TimeboxxingAction {
         val prunedCounts: DatabasePruneCounts,
     ) : TimeboxxingAction
     data class DatabaseVacuumFailed(val message: String) : TimeboxxingAction
+    data object CheckForUpdates : TimeboxxingAction
+    data class UpdateCheckSucceeded(val result: UpdateCheckResult) : TimeboxxingAction
+    data class UpdateCheckFailed(val message: String) : TimeboxxingAction
+    data object StartUpdateInstall : TimeboxxingAction
+    data class UpdateDownloadProgress(val fraction: Float) : TimeboxxingAction
+    data object UpdateInstallStarted : TimeboxxingAction
+    data class UpdateInstallFailed(val message: String) : TimeboxxingAction
 }
 
 fun createInitialTimeboxxingState(
@@ -312,6 +332,7 @@ fun createSidecarTimeboxxingState(
     usageDays: List<UsageDay>,
     initialNotice: String? = null,
     dataDirectory: String = "",
+    appVersion: String = "",
     data: TimeboxxingMockData = mockTimeboxxingData(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
 ): TimeboxxingScreenState {
@@ -333,6 +354,7 @@ fun createSidecarTimeboxxingState(
         usageDays = safeUsageDays,
         dataDirectory = dataDirectory,
         appearanceMode = appearanceMode,
+        update = AppUpdateUiState(currentVersion = appVersion),
     )
 }
 
@@ -832,6 +854,75 @@ fun reduceTimeboxxingState(
         is TimeboxxingAction.DatabaseVacuumFailed -> state.copy(
             databaseVacuuming = false,
             databaseMaintenanceError = action.message,
+        )
+
+        TimeboxxingAction.CheckForUpdates -> state.copy(
+            update = state.update.copy(
+                checkInProgress = true,
+                error = null,
+            ),
+        )
+
+        is TimeboxxingAction.UpdateCheckSucceeded -> when (val result = action.result) {
+            is UpdateCheckResult.Available -> state.copy(
+                update = state.update.copy(
+                    checkInProgress = false,
+                    available = result.update,
+                    error = null,
+                ),
+            )
+
+            UpdateCheckResult.UpToDate -> state.copy(
+                update = state.update.copy(
+                    checkInProgress = false,
+                    available = null,
+                    error = null,
+                ),
+                notice = "You're on the latest version.",
+            )
+
+            UpdateCheckResult.Unsupported -> state.copy(
+                update = state.update.copy(
+                    checkInProgress = false,
+                    available = null,
+                    error = null,
+                ),
+            )
+        }
+
+        is TimeboxxingAction.UpdateCheckFailed -> state.copy(
+            update = state.update.copy(
+                checkInProgress = false,
+                error = action.message,
+            ),
+        )
+
+        TimeboxxingAction.StartUpdateInstall -> state.copy(
+            update = state.update.copy(
+                downloadProgress = 0f,
+                error = null,
+            ),
+        )
+
+        is TimeboxxingAction.UpdateDownloadProgress -> state.copy(
+            update = state.update.copy(
+                downloadProgress = action.fraction.coerceIn(0f, 1f),
+            ),
+        )
+
+        TimeboxxingAction.UpdateInstallStarted -> state.copy(
+            update = state.update.copy(
+                downloadProgress = null,
+                installing = true,
+            ),
+        )
+
+        is TimeboxxingAction.UpdateInstallFailed -> state.copy(
+            update = state.update.copy(
+                downloadProgress = null,
+                installing = false,
+                error = action.message,
+            ),
         )
     }
 

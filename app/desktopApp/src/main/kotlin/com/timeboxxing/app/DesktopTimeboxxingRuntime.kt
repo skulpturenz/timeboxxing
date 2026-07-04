@@ -1,5 +1,6 @@
 package com.timeboxxing.app
 
+import com.timeboxxing.app.presentation.AppUpdater
 import com.timeboxxing.app.presentation.TimeboxxingRepositories
 import com.timeboxxing.app.presentation.TimeboxxingRuntime
 import com.timeboxxing.app.presentation.TimeboxxingSidecarStatus
@@ -34,6 +35,7 @@ internal class DesktopTimeboxxingRuntime(
     private val sidecarManager: SidecarProcessManager,
     private val sidecarSessionLog: SidecarSessionLog,
     override val diagnosticsEnabled: Boolean,
+    private val javaEnv: JavaEnv,
 ) : TimeboxxingRuntime, AutoCloseable {
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
@@ -58,6 +60,11 @@ internal class DesktopTimeboxxingRuntime(
 
     override val diagnosticsLogs = sidecarSessionLog.lines
     override val timesheetExportFileWriter: TimesheetExportFileWriter = DesktopTimesheetExportFileWriter()
+    override val appUpdater: AppUpdater = DesktopAppUpdater(
+        currentVersion = DesktopBuildConfig.AppVersion,
+        javaEnv = javaEnv,
+        onBeforeExit = { close() },
+    )
 
     fun start() {
         scope.launch {

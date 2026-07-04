@@ -68,21 +68,12 @@ fun SettingsPane(
             .padding(horizontal = 28.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            TbText(
-                text = "Settings",
-                style = TbTheme.typography.largeTitle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            TbText(
-                text = if (state.settingsLoading) "Loading" else activeProviderLabel(draft.provider),
-                style = TbTheme.typography.body,
-                color = TbTheme.colors.secondaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        TbText(
+            text = "Settings",
+            style = TbTheme.typography.largeTitle,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
 
         state.settingsError?.let { message ->
             SettingsNotice(message = message, destructive = true)
@@ -192,6 +183,87 @@ fun SettingsPane(
             onAction = onAction,
             onConfirmPrune = { prunePending = true },
         )
+
+        UpdatesCard(state = state, onAction = onAction)
+    }
+}
+
+@Composable
+private fun UpdatesCard(
+    state: TimeboxxingScreenState,
+    onAction: (TimeboxxingAction) -> Unit,
+) {
+    val update = state.update
+    val versionLabel = update.currentVersion
+        .takeIf { it.isNotBlank() }
+        ?.let { "Version $it" }
+        ?: "Version unknown"
+
+    TbCard(
+        modifier = Modifier.widthIn(max = 760.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TbText("Updates", style = TbTheme.typography.headline)
+                TbText(
+                    text = versionLabel,
+                    style = TbTheme.typography.body,
+                    color = TbTheme.colors.secondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            update.error?.let { message ->
+                SettingsNotice(message = message, destructive = true)
+            }
+            val available = update.available
+            if (available != null) {
+                SettingsNotice(
+                    message = "Version ${available.version} is available.",
+                    destructive = false,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (available != null) {
+                    val progress = update.downloadProgress
+                    TbButton(
+                        onClick = { onAction(TimeboxxingAction.StartUpdateInstall) },
+                        enabled = progress == null && !update.installing,
+                    ) {
+                        TbText(
+                            text = when {
+                                update.installing -> "Restarting to apply update"
+                                progress != null -> "Downloading ${(progress * 100).toInt()}%"
+                                else -> "Download and install ${available.version}"
+                            },
+                            style = TbTheme.typography.button,
+                        )
+                    }
+                } else {
+                    TbButton(
+                        onClick = { onAction(TimeboxxingAction.CheckForUpdates) },
+                        enabled = !update.checkInProgress,
+                        variant = TbButtonVariant.Secondary,
+                    ) {
+                        TbText(
+                            text = if (update.checkInProgress) "Checking" else "Check for updates",
+                            style = TbTheme.typography.button,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -620,12 +692,6 @@ private fun CalendarDate.toIsoLabel(): String =
 
 private val AiProvider.label: String
     get() = when (this) {
-        AiProvider.OpenRouter -> "OpenRouter"
-        AiProvider.Ollama -> "Ollama"
-    }
-
-private fun activeProviderLabel(provider: AiProvider): String =
-    when (provider) {
         AiProvider.OpenRouter -> "OpenRouter"
         AiProvider.Ollama -> "Ollama"
     }
