@@ -56,6 +56,7 @@ interface TimeboxxingRuntime {
     val sidecarStatus: StateFlow<TimeboxxingSidecarStatus>
     val diagnosticsLogs: StateFlow<List<DiagnosticsLogLine>>
     val timesheetExportFileWriter: TimesheetExportFileWriter
+    val appUpdater: AppUpdater
 
     suspend fun setAppearanceMode(mode: AppearanceMode)
 
@@ -83,6 +84,7 @@ class StaticTimeboxxingRuntime(
     override val sidecarStatus = MutableStateFlow<TimeboxxingSidecarStatus>(TimeboxxingSidecarStatus.Ready)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
     override val timesheetExportFileWriter = StaticTimesheetExportFileWriter()
+    override val appUpdater: AppUpdater = StaticAppUpdater()
 
     override suspend fun setAppearanceMode(mode: AppearanceMode) {
         appearanceMode.value = mode

@@ -180,6 +180,7 @@ jobs:
       GO_BINARY: go
       JAVA_ENV: ${{ needs.prepare.outputs.java-env }}
       PACKAGE_VERSION: ${{ needs.prepare.outputs.package-version }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.release-version }}
       RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
 
     steps:
@@ -217,12 +218,12 @@ jobs:
       - name: Package macOS installer
         if: runner.os == 'macOS'
         working-directory: app
-        run: ./gradlew --no-daemon -p ../installer :packager:packageDmg -Ptimeboxxing.javaEnv="${JAVA_ENV}" -Ptimeboxxing.packageVersion="${PACKAGE_VERSION}"
+        run: ./gradlew --no-daemon -p ../installer :packager:packageDmg -Ptimeboxxing.javaEnv="${JAVA_ENV}" -Ptimeboxxing.packageVersion="${PACKAGE_VERSION}" -Ptimeboxxing.appVersion="${RELEASE_VERSION}"
 
       - name: Package Windows installer
         if: runner.os == 'Windows'
         working-directory: app
-        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION"
+        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:RELEASE_VERSION"
 
       - name: Dump packaging logs on failure
         if: failure()

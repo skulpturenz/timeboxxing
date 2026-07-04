@@ -447,6 +447,7 @@ private class FakeTimeboxxingRuntime(
     override val sidecarStatus = MutableStateFlow(sidecarStatus)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
     override val timesheetExportFileWriter = StaticTimesheetExportFileWriter()
+    override val appUpdater = StaticAppUpdater()
     var restartCount = 0
 
     override suspend fun setAppearanceMode(mode: AppearanceMode) {

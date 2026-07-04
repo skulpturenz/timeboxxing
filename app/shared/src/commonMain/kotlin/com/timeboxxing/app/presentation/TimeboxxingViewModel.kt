@@ -37,6 +37,7 @@ class TimeboxxingViewModel(
             usageDays = runtime.usageDays,
             initialNotice = runtime.initialNotice,
             dataDirectory = runtime.dataDirectory,
+            appVersion = runtime.appUpdater.currentVersion,
             appearanceMode = runtime.initialAppearanceMode,
         ).copy(diagnosticsEnabled = runtime.diagnosticsEnabled),
     )
@@ -56,6 +57,7 @@ class TimeboxxingViewModel(
         observeTimesheetEntryLoads()
         observeSettingsLoads()
         observeAmaIndexStatus()
+        checkForUpdatesOnStartup()
     }
 
     fun dispatch(action: TimeboxxingAction) {
@@ -113,6 +115,15 @@ class TimeboxxingViewModel(
                 timesheetRepository = currentRepositories.timesheetRepository,
                 request = databasePrune,
             )
+        }
+        if (action is TimeboxxingAction.CheckForUpdates && !currentState.update.busy) {
+            checkForUpdates(silent = false)
+        }
+        if (action is TimeboxxingAction.StartUpdateInstall) {
+            val update = currentState.update.available
+            if (update != null && currentState.update.downloadProgress == null && !currentState.update.installing) {
+                installUpdate(update)
+            }
         }
     }
 
@@ -401,6 +412,59 @@ class TimeboxxingViewModel(
                     reduce(TimeboxxingAction.SettingsSaveFailed(error.message ?: "Settings could not be saved."))
                 },
             )
+        }
+    }
+
+    private fun checkForUpdatesOnStartup() {
+        viewModelScope.launch {
+            delay(3_000)
+            checkForUpdates(silent = true)
+        }
+    }
+
+    private fun checkForUpdates(silent: Boolean) {
+        viewModelScope.launch {
+            val checked = runCatching { runtime.appUpdater.check() }
+            checked.fold(
+                onSuccess = { result ->
+                    when {
+                        // A background (startup) check stays quiet unless there is an update to offer.
+                        silent && result !is UpdateCheckResult.Available ->
+                            reduce(TimeboxxingAction.UpdateCheckSucceeded(UpdateCheckResult.Unsupported))
+                        // A manual check on a build where updates are disabled (e.g. local/dev)
+                        // still gives feedback via the up-to-date toast.
+                        !silent && result is UpdateCheckResult.Unsupported ->
+                            reduce(TimeboxxingAction.UpdateCheckSucceeded(UpdateCheckResult.UpToDate))
+                        else ->
+                            reduce(TimeboxxingAction.UpdateCheckSucceeded(result))
+                    }
+                },
+                onFailure = { error ->
+                    if (silent) {
+                        reduce(TimeboxxingAction.UpdateCheckSucceeded(UpdateCheckResult.Unsupported))
+                    } else {
+                        reduce(TimeboxxingAction.UpdateCheckFailed(error.message ?: "Update check failed."))
+                    }
+                },
+            )
+        }
+    }
+
+    private fun installUpdate(update: AvailableUpdate) {
+        viewModelScope.launch {
+            val installed = runCatching {
+                runtime.appUpdater.downloadAndInstall(update) { fraction ->
+                    if (fraction >= 1f) {
+                        reduce(TimeboxxingAction.UpdateInstallStarted)
+                    } else {
+                        reduce(TimeboxxingAction.UpdateDownloadProgress(fraction))
+                    }
+                }
+            }
+            // On success the updater relaunches and terminates the process, so this only runs on failure.
+            installed.onFailure { error ->
+                reduce(TimeboxxingAction.UpdateInstallFailed(error.message ?: "Update could not be installed."))
+            }
         }
     }
 

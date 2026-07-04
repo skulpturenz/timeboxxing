@@ -25,6 +25,7 @@ internal fun desktopTimeboxxingModule(javaEnv: JavaEnv) = module {
             sidecarManager = get(),
             sidecarSessionLog = get(),
             diagnosticsEnabled = DesktopBuildConfig.DiagnosticsEnabled,
+            javaEnv = javaEnv,
         )
     }
     single<TimeboxxingRuntime> { get<DesktopTimeboxxingRuntime>() }

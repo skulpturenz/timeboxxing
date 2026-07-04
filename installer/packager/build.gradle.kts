@@ -76,10 +76,18 @@ val packageVersionProvider = providers.gradleProperty("timeboxxing.packageVersio
     .orElse("1.0.0")
     .map(::normalizeInstallerVersion)
 
+// The un-normalized release version (e.g. "0.0.5") the running build reports for update checks.
+// Distinct from the jpackage-normalized packageVersion above; falls back to it when unset.
+val appVersionProvider = providers.gradleProperty("timeboxxing.appVersion")
+    .orElse(providers.gradleProperty("timeboxxing.packageVersion"))
+    .map { it.trim() }
+    .orElse("0.0.0")
+
 val generatedBuildConfigDir = layout.buildDirectory.dir("generated/timeboxxingBuildConfig/kotlin")
 val generateDesktopBuildConfig by tasks.registering {
     inputs.property("diagnosticsEnabled", diagnosticsEnabledProvider)
     inputs.property("javaEnv", javaEnvProvider)
+    inputs.property("appVersion", appVersionProvider)
     outputs.dir(generatedBuildConfigDir)
     doLast {
         val outputFile = generatedBuildConfigDir.get()
@@ -93,6 +101,7 @@ val generateDesktopBuildConfig by tasks.registering {
             internal object DesktopBuildConfig {
                 const val DiagnosticsEnabled: Boolean = ${diagnosticsEnabledProvider.get()}
                 const val JavaEnv: String = "${javaEnvProvider.get()}"
+                const val AppVersion: String = "${appVersionProvider.get()}"
             }
             """.trimIndent() + "\n",
         )
