@@ -48,10 +48,10 @@ jobs:
       - name: Match release label
         id: pr-release-label
         if: github.event_name == 'pull_request_target'
-        uses: zwaldowski/match-label-action@v6
+        uses: skulpturenz/kakak-bot/match-label@master
         with:
           allowed: release/major, release/minor, release/patch, release/prerelease
-          default_match: release/prerelease
+          default-match: release/prerelease
 
       - name: Resolve release context
         id: release-context
