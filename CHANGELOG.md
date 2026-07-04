@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[047bc3e](047bc3e1904f4ca25386ebff0aa8d9a83ca709f3)...[da8234c](da8234c55d32451deb1bbd196d4a799ca5a27b15)
+[68ba300](68ba300f38acec9abde7384192efd32493317df1)...[f260fce](f260fce052701627ab5bcec34dfd32ae8ac5efef)
+
+### Miscellaneous Tasks
+
+- Authenticate as gh app in releases ([5fc5c8b](5fc5c8b67986aa1f035ba844c5a11e135189b071))
+
+## 0.0.1-5 - 2026-07-04
+
+[047bc3e](047bc3e1904f4ca25386ebff0aa8d9a83ca709f3)...[68ba300](68ba300f38acec9abde7384192efd32493317df1)
 
 ### Miscellaneous Tasks
 
