@@ -288,10 +288,5 @@ jobs:
           version: ${{ needs.prepare.outputs.release-tag }}
           body: |
             ${{ needs.prepare.outputs.release-body }}
+          assets: release-assets/*
           token: ${{ github.token }}
-
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
-        run: gh release upload "${RELEASE_TAG}" release-assets/* --clobber
