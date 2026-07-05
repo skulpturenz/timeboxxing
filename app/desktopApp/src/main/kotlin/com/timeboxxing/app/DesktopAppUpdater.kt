@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
+import java.io.File
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -27,8 +28,10 @@ import kotlin.system.exitProcess
  * Desktop [AppUpdater] backed by GitHub Releases. It scans the repository's releases, picks the
  * newest one on the selected [UpdateChannel] (Stable → the `master` branch, Beta → `staging`
  * branches, Alpha → `canary` branches, matched on each release's `target_commitish`), downloads the
- * matching jpackage installer (`.dmg`/`.exe`) for the current OS and architecture, applies it in
- * place via a detached helper process that waits for this app to exit, then relaunches.
+ * matching release asset for the current OS and architecture, applies it in place via a detached
+ * helper process that waits for this app to exit, then relaunches. macOS replaces the `.app` bundle
+ * from a `.dmg`; Windows swaps the installed jpackage app image from an app-image `.zip` (no
+ * installer is run — see [WindowsUpdateScript]), sidestepping Windows Installer's upgrade machinery.
  *
  * Update checks are disabled for local/dev builds (see [updatesSupported]) so a developer build does
  * not spuriously report the newest published release as an available update.
@@ -36,6 +39,7 @@ import kotlin.system.exitProcess
 internal class DesktopAppUpdater(
     override val currentVersion: String,
     private val javaEnv: JavaEnv,
+    private val dataDirectory: Path,
     private val onBeforeExit: () -> Unit = {},
 ) : AppUpdater {
 
@@ -77,7 +81,12 @@ internal class DesktopAppUpdater(
         val latestVersion = latestTag.removePrefix("v")
         val assetUrl = release.assetDownloadUrl(platform)
 
-        if (assetUrl == null || compareVersions(latestVersion, currentVersion) <= 0) {
+        // A build produced by the CI/dev pipeline carries the 0.0.0 sentinel version (with +sha build
+        // metadata); it is always offered the newest release on whichever channel the user selected,
+        // so testers on a pipeline build can move onto any canary/staging/stable release regardless of
+        // its version. Released builds use the normal newest-is-greater comparison.
+        val outdated = isPipelineFloorBuild() || compareVersions(latestVersion, currentVersion) > 0
+        if (assetUrl == null || !outdated) {
             UpdateCheckResult.UpToDate
         } else {
             UpdateCheckResult.Available(
@@ -86,6 +95,13 @@ internal class DesktopAppUpdater(
         }
     }
 
+    /**
+     * True for a CI/dev pipeline build, identified by the all-zero (0.0.0) sentinel version — the
+     * `installer-build.yml` artifact ships `0.0.0+<sha>`. Such a build always reports an available
+     * update on any channel so it can be upgraded onto any published release.
+     */
+    private fun isPipelineFloorBuild(): Boolean = versionParts(currentVersion).all { it == 0 }
+
     override suspend fun downloadAndInstall(update: AvailableUpdate, onProgress: (Float) -> Unit) {
         val installer = withContext(Dispatchers.IO) {
             downloadInstaller(update.downloadUrl, onProgress)
@@ -93,7 +109,7 @@ internal class DesktopAppUpdater(
         // Signals the install/relaunch phase to the UI. downloadInstaller keeps progress < 1f.
         onProgress(1f)
         withContext(Dispatchers.IO) {
-            launchInstallerAndExit(installer)
+            launchInstallerAndExit(installer, update.version)
         }
     }
 
@@ -157,10 +173,10 @@ internal class DesktopAppUpdater(
         return target
     }
 
-    private fun launchInstallerAndExit(installer: Path): Nothing {
+    private fun launchInstallerAndExit(installer: Path, version: String): Nothing {
         when (currentPlatform()) {
             Platform.MacOs -> installMacOs(installer)
-            Platform.Windows -> installWindows(installer)
+            Platform.Windows -> installWindows(installer, version)
             Platform.Unsupported -> throw IOException("Updates are not supported on this platform.")
         }
         onBeforeExit()
@@ -183,7 +199,7 @@ internal class DesktopAppUpdater(
         )
     }
 
-    private fun installWindows(installer: Path) {
+    private fun installWindows(appImageZip: Path, version: String) {
         val pid = ProcessHandle.current().pid().toString()
         val relaunch = System.getProperty("jpackage.app-path")
             ?: throw IOException("Could not resolve the app launcher for relaunch.")
@@ -200,10 +216,16 @@ internal class DesktopAppUpdater(
             script.absolutePathString(),
             "-AppPid",
             pid,
-            "-Installer",
-            installer.absolutePathString(),
+            "-AppImageZip",
+            appImageZip.absolutePathString(),
             "-Relaunch",
             relaunch,
+            "-Version",
+            version,
+            // Where the script drops a failure marker if the swap doesn't apply; the app data dir
+            // survives the swap because it lives outside the install directory.
+            "-MarkerDir",
+            dataDirectory.absolutePathString(),
         )
     }
 
@@ -229,6 +251,9 @@ internal class DesktopAppUpdater(
 
     private fun spawnDetached(vararg command: String) {
         ProcessBuilder(*command)
+            // Run from the temp dir, never the install directory: on Windows the helper renames the
+            // install dir out from under itself, which fails if that dir is the process's working dir.
+            .directory(File(System.getProperty("java.io.tmpdir")))
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
@@ -248,7 +273,7 @@ internal class DesktopAppUpdater(
     private fun JsonObject.assetDownloadUrl(platform: Platform): String? {
         val suffix = when (platform) {
             Platform.MacOs -> "-macOS-$archLabel.dmg"
-            Platform.Windows -> "-Windows-$archLabel.exe"
+            Platform.Windows -> "-Windows-$archLabel-app-image.zip"
             Platform.Unsupported -> return null
         }
         val assets = (this["assets"] as? JsonArray) ?: return null
@@ -328,22 +353,21 @@ internal class DesktopAppUpdater(
             open "${'$'}TARGET_APP"
         """.trimIndent() + "\n"
 
-        // Waits for this app to exit, runs the jpackage installer, then relaunches. The install is
-        // per-user (no elevation) and the stable upgradeUuid makes it an in-place upgrade. '/quiet'
-        // targets a silent run; if a given installer build ignores it, the wizard shows and the
-        // upgrade still applies.
-        //
-        // The jpackage .exe is a self-extracting wrapper that hands the embedded MSI off to the
-        // Windows Installer and can return BEFORE the install actually finishes. Relaunching right
-        // after it returns would launch the still-old launcher (the update appears to do nothing).
-        // So after running it we poll until the installed launcher has actually been rewritten (its
-        // LastWriteTime changes) before relaunching, with a timeout fallback so the user is never
-        // left without the app. Progress is logged to %TEMP%\timeboxxing-update.log for diagnostics.
+        // Waits for this app to exit, then replaces the installed jpackage app image *in place* with
+        // the downloaded app-image zip — no Windows Installer is involved, so none of its upgrade
+        // constraints (cached-source lookups, ProductVersion ordering, per-user quirks) apply. The
+        // install dir is the launcher's parent (%LOCALAPPDATA%\Timeboxxing). The swap moves the old
+        // install aside, moves the freshly-expanded image into place, and rolls back on failure so the
+        // app is never left without an install directory. If the swap can't be applied it drops a
+        // failure marker in the data dir so the relaunched app tells the user instead of silently
+        // coming back on the old version. Progress is logged to %TEMP%\timeboxxing-update.log.
         val WindowsUpdateScript = """
             param(
                 [int]${'$'}AppPid,
-                [string]${'$'}Installer,
-                [string]${'$'}Relaunch
+                [string]${'$'}AppImageZip,
+                [string]${'$'}Relaunch,
+                [string]${'$'}Version,
+                [string]${'$'}MarkerDir
             )
 
             ${'$'}log = Join-Path ${'$'}env:TEMP 'timeboxxing-update.log'
@@ -354,24 +378,59 @@ internal class DesktopAppUpdater(
             Write-UpdateLog "waiting for app pid ${'$'}AppPid to exit"
             try { Wait-Process -Id ${'$'}AppPid -ErrorAction SilentlyContinue } catch {}
 
-            ${'$'}before = ${'$'}null
-            if (Test-Path ${'$'}Relaunch) { ${'$'}before = (Get-Item ${'$'}Relaunch).LastWriteTimeUtc }
-            Write-UpdateLog "launcher before=${'$'}before; running installer ${'$'}Installer"
+            ${'$'}installDir = Split-Path -Parent ${'$'}Relaunch
+            ${'$'}staging = Join-Path ${'$'}env:TEMP 'timeboxxing-update-staging'
+            ${'$'}backup = "${'$'}installDir.old"
+            ${'$'}ok = ${'$'}false
 
-            try { Start-Process -FilePath ${'$'}Installer -ArgumentList '/quiet' -Wait } catch { Write-UpdateLog "installer error: ${'$'}_" }
+            try {
+                if (Test-Path ${'$'}staging) { Remove-Item -Recurse -Force ${'$'}staging }
+                Write-UpdateLog "expanding ${'$'}AppImageZip to ${'$'}staging"
+                Expand-Archive -Path ${'$'}AppImageZip -DestinationPath ${'$'}staging -Force
 
-            # The wrapper may have returned early; wait for the launcher to actually be replaced.
-            ${'$'}deadline = (Get-Date).AddMinutes(3)
-            ${'$'}replaced = ${'$'}false
-            while ((Get-Date) -lt ${'$'}deadline) {
-                if ((Test-Path ${'$'}Relaunch) -and ((Get-Item ${'$'}Relaunch).LastWriteTimeUtc -ne ${'$'}before)) {
-                    ${'$'}replaced = ${'$'}true
-                    break
+                # The zip contains a top-level "Timeboxxing" folder; fall back to the first directory.
+                ${'$'}newImage = Join-Path ${'$'}staging 'Timeboxxing'
+                if (-not (Test-Path ${'$'}newImage)) {
+                    ${'$'}newImage = (Get-ChildItem -Directory ${'$'}staging | Select-Object -First 1).FullName
                 }
-                Start-Sleep -Milliseconds 500
+                if (-not ${'$'}newImage -or -not (Test-Path ${'$'}newImage)) {
+                    throw "expanded app image not found under ${'$'}staging"
+                }
+
+                # Retry: a freshly-exited app (or antivirus) can briefly keep a file handle open.
+                for (${'$'}attempt = 1; ${'$'}attempt -le 5 -and -not ${'$'}ok; ${'$'}attempt++) {
+                    try {
+                        if (Test-Path ${'$'}backup) { Remove-Item -Recurse -Force ${'$'}backup }
+                        if (Test-Path ${'$'}installDir) { Move-Item -Path ${'$'}installDir -Destination ${'$'}backup }
+                        Move-Item -Path ${'$'}newImage -Destination ${'$'}installDir
+                        ${'$'}ok = ${'$'}true
+                    } catch {
+                        Write-UpdateLog "swap attempt ${'$'}attempt failed: ${'$'}_"
+                        # Roll back so the app is never left without an install directory.
+                        if ((-not (Test-Path ${'$'}installDir)) -and (Test-Path ${'$'}backup)) {
+                            try { Move-Item -Path ${'$'}backup -Destination ${'$'}installDir } catch {}
+                        }
+                        Start-Sleep -Seconds 2
+                    }
+                }
+            } catch {
+                Write-UpdateLog "update error: ${'$'}_"
             }
 
-            Write-UpdateLog "launcher replaced: ${'$'}replaced; relaunching ${'$'}Relaunch"
+            if (${'$'}ok) {
+                Write-UpdateLog "app image swapped to v${'$'}Version; relaunching ${'$'}Relaunch"
+                try { if (Test-Path ${'$'}backup) { Remove-Item -Recurse -Force ${'$'}backup } } catch {}
+                try { if (Test-Path ${'$'}staging) { Remove-Item -Recurse -Force ${'$'}staging } } catch {}
+            } else {
+                Write-UpdateLog "update did NOT apply; writing failure marker"
+                try {
+                    New-Item -ItemType Directory -Force -Path ${'$'}MarkerDir | Out-Null
+                    ${'$'}marker = Join-Path ${'$'}MarkerDir 'update-failed.json'
+                    ${'$'}payload = [pscustomobject]@{ version = ${'$'}Version; log = ${'$'}log } | ConvertTo-Json -Compress
+                    Set-Content -Path ${'$'}marker -Value ${'$'}payload -Encoding utf8
+                } catch { Write-UpdateLog "failed to write failure marker: ${'$'}_" }
+            }
+
             Start-Sleep -Seconds 2
             Start-Process -FilePath ${'$'}Relaunch
         """.trimIndent() + "\n"

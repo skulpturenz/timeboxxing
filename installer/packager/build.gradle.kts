@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Zip
 import org.gradle.api.GradleException
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
@@ -272,6 +273,21 @@ tasks.matching { it.name == "packageDmg" }.configureEach {
 
 tasks.matching { it.name == "packageExe" }.configureEach {
     doLast { addArchToInstaller("exe", "exe") }
+}
+
+// Windows in-app updates replace the installed jpackage app image directly (no installer run), so
+// we publish the app image as a zip alongside the .exe first-time installer. The updater downloads
+// this zip, swaps it over the install directory, and relaunches — sidestepping Windows Installer's
+// upgrade machinery entirely. Only meaningful on Windows; macOS delivers its .app via the DMG.
+val packageWindowsAppImageZip by tasks.registering(Zip::class) {
+    dependsOn("createDistributable")
+    // The jpackage app image is build/compose/binaries/main/app/Timeboxxing/ — zip it so the archive
+    // has a top-level "Timeboxxing/" folder the updater can move straight into %LOCALAPPDATA%.
+    from(layout.buildDirectory.dir("compose/binaries/main/app")) {
+        include("Timeboxxing/**")
+    }
+    destinationDirectory.set(layout.buildDirectory.dir("compose/binaries/main/app-image"))
+    archiveFileName.set("Timeboxxing-app-image-$archLabel.zip")
 }
 
 // jpackage copies app content into the macOS .app with the executable bit stripped (0644), so the

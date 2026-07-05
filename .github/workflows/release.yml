@@ -227,7 +227,9 @@ jobs:
       - name: Package Windows installer
         if: runner.os == 'Windows'
         working-directory: app
-        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:RELEASE_VERSION"
+        # packageExe = the first-time installer; packageWindowsAppImageZip = the app-image zip the
+        # in-app updater downloads and swaps over the install directory.
+        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe :packager:packageWindowsAppImageZip "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:RELEASE_VERSION"
 
       - name: Dump packaging logs on failure
         if: failure()
@@ -253,12 +255,20 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
-          $artifact = Get-ChildItem -Path installer\packager\build\compose\binaries\main\exe -Filter *.exe -File | Select-Object -First 1
-          if (-not $artifact) {
+
+          $exe = Get-ChildItem -Path installer\packager\build\compose\binaries\main\exe -Filter *.exe -File | Select-Object -First 1
+          if (-not $exe) {
             throw "No EXE artifact found."
           }
+          Copy-Item $exe.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows-${{ matrix.arch }}.exe"
 
-          Copy-Item $artifact.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows-${{ matrix.arch }}.exe"
+          # The app-image zip is what the in-app updater downloads and swaps in. Its asset name must
+          # end with "-Windows-<arch>-app-image.zip" so DesktopAppUpdater.assetDownloadUrl matches it.
+          $zip = Get-ChildItem -Path installer\packager\build\compose\binaries\main\app-image -Filter *.zip -File | Select-Object -First 1
+          if (-not $zip) {
+            throw "No Windows app-image zip found."
+          }
+          Copy-Item $zip.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows-${{ matrix.arch }}-app-image.zip"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7

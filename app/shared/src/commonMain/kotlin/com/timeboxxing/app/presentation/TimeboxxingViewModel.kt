@@ -36,6 +36,7 @@ class TimeboxxingViewModel(
         createSidecarTimeboxxingState(
             usageDays = runtime.usageDays,
             initialNotice = runtime.initialNotice,
+            initialUpdateInstallFailure = runtime.initialUpdateInstallFailure,
             dataDirectory = runtime.dataDirectory,
             appVersion = runtime.appUpdater.currentVersion,
             appearanceMode = runtime.initialAppearanceMode,

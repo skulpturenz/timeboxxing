@@ -522,6 +522,7 @@ private class FakeTimeboxxingRuntime(
     override val initialNotifyUpdatesOnStartup: Boolean = true,
 ) : TimeboxxingRuntime {
     override val initialNotice: String? = null
+    override val initialUpdateInstallFailure: String? = null
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System
     override val initialUpdateChannel: UpdateChannel = UpdateChannel.Stable
     override val diagnosticsEnabled: Boolean = false

@@ -75,7 +75,9 @@ jobs:
       - name: Package Windows installer
         if: runner.os == 'Windows'
         working-directory: app
-        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:APP_VERSION"
+        # packageExe = the first-time installer; packageWindowsAppImageZip = the app-image zip the
+        # in-app updater downloads and swaps over the install directory.
+        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe :packager:packageWindowsAppImageZip "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:APP_VERSION"
 
       - name: Dump packaging logs on failure
         if: failure()
@@ -98,6 +100,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: installer-windows
-          path: installer/packager/build/compose/binaries/main/exe/*.exe
+          path: |
+            installer/packager/build/compose/binaries/main/exe/*.exe
+            installer/packager/build/compose/binaries/main/app-image/*.zip
           if-no-files-found: error
           retention-days: 14

@@ -49,6 +49,12 @@ sealed interface TimeboxxingSidecarStatus {
 interface TimeboxxingRuntime {
     val usageDays: List<UsageDay>
     val initialNotice: String?
+    /**
+     * A message describing a previously-attempted in-app update that failed to install (e.g. a
+     * Windows app-image swap that did not apply), surfaced once on the next launch. Null when the
+     * last update either succeeded or was never attempted.
+     */
+    val initialUpdateInstallFailure: String?
     val initialAppearanceMode: AppearanceMode
     val initialUpdateChannel: UpdateChannel
     val initialNotifyUpdatesOnStartup: Boolean
@@ -83,6 +89,7 @@ class StaticTimeboxxingRuntime(
 ) : TimeboxxingRuntime {
     override val usageDays: List<UsageDay> = data.usageDays
     override val initialNotice: String? = null
+    override val initialUpdateInstallFailure: String? = null
     override val appearanceMode = MutableStateFlow(initialAppearanceMode)
     override val repositories = MutableStateFlow(
         TimeboxxingRepositories(

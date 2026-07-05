@@ -348,6 +348,7 @@ fun createInitialTimeboxxingState(
 fun createSidecarTimeboxxingState(
     usageDays: List<UsageDay>,
     initialNotice: String? = null,
+    initialUpdateInstallFailure: String? = null,
     dataDirectory: String = "",
     appVersion: String = "",
     data: TimeboxxingMockData = mockTimeboxxingData(),
@@ -369,7 +370,9 @@ fun createSidecarTimeboxxingState(
         scheduleFocusEntryId = null,
         selectedUsageIds = emptySet(),
         draft = blankDraft(defaultProjectId),
-        notice = initialNotice,
+        // A failed install from the previous session takes precedence over the transient startup
+        // notice so the user actually sees why the update didn't take.
+        notice = initialUpdateInstallFailure ?: initialNotice,
         nextEntryNumber = 1,
         usageDays = safeUsageDays,
         dataDirectory = dataDirectory,
