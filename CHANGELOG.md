@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[ffa4b19](ffa4b19fc15f64fe1737d8318f5f67213e7db86f)...[fc67555](fc67555c0b085bced0fd90bdbdf2c4807b7d2309)
+[d0df1a3](d0df1a370cca3ad119b8f4d62eb4edc00fd7bb9e)...[de6d2b9](de6d2b913a30ca8b00da8520b19b23754246857d)
+
+### Miscellaneous Tasks
+
+- Test release for windows auto updates ([dfd848b](dfd848b118909f3577cf7111b0ad651237b148a7))
+
+## 0.0.1-12 - 2026-07-05
+
+[ffa4b19](ffa4b19fc15f64fe1737d8318f5f67213e7db86f)...[d0df1a3](d0df1a370cca3ad119b8f4d62eb4edc00fd7bb9e)
 
 ### Miscellaneous Tasks
 
