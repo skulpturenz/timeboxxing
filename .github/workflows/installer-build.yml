@@ -56,15 +56,24 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Resolve CI build version
+        shell: bash
+        run: |
+          # CI commits have no release tag, so stamp a dev version traceable to the commit.
+          # packageVersion must be numeric for jpackage; appVersion is the string shown in-app.
+          echo "APP_VERSION=0.0.0+${GITHUB_SHA::7}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_VERSION=0.0.0" >> "${GITHUB_ENV}"
+          echo "JAVA_ENV=development" >> "${GITHUB_ENV}"
+
       - name: Package macOS installer
         if: runner.os == 'macOS'
         working-directory: app
-        run: ./gradlew --no-daemon -p ../installer :packager:packageDmg
+        run: ./gradlew --no-daemon -p ../installer :packager:packageDmg -Ptimeboxxing.javaEnv="${JAVA_ENV}" -Ptimeboxxing.packageVersion="${PACKAGE_VERSION}" -Ptimeboxxing.appVersion="${APP_VERSION}"
 
       - name: Package Windows installer
         if: runner.os == 'Windows'
         working-directory: app
-        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe
+        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:APP_VERSION"
 
       - name: Dump packaging logs on failure
         if: failure()
