@@ -332,6 +332,13 @@ internal class DesktopAppUpdater(
         // per-user (no elevation) and the stable upgradeUuid makes it an in-place upgrade. '/quiet'
         // targets a silent run; if a given installer build ignores it, the wizard shows and the
         // upgrade still applies.
+        //
+        // The jpackage .exe is a self-extracting wrapper that hands the embedded MSI off to the
+        // Windows Installer and can return BEFORE the install actually finishes. Relaunching right
+        // after it returns would launch the still-old launcher (the update appears to do nothing).
+        // So after running it we poll until the installed launcher has actually been rewritten (its
+        // LastWriteTime changes) before relaunching, with a timeout fallback so the user is never
+        // left without the app. Progress is logged to %TEMP%\timeboxxing-update.log for diagnostics.
         val WindowsUpdateScript = """
             param(
                 [int]${'$'}AppPid,
@@ -339,8 +346,33 @@ internal class DesktopAppUpdater(
                 [string]${'$'}Relaunch
             )
 
+            ${'$'}log = Join-Path ${'$'}env:TEMP 'timeboxxing-update.log'
+            function Write-UpdateLog(${'$'}message) {
+                "${'$'}(Get-Date -Format o)  ${'$'}message" | Out-File -FilePath ${'$'}log -Append -Encoding utf8
+            }
+
+            Write-UpdateLog "waiting for app pid ${'$'}AppPid to exit"
             try { Wait-Process -Id ${'$'}AppPid -ErrorAction SilentlyContinue } catch {}
-            Start-Process -FilePath ${'$'}Installer -ArgumentList '/quiet' -Wait
+
+            ${'$'}before = ${'$'}null
+            if (Test-Path ${'$'}Relaunch) { ${'$'}before = (Get-Item ${'$'}Relaunch).LastWriteTimeUtc }
+            Write-UpdateLog "launcher before=${'$'}before; running installer ${'$'}Installer"
+
+            try { Start-Process -FilePath ${'$'}Installer -ArgumentList '/quiet' -Wait } catch { Write-UpdateLog "installer error: ${'$'}_" }
+
+            # The wrapper may have returned early; wait for the launcher to actually be replaced.
+            ${'$'}deadline = (Get-Date).AddMinutes(3)
+            ${'$'}replaced = ${'$'}false
+            while ((Get-Date) -lt ${'$'}deadline) {
+                if ((Test-Path ${'$'}Relaunch) -and ((Get-Item ${'$'}Relaunch).LastWriteTimeUtc -ne ${'$'}before)) {
+                    ${'$'}replaced = ${'$'}true
+                    break
+                }
+                Start-Sleep -Milliseconds 500
+            }
+
+            Write-UpdateLog "launcher replaced: ${'$'}replaced; relaunching ${'$'}Relaunch"
+            Start-Sleep -Seconds 2
             Start-Process -FilePath ${'$'}Relaunch
         """.trimIndent() + "\n"
     }
