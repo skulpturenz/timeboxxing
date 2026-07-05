@@ -173,8 +173,10 @@ jobs:
         include:
           - os: macos-15
             artifact-name: timeboxxing-macos
+            arch: aarch64
           - os: windows-2025
             artifact-name: timeboxxing-windows
+            arch: x86_64
     env:
       CGO_ENABLED: "1"
       GO_BINARY: go
@@ -242,7 +244,7 @@ jobs:
             exit 1
           fi
 
-          cp "${artifact}" "release-assets/Timeboxxing-${RELEASE_TAG}-macOS.dmg"
+          cp "${artifact}" "release-assets/Timeboxxing-${RELEASE_TAG}-macOS-${{ matrix.arch }}.dmg"
 
       - name: Collect Windows installer
         if: runner.os == 'Windows'
@@ -254,7 +256,7 @@ jobs:
             throw "No EXE artifact found."
           }
 
-          Copy-Item $artifact.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows.exe"
+          Copy-Item $artifact.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows-${{ matrix.arch }}.exe"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
