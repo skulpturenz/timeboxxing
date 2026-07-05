@@ -56,12 +56,37 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Assemble installer packager
-        if: runner.os != 'Windows'
+      - name: Package macOS installer
+        if: runner.os == 'macOS'
         working-directory: app
-        run: ./gradlew --no-daemon -p ../installer :packager:assemble
+        run: ./gradlew --no-daemon -p ../installer :packager:packageDmg
 
-      - name: Assemble installer packager
+      - name: Package Windows installer
         if: runner.os == 'Windows'
         working-directory: app
-        run: .\gradlew.bat --no-daemon -p ..\installer :packager:assemble
+        run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe
+
+      - name: Dump packaging logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "== Compose/jpackage logs =="
+          find installer/packager/build/compose/logs -type f -print -exec cat {} \; 2>/dev/null || true
+
+      - name: Upload macOS installer
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-macos
+          path: installer/packager/build/compose/binaries/main/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows installer
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-windows
+          path: installer/packager/build/compose/binaries/main/exe/*.exe
+          if-no-files-found: error
+          retention-days: 14
