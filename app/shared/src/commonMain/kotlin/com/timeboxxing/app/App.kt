@@ -15,6 +15,7 @@ import com.timeboxxing.app.presentation.createInitialTimeboxxingState
 import com.timeboxxing.app.ui.NoOpUsageIconLoader
 import com.timeboxxing.app.ui.TbTheme
 import com.timeboxxing.app.ui.TimeboxxingScreen
+import com.timeboxxing.app.ui.UpdateAvailableDialog
 import com.timeboxxing.app.ui.UsageIconLoader
 import com.timeboxxing.domain.model.DiagnosticsLogLine
 import org.koin.compose.KoinApplication
@@ -72,6 +73,9 @@ fun TimeboxxingApp(
             onAction = onAction,
         )
         overlay?.invoke()
+        if (state.showUpdateDialog) {
+            UpdateAvailableDialog(state = state, onAction = onAction)
+        }
     }
 }
 

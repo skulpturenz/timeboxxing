@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Zip
 import org.gradle.api.GradleException
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
@@ -21,6 +22,7 @@ dependencies {
     implementation(libs.koin.compose.viewmodel)
     implementation(libs.koin.core)
     implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.kotlinx.serializationJson)
     implementation(libs.sentry)
     implementation(libs.jna)
 
@@ -54,12 +56,25 @@ val javaEnvProvider = providers.gradleProperty("timeboxxing.javaEnv")
     }
     .orElse("local")
 
-// jpackage requires one to three dot-separated integers whose first component is >= 1
-// (macOS rejects a zero/negative leading version outright). Release tags can legitimately be
-// 0.x (e.g. v0.0.1), so add one to the major component for the installer/bundle version only —
-// the release tag and asset names are unaffected.
+// Produces the jpackage/MSI installer version — which MUST strictly increase for every release the
+// updater offers, because Windows MSI only upgrades when ProductVersion increases. Release versions
+// look like `X.Y.Z` (stable) or `X.Y.Z-N` (prerelease counter); folding N into the version is what
+// makes consecutive prereleases (e.g. 0.0.1-11 -> 0.0.1-12) actually upgrade on Windows instead of
+// being no-ops. This affects only the installer/bundle version — the release tag, asset names and
+// the in-app appVersion are unaffected.
+//
+// Mapping to jpackage's three integer fields (first >= 1; macOS rejects a zero leading version, and
+// the MSI build field caps at 65535):
+//   major = X + 1
+//   minor = Y
+//   build = Z*1000 + (N for a prerelease, else 999)
+// so a prerelease sorts below the stable of the same patch, and the next patch/minor/major always
+// sorts higher: 0.0.1-11 -> 1.0.1011, 0.0.1-12 -> 1.0.1012, 0.0.1 -> 1.0.1999, 0.0.2-0 -> 1.0.2000.
 fun normalizeInstallerVersion(raw: String): String {
-    val core = raw.trim().substringBefore('-').substringBefore('+')
+    val trimmed = raw.trim().substringBefore('+')
+    val core = trimmed.substringBefore('-')
+    val prereleaseToken = trimmed.substringAfter('-', "")
+
     val parts = core.split('.')
     if (parts.isEmpty() || parts.size > 3) {
         throw GradleException("Invalid package version '$raw'. Expected one to three integers separated by dots.")
@@ -67,9 +82,25 @@ fun normalizeInstallerVersion(raw: String): String {
     val numbers = parts.map { part ->
         part.toIntOrNull()?.takeIf { it >= 0 }
             ?: throw GradleException("Invalid package version '$raw'. '$part' is not a non-negative integer.")
-    }.toMutableList()
-    numbers[0] = numbers[0] + 1
-    return numbers.joinToString(".")
+    }
+    val major = numbers[0]
+    val minor = numbers.getOrElse(1) { 0 }
+    val patch = numbers.getOrElse(2) { 0 }
+
+    val prerelease = if (prereleaseToken.isEmpty()) {
+        999 // a stable release sorts above every prerelease of the same patch
+    } else {
+        prereleaseToken.toIntOrNull()?.takeIf { it in 0..998 }
+            ?: throw GradleException(
+                "Invalid prerelease counter in package version '$raw'. Expected an integer in 0..998.",
+            )
+    }
+    if (patch > 64) {
+        // build = patch*1000 + prerelease must stay within the MSI 16-bit (0..65535) field.
+        throw GradleException("Invalid package version '$raw'. Patch component must be <= 64.")
+    }
+
+    return "${major + 1}.$minor.${patch * 1000 + prerelease}"
 }
 
 val packageVersionProvider = providers.gradleProperty("timeboxxing.packageVersion")
@@ -242,6 +273,21 @@ tasks.matching { it.name == "packageDmg" }.configureEach {
 
 tasks.matching { it.name == "packageExe" }.configureEach {
     doLast { addArchToInstaller("exe", "exe") }
+}
+
+// Windows in-app updates replace the installed jpackage app image directly (no installer run), so
+// we publish the app image as a zip alongside the .exe first-time installer. The updater downloads
+// this zip, swaps it over the install directory, and relaunches — sidestepping Windows Installer's
+// upgrade machinery entirely. Only meaningful on Windows; macOS delivers its .app via the DMG.
+val packageWindowsAppImageZip by tasks.registering(Zip::class) {
+    dependsOn("createDistributable")
+    // The jpackage app image is build/compose/binaries/main/app/Timeboxxing/ — zip it so the archive
+    // has a top-level "Timeboxxing/" folder the updater can move straight into %LOCALAPPDATA%.
+    from(layout.buildDirectory.dir("compose/binaries/main/app")) {
+        include("Timeboxxing/**")
+    }
+    destinationDirectory.set(layout.buildDirectory.dir("compose/binaries/main/app-image"))
+    archiveFileName.set("Timeboxxing-app-image-$archLabel.zip")
 }
 
 // jpackage copies app content into the macOS .app with the executable bit stripped (0644), so the

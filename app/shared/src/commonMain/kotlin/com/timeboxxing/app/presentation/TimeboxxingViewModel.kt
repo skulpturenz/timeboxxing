@@ -36,9 +36,13 @@ class TimeboxxingViewModel(
         createSidecarTimeboxxingState(
             usageDays = runtime.usageDays,
             initialNotice = runtime.initialNotice,
+            initialUpdateInstallFailure = runtime.initialUpdateInstallFailure,
             dataDirectory = runtime.dataDirectory,
             appVersion = runtime.appUpdater.currentVersion,
             appearanceMode = runtime.initialAppearanceMode,
+            updateChannel = runtime.initialUpdateChannel,
+            notifyUpdatesOnStartup = runtime.initialNotifyUpdatesOnStartup,
+            isStableBuild = runtime.isStableBuild,
         ).copy(diagnosticsEnabled = runtime.diagnosticsEnabled),
     )
 
@@ -79,6 +83,16 @@ class TimeboxxingViewModel(
         if (action is TimeboxxingAction.UpdateAppearanceMode) {
             viewModelScope.launch {
                 runtime.setAppearanceMode(action.mode)
+            }
+        }
+        if (action is TimeboxxingAction.UpdateUpdateChannel) {
+            viewModelScope.launch {
+                runtime.setUpdateChannel(action.channel)
+            }
+        }
+        if (action is TimeboxxingAction.SetNotifyUpdatesOnStartup) {
+            viewModelScope.launch {
+                runtime.setNotifyUpdatesOnStartup(action.enabled)
             }
         }
         if (amaQuestion != null) {
@@ -423,8 +437,9 @@ class TimeboxxingViewModel(
     }
 
     private fun checkForUpdates(silent: Boolean) {
+        val channel = _state.value.update.channel
         viewModelScope.launch {
-            val checked = runCatching { runtime.appUpdater.check() }
+            val checked = runCatching { runtime.appUpdater.check(channel) }
             checked.fold(
                 onSuccess = { result ->
                     when {

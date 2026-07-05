@@ -37,6 +37,7 @@ import com.timeboxxing.domain.model.AiModelOption
 import com.timeboxxing.domain.model.AiProvider
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.CalendarDate
+import com.timeboxxing.domain.model.UpdateChannel
 
 @Composable
 fun SettingsPane(
@@ -219,6 +220,19 @@ private fun UpdatesCard(
                 )
             }
 
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TbText(
+                    text = "Release channel",
+                    style = TbTheme.typography.label,
+                    color = TbTheme.colors.secondaryText,
+                )
+                UpdateChannelSelector(
+                    selectedChannel = update.channel,
+                    enabled = !update.busy,
+                    onChannelChange = { onAction(TimeboxxingAction.UpdateUpdateChannel(it)) },
+                )
+            }
+
             update.error?.let { message ->
                 SettingsNotice(message = message, destructive = true)
             }
@@ -288,6 +302,28 @@ private fun AppearanceModeSelector(
 }
 
 @Composable
+private fun UpdateChannelSelector(
+    selectedChannel: UpdateChannel,
+    onChannelChange: (UpdateChannel) -> Unit,
+    enabled: Boolean = true,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        UpdateChannel.entries.forEach { option ->
+            TbButton(
+                onClick = { onChannelChange(option) },
+                enabled = enabled,
+                variant = if (selectedChannel == option) TbButtonVariant.Primary else TbButtonVariant.Secondary,
+            ) {
+                TbText(option.label, style = TbTheme.typography.button)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProviderSelector(
     provider: AiProvider,
     onProviderChange: (AiProvider) -> Unit,
@@ -312,6 +348,13 @@ private val AppearanceMode.label: String
         AppearanceMode.System -> "System"
         AppearanceMode.Light -> "Light"
         AppearanceMode.Dark -> "Dark"
+    }
+
+private val UpdateChannel.label: String
+    get() = when (this) {
+        UpdateChannel.Stable -> "Stable"
+        UpdateChannel.Beta -> "Beta"
+        UpdateChannel.Alpha -> "Alpha"
     }
 
 @Composable

@@ -3,8 +3,16 @@ package com.timeboxxing.app
 import com.timeboxxing.app.presentation.AppUpdater
 import com.timeboxxing.app.presentation.AvailableUpdate
 import com.timeboxxing.app.presentation.UpdateCheckResult
+import com.timeboxxing.domain.model.UpdateChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import java.io.File
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -17,9 +25,13 @@ import kotlin.io.path.absolutePathString
 import kotlin.system.exitProcess
 
 /**
- * Desktop [AppUpdater] backed by GitHub Releases. It checks the repository's latest stable release,
- * downloads the matching jpackage installer (`.dmg`/`.exe`), applies it in place via a detached
- * helper process that waits for this app to exit, then relaunches.
+ * Desktop [AppUpdater] backed by GitHub Releases. It scans the repository's releases, picks the
+ * newest one on the selected [UpdateChannel] (Stable → the `master` branch, Beta → `staging`
+ * branches, Alpha → `canary` branches, matched on each release's `target_commitish`), downloads the
+ * matching release asset for the current OS and architecture, applies it in place via a detached
+ * helper process that waits for this app to exit, then relaunches. macOS replaces the `.app` bundle
+ * from a `.dmg`; Windows swaps the installed jpackage app image from an app-image `.zip` (no
+ * installer is run — see [WindowsUpdateScript]), sidestepping Windows Installer's upgrade machinery.
  *
  * Update checks are disabled for local/dev builds (see [updatesSupported]) so a developer build does
  * not spuriously report the newest published release as an available update.
@@ -27,6 +39,7 @@ import kotlin.system.exitProcess
 internal class DesktopAppUpdater(
     override val currentVersion: String,
     private val javaEnv: JavaEnv,
+    private val dataDirectory: Path,
     private val onBeforeExit: () -> Unit = {},
 ) : AppUpdater {
 
@@ -37,18 +50,43 @@ internal class DesktopAppUpdater(
             .build()
     }
 
-    override suspend fun check(): UpdateCheckResult = withContext(Dispatchers.IO) {
+    // The architecture segment of the installer asset names, matching the labels the release
+    // workflow and gradle packager emit (e.g. "Timeboxxing-<tag>-macOS-aarch64.dmg").
+    private val archLabel: String = when (val osArch = System.getProperty("os.arch").orEmpty().lowercase()) {
+        "aarch64", "arm64" -> "aarch64"
+        "amd64", "x86_64", "x64" -> "x86_64"
+        else -> osArch
+    }
+
+    override suspend fun check(channel: UpdateChannel): UpdateCheckResult = withContext(Dispatchers.IO) {
         if (!updatesSupported()) {
             return@withContext UpdateCheckResult.Unsupported
         }
+        val platform = currentPlatform()
+        if (platform == Platform.Unsupported) {
+            return@withContext UpdateCheckResult.Unsupported
+        }
 
-        val body = fetchLatestReleaseJson()
-        val latestTag = TAG_REGEX.find(body)?.groupValues?.get(1)
-            ?: throw IOException("Could not read the latest release version.")
+        val releases = Json.parseToJsonElement(fetchReleasesJson()).jsonArray
+
+        // GitHub returns releases newest-first, so the first release whose origin branch matches the
+        // channel is the newest release on that channel. No match (e.g. Stable with no master
+        // release yet) is simply "up to date" rather than an error.
+        val release = releases
+            .mapNotNull { it as? JsonObject }
+            .firstOrNull { channel.matchesTarget(it.string("target_commitish")) }
+            ?: return@withContext UpdateCheckResult.UpToDate
+
+        val latestTag = release.string("tag_name") ?: return@withContext UpdateCheckResult.UpToDate
         val latestVersion = latestTag.removePrefix("v")
-        val assetUrl = assetUrlRegex()?.find(body)?.groupValues?.get(1)
+        val assetUrl = release.assetDownloadUrl(platform)
 
-        if (assetUrl == null || compareVersions(latestVersion, currentVersion) <= 0) {
+        // A build produced by the CI/dev pipeline carries the 0.0.0 sentinel version (with +sha build
+        // metadata); it is always offered the newest release on whichever channel the user selected,
+        // so testers on a pipeline build can move onto any canary/staging/stable release regardless of
+        // its version. Released builds use the normal newest-is-greater comparison.
+        val outdated = isPipelineFloorBuild() || compareVersions(latestVersion, currentVersion) > 0
+        if (assetUrl == null || !outdated) {
             UpdateCheckResult.UpToDate
         } else {
             UpdateCheckResult.Available(
@@ -57,6 +95,13 @@ internal class DesktopAppUpdater(
         }
     }
 
+    /**
+     * True for a CI/dev pipeline build, identified by the all-zero (0.0.0) sentinel version — the
+     * `installer-build.yml` artifact ships `0.0.0+<sha>`. Such a build always reports an available
+     * update on any channel so it can be upgraded onto any published release.
+     */
+    private fun isPipelineFloorBuild(): Boolean = versionParts(currentVersion).all { it == 0 }
+
     override suspend fun downloadAndInstall(update: AvailableUpdate, onProgress: (Float) -> Unit) {
         val installer = withContext(Dispatchers.IO) {
             downloadInstaller(update.downloadUrl, onProgress)
@@ -64,7 +109,7 @@ internal class DesktopAppUpdater(
         // Signals the install/relaunch phase to the UI. downloadInstaller keeps progress < 1f.
         onProgress(1f)
         withContext(Dispatchers.IO) {
-            launchInstallerAndExit(installer)
+            launchInstallerAndExit(installer, update.version)
         }
     }
 
@@ -75,9 +120,11 @@ internal class DesktopAppUpdater(
         return currentPlatform() != Platform.Unsupported
     }
 
-    private fun fetchLatestReleaseJson(): String {
+    private fun fetchReleasesJson(): String {
+        // The releases list (unlike /releases/latest) includes prereleases, so Beta/Alpha channels
+        // resolve and a repo with only prereleases no longer 404s. Unauthenticated calls omit drafts.
         val request = HttpRequest.newBuilder()
-            .uri(URI.create("$ReleasesApiBase/latest"))
+            .uri(URI.create("$ReleasesApiBase?per_page=30"))
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", UserAgent)
             .timeout(Duration.ofSeconds(20))
@@ -126,10 +173,10 @@ internal class DesktopAppUpdater(
         return target
     }
 
-    private fun launchInstallerAndExit(installer: Path): Nothing {
+    private fun launchInstallerAndExit(installer: Path, version: String): Nothing {
         when (currentPlatform()) {
             Platform.MacOs -> installMacOs(installer)
-            Platform.Windows -> installWindows(installer)
+            Platform.Windows -> installWindows(installer, version)
             Platform.Unsupported -> throw IOException("Updates are not supported on this platform.")
         }
         onBeforeExit()
@@ -152,7 +199,7 @@ internal class DesktopAppUpdater(
         )
     }
 
-    private fun installWindows(installer: Path) {
+    private fun installWindows(appImageZip: Path, version: String) {
         val pid = ProcessHandle.current().pid().toString()
         val relaunch = System.getProperty("jpackage.app-path")
             ?: throw IOException("Could not resolve the app launcher for relaunch.")
@@ -169,10 +216,16 @@ internal class DesktopAppUpdater(
             script.absolutePathString(),
             "-AppPid",
             pid,
-            "-Installer",
-            installer.absolutePathString(),
+            "-AppImageZip",
+            appImageZip.absolutePathString(),
             "-Relaunch",
             relaunch,
+            "-Version",
+            version,
+            // Where the script drops a failure marker if the swap doesn't apply; the app data dir
+            // survives the swap because it lives outside the install directory.
+            "-MarkerDir",
+            dataDirectory.absolutePathString(),
         )
     }
 
@@ -198,16 +251,40 @@ internal class DesktopAppUpdater(
 
     private fun spawnDetached(vararg command: String) {
         ProcessBuilder(*command)
+            // Run from the temp dir, never the install directory: on Windows the helper renames the
+            // install dir out from under itself, which fails if that dir is the process's working dir.
+            .directory(File(System.getProperty("java.io.tmpdir")))
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
     }
 
-    private fun assetUrlRegex(): Regex? = when (currentPlatform()) {
-        Platform.MacOs -> Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-macOS\\.dmg)\"")
-        Platform.Windows -> Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-Windows\\.exe)\"")
-        Platform.Unsupported -> null
+    /** True if [targetCommitish] (a release's origin branch) belongs to this channel. */
+    private fun UpdateChannel.matchesTarget(targetCommitish: String?): Boolean {
+        val target = targetCommitish?.trim().orEmpty()
+        return when (this) {
+            UpdateChannel.Stable -> target == "master"
+            UpdateChannel.Beta -> target.startsWith("staging/")
+            UpdateChannel.Alpha -> target.startsWith("canary/")
+        }
     }
+
+    /** The `browser_download_url` of this release's installer for the current OS + [archLabel]. */
+    private fun JsonObject.assetDownloadUrl(platform: Platform): String? {
+        val suffix = when (platform) {
+            Platform.MacOs -> "-macOS-$archLabel.dmg"
+            Platform.Windows -> "-Windows-$archLabel-app-image.zip"
+            Platform.Unsupported -> return null
+        }
+        val assets = (this["assets"] as? JsonArray) ?: return null
+        return assets
+            .mapNotNull { it as? JsonObject }
+            .firstOrNull { asset -> asset.string("name")?.endsWith(suffix) == true }
+            ?.string("browser_download_url")
+    }
+
+    private fun JsonObject.string(key: String): String? =
+        (this[key] as? JsonPrimitive)?.contentOrNull
 
     private enum class Platform { MacOs, Windows, Unsupported }
 
@@ -220,7 +297,11 @@ internal class DesktopAppUpdater(
         }
     }
 
-    /** Compares dotted numeric versions, ignoring any `-prerelease`/`+build` suffix. */
+    /**
+     * Compares dotted numeric versions. A numeric `-prerelease` counter (e.g. the `11` in
+     * `0.0.1-11`) is compared as a trailing component so `0.0.1-11 < 0.0.1-12`; `+build` metadata
+     * and non-numeric prerelease labels are ignored.
+     */
     private fun compareVersions(a: String, b: String): Int {
         val pa = versionParts(a)
         val pb = versionParts(b)
@@ -232,19 +313,17 @@ internal class DesktopAppUpdater(
         return 0
     }
 
-    private fun versionParts(version: String): List<Int> =
-        version.trim()
-            .removePrefix("v")
-            .substringBefore('-')
-            .substringBefore('+')
-            .split('.')
-            .map { it.toIntOrNull() ?: 0 }
+    private fun versionParts(version: String): List<Int> {
+        val trimmed = version.trim().removePrefix("v").substringBefore('+')
+        val baseParts = trimmed.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val prerelease = trimmed.substringAfter('-', "").toIntOrNull()
+        return if (prerelease != null) baseParts + prerelease else baseParts
+    }
 
     private companion object {
         const val ReleasesApiBase = "https://api.github.com/repos/skulpturenz/timeboxxing/releases"
         const val UserAgent = "Timeboxxing-Updater"
         const val DevSentinelVersion = "0.0.0"
-        val TAG_REGEX = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"")
 
         // Waits for this app to exit, replaces the installed .app bundle from the mounted DMG, then
         // relaunches. Falls back to an admin prompt only when the bundle location is not writable
@@ -274,19 +353,85 @@ internal class DesktopAppUpdater(
             open "${'$'}TARGET_APP"
         """.trimIndent() + "\n"
 
-        // Waits for this app to exit, runs the jpackage installer, then relaunches. The install is
-        // per-user (no elevation) and the stable upgradeUuid makes it an in-place upgrade. '/quiet'
-        // targets a silent run; if a given installer build ignores it, the wizard shows and the
-        // upgrade still applies.
+        // Waits for this app to exit, then replaces the installed jpackage app image *in place* with
+        // the downloaded app-image zip — no Windows Installer is involved, so none of its upgrade
+        // constraints (cached-source lookups, ProductVersion ordering, per-user quirks) apply. The
+        // install dir is the launcher's parent (%LOCALAPPDATA%\Timeboxxing). The swap moves the old
+        // install aside, moves the freshly-expanded image into place, and rolls back on failure so the
+        // app is never left without an install directory. If the swap can't be applied it drops a
+        // failure marker in the data dir so the relaunched app tells the user instead of silently
+        // coming back on the old version. Progress is logged to %TEMP%\timeboxxing-update.log.
         val WindowsUpdateScript = """
             param(
                 [int]${'$'}AppPid,
-                [string]${'$'}Installer,
-                [string]${'$'}Relaunch
+                [string]${'$'}AppImageZip,
+                [string]${'$'}Relaunch,
+                [string]${'$'}Version,
+                [string]${'$'}MarkerDir
             )
 
+            ${'$'}log = Join-Path ${'$'}env:TEMP 'timeboxxing-update.log'
+            function Write-UpdateLog(${'$'}message) {
+                "${'$'}(Get-Date -Format o)  ${'$'}message" | Out-File -FilePath ${'$'}log -Append -Encoding utf8
+            }
+
+            Write-UpdateLog "waiting for app pid ${'$'}AppPid to exit"
             try { Wait-Process -Id ${'$'}AppPid -ErrorAction SilentlyContinue } catch {}
-            Start-Process -FilePath ${'$'}Installer -ArgumentList '/quiet' -Wait
+
+            ${'$'}installDir = Split-Path -Parent ${'$'}Relaunch
+            ${'$'}staging = Join-Path ${'$'}env:TEMP 'timeboxxing-update-staging'
+            ${'$'}backup = "${'$'}installDir.old"
+            ${'$'}ok = ${'$'}false
+
+            try {
+                if (Test-Path ${'$'}staging) { Remove-Item -Recurse -Force ${'$'}staging }
+                Write-UpdateLog "expanding ${'$'}AppImageZip to ${'$'}staging"
+                Expand-Archive -Path ${'$'}AppImageZip -DestinationPath ${'$'}staging -Force
+
+                # The zip contains a top-level "Timeboxxing" folder; fall back to the first directory.
+                ${'$'}newImage = Join-Path ${'$'}staging 'Timeboxxing'
+                if (-not (Test-Path ${'$'}newImage)) {
+                    ${'$'}newImage = (Get-ChildItem -Directory ${'$'}staging | Select-Object -First 1).FullName
+                }
+                if (-not ${'$'}newImage -or -not (Test-Path ${'$'}newImage)) {
+                    throw "expanded app image not found under ${'$'}staging"
+                }
+
+                # Retry: a freshly-exited app (or antivirus) can briefly keep a file handle open.
+                for (${'$'}attempt = 1; ${'$'}attempt -le 5 -and -not ${'$'}ok; ${'$'}attempt++) {
+                    try {
+                        if (Test-Path ${'$'}backup) { Remove-Item -Recurse -Force ${'$'}backup }
+                        if (Test-Path ${'$'}installDir) { Move-Item -Path ${'$'}installDir -Destination ${'$'}backup }
+                        Move-Item -Path ${'$'}newImage -Destination ${'$'}installDir
+                        ${'$'}ok = ${'$'}true
+                    } catch {
+                        Write-UpdateLog "swap attempt ${'$'}attempt failed: ${'$'}_"
+                        # Roll back so the app is never left without an install directory.
+                        if ((-not (Test-Path ${'$'}installDir)) -and (Test-Path ${'$'}backup)) {
+                            try { Move-Item -Path ${'$'}backup -Destination ${'$'}installDir } catch {}
+                        }
+                        Start-Sleep -Seconds 2
+                    }
+                }
+            } catch {
+                Write-UpdateLog "update error: ${'$'}_"
+            }
+
+            if (${'$'}ok) {
+                Write-UpdateLog "app image swapped to v${'$'}Version; relaunching ${'$'}Relaunch"
+                try { if (Test-Path ${'$'}backup) { Remove-Item -Recurse -Force ${'$'}backup } } catch {}
+                try { if (Test-Path ${'$'}staging) { Remove-Item -Recurse -Force ${'$'}staging } } catch {}
+            } else {
+                Write-UpdateLog "update did NOT apply; writing failure marker"
+                try {
+                    New-Item -ItemType Directory -Force -Path ${'$'}MarkerDir | Out-Null
+                    ${'$'}marker = Join-Path ${'$'}MarkerDir 'update-failed.json'
+                    ${'$'}payload = [pscustomobject]@{ version = ${'$'}Version; log = ${'$'}log } | ConvertTo-Json -Compress
+                    Set-Content -Path ${'$'}marker -Value ${'$'}payload -Encoding utf8
+                } catch { Write-UpdateLog "failed to write failure marker: ${'$'}_" }
+            }
+
+            Start-Sleep -Seconds 2
             Start-Process -FilePath ${'$'}Relaunch
         """.trimIndent() + "\n"
     }

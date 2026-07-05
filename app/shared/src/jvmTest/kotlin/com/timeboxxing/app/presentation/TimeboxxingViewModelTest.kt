@@ -20,6 +20,7 @@ import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetEntryDraft
 import com.timeboxxing.domain.model.TimesheetExport
 import com.timeboxxing.domain.model.TimesheetExportFormat
+import com.timeboxxing.domain.model.UpdateChannel
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.repository.AmaRepository
@@ -43,6 +44,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimeboxxingViewModelTest {
@@ -83,6 +85,80 @@ class TimeboxxingViewModelTest {
             viewModel.state.value.dataDirectory,
         )
     }
+
+    @Test
+    fun selectingUpdateChannelUpdatesStateAndPersists() = runTest {
+        val runtime = fakeRuntime()
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        assertEquals(UpdateChannel.Stable, viewModel.state.value.update.channel)
+
+        viewModel.dispatch(TimeboxxingAction.UpdateUpdateChannel(UpdateChannel.Alpha))
+        advanceUntilIdle()
+
+        assertEquals(UpdateChannel.Alpha, viewModel.state.value.update.channel)
+        assertEquals(UpdateChannel.Alpha, runtime.updateChannel.value)
+    }
+
+    @Test
+    fun availableUpdateShowsDialogAndStableBuildCanDismiss() = runTest {
+        val viewModel = TimeboxxingViewModel(fakeRuntime(isStableBuild = true))
+        advanceUntilIdle()
+
+        viewModel.dispatch(anAvailableUpdate())
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+
+        viewModel.dispatch(TimeboxxingAction.DismissUpdateDialog)
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.showUpdateDialog)
+    }
+
+    @Test
+    fun nonStableBuildCanDismissUpdateDialogForTheSession() = runTest {
+        val viewModel = TimeboxxingViewModel(fakeRuntime(isStableBuild = false))
+        advanceUntilIdle()
+
+        viewModel.dispatch(anAvailableUpdate())
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+
+        // The dialog can be closed for the session on any build...
+        viewModel.dispatch(TimeboxxingAction.DismissUpdateDialog)
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.showUpdateDialog)
+
+        // ...but a non-stable build has no persistent opt-out, so a fresh check re-opens it.
+        viewModel.dispatch(anAvailableUpdate())
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+    }
+
+    @Test
+    fun disablingStartupNotifyPersistsAndHidesDialog() = runTest {
+        val runtime = fakeRuntime(isStableBuild = true)
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        viewModel.dispatch(anAvailableUpdate())
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+
+        viewModel.dispatch(TimeboxxingAction.SetNotifyUpdatesOnStartup(false))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.update.notifyOnStartup)
+        assertFalse(viewModel.state.value.showUpdateDialog)
+        assertFalse(runtime.notifyUpdatesOnStartup.value)
+    }
+
+    private fun anAvailableUpdate(version: String = "9.9.9"): TimeboxxingAction.UpdateCheckSucceeded =
+        TimeboxxingAction.UpdateCheckSucceeded(
+            UpdateCheckResult.Available(
+                AvailableUpdate(version = version, downloadUrl = "https://example.invalid/app", notes = null),
+            ),
+        )
 
     @Test
     fun streamedUsageEventsAreMergedIntoState() = runTest {
@@ -417,6 +493,8 @@ private fun fakeRuntime(
     timesheetRepository: TimesheetRepository = FakeTimesheetRepository(),
     sidecarStatus: TimeboxxingSidecarStatus = TimeboxxingSidecarStatus.Ready,
     dataDirectory: String = "",
+    isStableBuild: Boolean = true,
+    notifyUpdatesOnStartup: Boolean = true,
 ): FakeTimeboxxingRuntime {
     val data = mockTimeboxxingData()
     return FakeTimeboxxingRuntime(
@@ -430,6 +508,8 @@ private fun fakeRuntime(
         ),
         sidecarStatus = sidecarStatus,
         dataDirectory = dataDirectory,
+        isStableBuild = isStableBuild,
+        initialNotifyUpdatesOnStartup = notifyUpdatesOnStartup,
     )
 }
 
@@ -438,11 +518,17 @@ private class FakeTimeboxxingRuntime(
     repositories: TimeboxxingRepositories,
     sidecarStatus: TimeboxxingSidecarStatus,
     override val dataDirectory: String,
+    override val isStableBuild: Boolean = true,
+    override val initialNotifyUpdatesOnStartup: Boolean = true,
 ) : TimeboxxingRuntime {
     override val initialNotice: String? = null
+    override val initialUpdateInstallFailure: String? = null
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System
+    override val initialUpdateChannel: UpdateChannel = UpdateChannel.Stable
     override val diagnosticsEnabled: Boolean = false
     override val appearanceMode = MutableStateFlow(initialAppearanceMode)
+    val updateChannel = MutableStateFlow(initialUpdateChannel)
+    val notifyUpdatesOnStartup = MutableStateFlow(initialNotifyUpdatesOnStartup)
     override val repositories = MutableStateFlow(repositories)
     override val sidecarStatus = MutableStateFlow(sidecarStatus)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
@@ -452,6 +538,14 @@ private class FakeTimeboxxingRuntime(
 
     override suspend fun setAppearanceMode(mode: AppearanceMode) {
         appearanceMode.value = mode
+    }
+
+    override suspend fun setUpdateChannel(channel: UpdateChannel) {
+        updateChannel.value = channel
+    }
+
+    override suspend fun setNotifyUpdatesOnStartup(enabled: Boolean) {
+        notifyUpdatesOnStartup.value = enabled
     }
 
     override suspend fun restartSidecar() {

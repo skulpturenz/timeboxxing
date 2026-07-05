@@ -370,7 +370,10 @@ internal fun resolveTimeboxxingDataDirectory(
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { File(it).toPath() }
                 ?: File(home).toPath().resolve("AppData").resolve("Local")
-            base.resolve("Timeboxxing")
+            // Nest under the vendor folder so the data dir is NOT %LOCALAPPDATA%\Timeboxxing —
+            // that is jpackage's per-user install directory, and the WiX upgrade wipes it (deleting
+            // the database) on every auto-update.
+            base.resolve("Skulpture").resolve("Timeboxxing")
         }
 
         normalizedOs.contains("mac") || normalizedOs.contains("darwin") -> {

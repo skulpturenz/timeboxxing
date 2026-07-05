@@ -9,6 +9,7 @@ import com.timeboxxing.data.repository.StaticUsageHistoryRepository
 import com.timeboxxing.domain.model.AppearanceMode
 import com.timeboxxing.domain.model.DiagnosticsLogLine
 import com.timeboxxing.domain.model.TimesheetExport
+import com.timeboxxing.domain.model.UpdateChannel
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.repository.AmaRepository
 import com.timeboxxing.domain.repository.ProjectRepository
@@ -48,7 +49,17 @@ sealed interface TimeboxxingSidecarStatus {
 interface TimeboxxingRuntime {
     val usageDays: List<UsageDay>
     val initialNotice: String?
+    /**
+     * A message describing a previously-attempted in-app update that failed to install (e.g. a
+     * Windows app-image swap that did not apply), surfaced once on the next launch. Null when the
+     * last update either succeeded or was never attempted.
+     */
+    val initialUpdateInstallFailure: String?
     val initialAppearanceMode: AppearanceMode
+    val initialUpdateChannel: UpdateChannel
+    val initialNotifyUpdatesOnStartup: Boolean
+    /** True when this build is a stable (master) release; false for prerelease/dev/CI builds. */
+    val isStableBuild: Boolean
     val diagnosticsEnabled: Boolean
     val dataDirectory: String
     val appearanceMode: StateFlow<AppearanceMode>
@@ -60,17 +71,25 @@ interface TimeboxxingRuntime {
 
     suspend fun setAppearanceMode(mode: AppearanceMode)
 
+    suspend fun setUpdateChannel(channel: UpdateChannel)
+
+    suspend fun setNotifyUpdatesOnStartup(enabled: Boolean)
+
     suspend fun restartSidecar()
 }
 
 class StaticTimeboxxingRuntime(
     private val data: com.timeboxxing.domain.model.TimeboxxingMockData = mockTimeboxxingData(),
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System,
+    override val initialUpdateChannel: UpdateChannel = UpdateChannel.Stable,
+    override val initialNotifyUpdatesOnStartup: Boolean = true,
+    override val isStableBuild: Boolean = true,
     override val diagnosticsEnabled: Boolean = false,
     override val dataDirectory: String = "",
 ) : TimeboxxingRuntime {
     override val usageDays: List<UsageDay> = data.usageDays
     override val initialNotice: String? = null
+    override val initialUpdateInstallFailure: String? = null
     override val appearanceMode = MutableStateFlow(initialAppearanceMode)
     override val repositories = MutableStateFlow(
         TimeboxxingRepositories(
@@ -89,6 +108,10 @@ class StaticTimeboxxingRuntime(
     override suspend fun setAppearanceMode(mode: AppearanceMode) {
         appearanceMode.value = mode
     }
+
+    override suspend fun setUpdateChannel(channel: UpdateChannel) = Unit
+
+    override suspend fun setNotifyUpdatesOnStartup(enabled: Boolean) = Unit
 
     override suspend fun restartSidecar() = Unit
 }

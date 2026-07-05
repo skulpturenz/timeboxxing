@@ -18,6 +18,17 @@ enum class AppearanceMode {
     Dark,
 }
 
+/**
+ * Which GitHub release stream the in-app updater follows. Maps to the branch a release was cut
+ * from (its `target_commitish`): [Stable] to the `master` branch, [Beta] to `staging` branches,
+ * [Alpha] to `canary` branches. [Beta] and [Alpha] are prereleases.
+ */
+enum class UpdateChannel {
+    Stable,
+    Beta,
+    Alpha,
+}
+
 enum class TimesheetExportFormat {
     Json,
     Csv,

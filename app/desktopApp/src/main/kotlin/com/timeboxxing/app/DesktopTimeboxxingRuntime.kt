@@ -18,6 +18,7 @@ import com.timeboxxing.data.repository.UnavailableTimesheetRepository
 import com.timeboxxing.data.repository.UnavailableUsageHistoryRepository
 import com.timeboxxing.data.time.recentUsageDays
 import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.domain.model.UpdateChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
@@ -28,10 +29,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal class DesktopTimeboxxingRuntime(
     private val secretStore: SecretStore,
     private val appearancePreferences: AppearancePreferences,
+    private val updateChannelPreferences: UpdateChannelPreferences,
+    private val updateNotificationPreferences: UpdateNotificationPreferences,
     private val sidecarManager: SidecarProcessManager,
     private val sidecarSessionLog: SidecarSessionLog,
     override val diagnosticsEnabled: Boolean,
@@ -46,8 +55,18 @@ internal class DesktopTimeboxxingRuntime(
 
     override val usageDays = recentUsageDays()
     override val initialNotice: String = StartingSidecarMessage
+    override val initialUpdateInstallFailure: String? =
+        readAndClearUpdateFailure(sidecarManager.dataDirectory)
     override val initialAppearanceMode: AppearanceMode = appearancePreferences.load()
     override val dataDirectory: String = sidecarManager.dataDirectory.toString()
+
+    override val initialUpdateChannel: UpdateChannel = updateChannelPreferences.load()
+    private val _updateChannel = MutableStateFlow(initialUpdateChannel)
+
+    override val initialNotifyUpdatesOnStartup: Boolean = updateNotificationPreferences.loadNotifyOnStartup()
+    private val _notifyUpdatesOnStartup = MutableStateFlow(initialNotifyUpdatesOnStartup)
+
+    override val isStableBuild: Boolean = javaEnv == JavaEnv.Production
 
     private val _appearanceMode = MutableStateFlow(initialAppearanceMode)
     override val appearanceMode: StateFlow<AppearanceMode> = _appearanceMode
@@ -63,6 +82,7 @@ internal class DesktopTimeboxxingRuntime(
     override val appUpdater: AppUpdater = DesktopAppUpdater(
         currentVersion = DesktopBuildConfig.AppVersion,
         javaEnv = javaEnv,
+        dataDirectory = sidecarManager.dataDirectory,
         onBeforeExit = { close() },
     )
 
@@ -77,6 +97,22 @@ internal class DesktopTimeboxxingRuntime(
         _appearanceMode.value = mode
         withContext(Dispatchers.IO) {
             appearancePreferences.save(mode)
+        }
+    }
+
+    override suspend fun setUpdateChannel(channel: UpdateChannel) {
+        if (_updateChannel.value == channel) return
+        _updateChannel.value = channel
+        withContext(Dispatchers.IO) {
+            updateChannelPreferences.save(channel)
+        }
+    }
+
+    override suspend fun setNotifyUpdatesOnStartup(enabled: Boolean) {
+        if (_notifyUpdatesOnStartup.value == enabled) return
+        _notifyUpdatesOnStartup.value = enabled
+        withContext(Dispatchers.IO) {
+            updateNotificationPreferences.saveNotifyOnStartup(enabled)
         }
     }
 
@@ -162,3 +198,35 @@ internal class DesktopTimeboxxingRuntime(
 }
 
 private const val StartingSidecarMessage = "Starting usage sidecar..."
+
+// Must match the marker file written by DesktopAppUpdater's Windows update script.
+internal const val UpdateFailureMarkerName = "update-failed.json"
+internal const val DefaultUpdateFailureMessage = "The last update couldn't be installed."
+
+/**
+ * Reads the [UpdateFailureMarkerName] marker that [DesktopAppUpdater]'s Windows update script drops
+ * in [dataDirectory] when an in-app update did not actually install, turns it into a user-facing
+ * message, and deletes it so it is shown only once. Returns null when no update failed since the
+ * last launch.
+ */
+internal fun readAndClearUpdateFailure(dataDirectory: Path): String? {
+    val marker = dataDirectory.resolve(UpdateFailureMarkerName)
+    if (!Files.exists(marker)) return null
+    val message = runCatching { formatUpdateFailureMessage(Files.readString(marker)) }
+        .getOrElse { DefaultUpdateFailureMessage }
+    runCatching { Files.deleteIfExists(marker) }
+    return message
+}
+
+/** Formats the JSON payload written by the Windows update script into a user-facing sentence. */
+internal fun formatUpdateFailureMessage(markerJson: String): String {
+    val obj = Json.parseToJsonElement(markerJson).jsonObject
+    val version = obj["version"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    val logPath = obj["log"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    return buildString {
+        append("The update")
+        if (version != null) append(" to v$version")
+        append(" couldn't be installed.")
+        if (logPath != null) append(" See $logPath for details.")
+    }
+}

@@ -24,6 +24,7 @@ import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.TimeboxxingMockData
+import com.timeboxxing.domain.model.UpdateChannel
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.model.UsageSourceType
@@ -82,8 +83,16 @@ data class TimeboxxingScreenState(
     val dataDirectory: String = "",
     val appearanceMode: AppearanceMode = AppearanceMode.System,
     val diagnosticsEnabled: Boolean = false,
+    val isStableBuild: Boolean = true,
     val update: AppUpdateUiState = AppUpdateUiState(),
 ) {
+    // Show the update dialog whenever an update is available and hasn't been closed this session.
+    // Non-stable builds always show it (forced); stable builds also respect the startup-notify opt-out.
+    val showUpdateDialog: Boolean
+        get() = update.available != null &&
+            !update.dialogDismissed &&
+            (!isStableBuild || update.notifyOnStartup)
+
     val dateLabels: List<String>
         get() = usageDays.map { it.label }
 
@@ -179,11 +188,16 @@ data class ScheduleFocusTarget(
 
 data class AppUpdateUiState(
     val currentVersion: String = "",
+    val channel: UpdateChannel = UpdateChannel.Stable,
     val checkInProgress: Boolean = false,
     val available: AvailableUpdate? = null,
     val error: String? = null,
     val downloadProgress: Float? = null,
     val installing: Boolean = false,
+    // Whether the auto-check on startup surfaces the update dialog (stable builds can opt out).
+    val notifyOnStartup: Boolean = true,
+    // Session-only: the user closed the update dialog (stable builds only).
+    val dialogDismissed: Boolean = false,
 ) {
     val busy: Boolean
         get() = checkInProgress || downloadProgress != null || installing
@@ -296,9 +310,12 @@ sealed interface TimeboxxingAction {
         val prunedCounts: DatabasePruneCounts,
     ) : TimeboxxingAction
     data class DatabaseVacuumFailed(val message: String) : TimeboxxingAction
+    data class UpdateUpdateChannel(val channel: UpdateChannel) : TimeboxxingAction
     data object CheckForUpdates : TimeboxxingAction
     data class UpdateCheckSucceeded(val result: UpdateCheckResult) : TimeboxxingAction
     data class UpdateCheckFailed(val message: String) : TimeboxxingAction
+    data object DismissUpdateDialog : TimeboxxingAction
+    data class SetNotifyUpdatesOnStartup(val enabled: Boolean) : TimeboxxingAction
     data object StartUpdateInstall : TimeboxxingAction
     data class UpdateDownloadProgress(val fraction: Float) : TimeboxxingAction
     data object UpdateInstallStarted : TimeboxxingAction
@@ -331,10 +348,14 @@ fun createInitialTimeboxxingState(
 fun createSidecarTimeboxxingState(
     usageDays: List<UsageDay>,
     initialNotice: String? = null,
+    initialUpdateInstallFailure: String? = null,
     dataDirectory: String = "",
     appVersion: String = "",
     data: TimeboxxingMockData = mockTimeboxxingData(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
+    updateChannel: UpdateChannel = UpdateChannel.Stable,
+    notifyUpdatesOnStartup: Boolean = true,
+    isStableBuild: Boolean = true,
 ): TimeboxxingScreenState {
     val defaultProjectId = data.projects.firstOrNull()?.id.orEmpty()
     val safeUsageDays = usageDays.ifEmpty { data.usageDays }
@@ -349,12 +370,19 @@ fun createSidecarTimeboxxingState(
         scheduleFocusEntryId = null,
         selectedUsageIds = emptySet(),
         draft = blankDraft(defaultProjectId),
-        notice = initialNotice,
+        // A failed install from the previous session takes precedence over the transient startup
+        // notice so the user actually sees why the update didn't take.
+        notice = initialUpdateInstallFailure ?: initialNotice,
         nextEntryNumber = 1,
         usageDays = safeUsageDays,
         dataDirectory = dataDirectory,
         appearanceMode = appearanceMode,
-        update = AppUpdateUiState(currentVersion = appVersion),
+        isStableBuild = isStableBuild,
+        update = AppUpdateUiState(
+            currentVersion = appVersion,
+            channel = updateChannel,
+            notifyOnStartup = notifyUpdatesOnStartup,
+        ),
     )
 }
 
@@ -856,6 +884,29 @@ fun reduceTimeboxxingState(
             databaseMaintenanceError = action.message,
         )
 
+        is TimeboxxingAction.UpdateUpdateChannel -> state.copy(
+            update = state.update.copy(
+                channel = action.channel,
+                // A channel switch invalidates any pending update found on the previous channel.
+                available = null,
+                error = null,
+            ),
+        )
+
+        // Closes the dialog for this session; it reappears on the next startup check unless the
+        // user (on a stable build) has also opted out of startup notifications.
+        TimeboxxingAction.DismissUpdateDialog -> state.copy(
+            update = state.update.copy(dialogDismissed = true),
+        )
+
+        is TimeboxxingAction.SetNotifyUpdatesOnStartup -> state.copy(
+            update = state.update.copy(
+                notifyOnStartup = action.enabled,
+                // Turning notifications off also closes the current dialog.
+                dialogDismissed = if (!action.enabled) true else state.update.dialogDismissed,
+            ),
+        )
+
         TimeboxxingAction.CheckForUpdates -> state.copy(
             update = state.update.copy(
                 checkInProgress = true,
@@ -869,6 +920,8 @@ fun reduceTimeboxxingState(
                     checkInProgress = false,
                     available = result.update,
                     error = null,
+                    // A freshly found update re-opens the dialog even if a prior one was closed.
+                    dialogDismissed = false,
                 ),
             )
 
