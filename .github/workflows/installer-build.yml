@@ -60,9 +60,11 @@ jobs:
         shell: bash
         run: |
           # CI commits have no release tag, so stamp a dev version traceable to the commit.
-          # packageVersion must be numeric for jpackage; appVersion is the string shown in-app.
+          # appVersion is the string shown in-app (and drives the updater's version comparison).
+          # packageVersion "0.0.0-0" normalizes to the floor installer version 1.0.0, so ANY published
+          # release outranks a CI build and can upgrade over it on Windows (MSI blocks downgrades).
           echo "APP_VERSION=0.0.0+${GITHUB_SHA::7}" >> "${GITHUB_ENV}"
-          echo "PACKAGE_VERSION=0.0.0" >> "${GITHUB_ENV}"
+          echo "PACKAGE_VERSION=0.0.0-0" >> "${GITHUB_ENV}"
           echo "JAVA_ENV=development" >> "${GITHUB_ENV}"
 
       - name: Package macOS installer

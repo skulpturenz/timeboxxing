@@ -34,6 +34,7 @@ internal class DesktopTimeboxxingRuntime(
     private val secretStore: SecretStore,
     private val appearancePreferences: AppearancePreferences,
     private val updateChannelPreferences: UpdateChannelPreferences,
+    private val updateNotificationPreferences: UpdateNotificationPreferences,
     private val sidecarManager: SidecarProcessManager,
     private val sidecarSessionLog: SidecarSessionLog,
     override val diagnosticsEnabled: Boolean,
@@ -53,6 +54,11 @@ internal class DesktopTimeboxxingRuntime(
 
     override val initialUpdateChannel: UpdateChannel = updateChannelPreferences.load()
     private val _updateChannel = MutableStateFlow(initialUpdateChannel)
+
+    override val initialNotifyUpdatesOnStartup: Boolean = updateNotificationPreferences.loadNotifyOnStartup()
+    private val _notifyUpdatesOnStartup = MutableStateFlow(initialNotifyUpdatesOnStartup)
+
+    override val isStableBuild: Boolean = javaEnv == JavaEnv.Production
 
     private val _appearanceMode = MutableStateFlow(initialAppearanceMode)
     override val appearanceMode: StateFlow<AppearanceMode> = _appearanceMode
@@ -90,6 +96,14 @@ internal class DesktopTimeboxxingRuntime(
         _updateChannel.value = channel
         withContext(Dispatchers.IO) {
             updateChannelPreferences.save(channel)
+        }
+    }
+
+    override suspend fun setNotifyUpdatesOnStartup(enabled: Boolean) {
+        if (_notifyUpdatesOnStartup.value == enabled) return
+        _notifyUpdatesOnStartup.value = enabled
+        withContext(Dispatchers.IO) {
+            updateNotificationPreferences.saveNotifyOnStartup(enabled)
         }
     }
 

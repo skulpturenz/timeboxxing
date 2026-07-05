@@ -13,6 +13,7 @@ internal fun desktopTimeboxxingModule(javaEnv: JavaEnv) = module {
     single<SecretStore> { DesktopSecretStore() }
     single { AppearancePreferences() }
     single { UpdateChannelPreferences() }
+    single { UpdateNotificationPreferences() }
     single {
         SidecarProcessManager(
             sessionLog = get(),
@@ -24,6 +25,7 @@ internal fun desktopTimeboxxingModule(javaEnv: JavaEnv) = module {
             secretStore = get(),
             appearancePreferences = get(),
             updateChannelPreferences = get(),
+            updateNotificationPreferences = get(),
             sidecarManager = get(),
             sidecarSessionLog = get(),
             diagnosticsEnabled = DesktopBuildConfig.DiagnosticsEnabled,

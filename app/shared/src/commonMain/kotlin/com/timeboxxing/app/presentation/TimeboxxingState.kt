@@ -83,8 +83,16 @@ data class TimeboxxingScreenState(
     val dataDirectory: String = "",
     val appearanceMode: AppearanceMode = AppearanceMode.System,
     val diagnosticsEnabled: Boolean = false,
+    val isStableBuild: Boolean = true,
     val update: AppUpdateUiState = AppUpdateUiState(),
 ) {
+    // Show the update dialog whenever an update is available and hasn't been closed this session.
+    // Non-stable builds always show it (forced); stable builds also respect the startup-notify opt-out.
+    val showUpdateDialog: Boolean
+        get() = update.available != null &&
+            !update.dialogDismissed &&
+            (!isStableBuild || update.notifyOnStartup)
+
     val dateLabels: List<String>
         get() = usageDays.map { it.label }
 
@@ -186,6 +194,10 @@ data class AppUpdateUiState(
     val error: String? = null,
     val downloadProgress: Float? = null,
     val installing: Boolean = false,
+    // Whether the auto-check on startup surfaces the update dialog (stable builds can opt out).
+    val notifyOnStartup: Boolean = true,
+    // Session-only: the user closed the update dialog (stable builds only).
+    val dialogDismissed: Boolean = false,
 ) {
     val busy: Boolean
         get() = checkInProgress || downloadProgress != null || installing
@@ -302,6 +314,8 @@ sealed interface TimeboxxingAction {
     data object CheckForUpdates : TimeboxxingAction
     data class UpdateCheckSucceeded(val result: UpdateCheckResult) : TimeboxxingAction
     data class UpdateCheckFailed(val message: String) : TimeboxxingAction
+    data object DismissUpdateDialog : TimeboxxingAction
+    data class SetNotifyUpdatesOnStartup(val enabled: Boolean) : TimeboxxingAction
     data object StartUpdateInstall : TimeboxxingAction
     data class UpdateDownloadProgress(val fraction: Float) : TimeboxxingAction
     data object UpdateInstallStarted : TimeboxxingAction
@@ -339,6 +353,8 @@ fun createSidecarTimeboxxingState(
     data: TimeboxxingMockData = mockTimeboxxingData(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
     updateChannel: UpdateChannel = UpdateChannel.Stable,
+    notifyUpdatesOnStartup: Boolean = true,
+    isStableBuild: Boolean = true,
 ): TimeboxxingScreenState {
     val defaultProjectId = data.projects.firstOrNull()?.id.orEmpty()
     val safeUsageDays = usageDays.ifEmpty { data.usageDays }
@@ -358,7 +374,12 @@ fun createSidecarTimeboxxingState(
         usageDays = safeUsageDays,
         dataDirectory = dataDirectory,
         appearanceMode = appearanceMode,
-        update = AppUpdateUiState(currentVersion = appVersion, channel = updateChannel),
+        isStableBuild = isStableBuild,
+        update = AppUpdateUiState(
+            currentVersion = appVersion,
+            channel = updateChannel,
+            notifyOnStartup = notifyUpdatesOnStartup,
+        ),
     )
 }
 
@@ -869,6 +890,22 @@ fun reduceTimeboxxingState(
             ),
         )
 
+        // Non-stable (prerelease/dev) builds cannot dismiss the update dialog — it stays forced.
+        TimeboxxingAction.DismissUpdateDialog ->
+            if (state.isStableBuild) {
+                state.copy(update = state.update.copy(dialogDismissed = true))
+            } else {
+                state
+            }
+
+        is TimeboxxingAction.SetNotifyUpdatesOnStartup -> state.copy(
+            update = state.update.copy(
+                notifyOnStartup = action.enabled,
+                // Turning notifications off also closes the current dialog.
+                dialogDismissed = if (!action.enabled) true else state.update.dialogDismissed,
+            ),
+        )
+
         TimeboxxingAction.CheckForUpdates -> state.copy(
             update = state.update.copy(
                 checkInProgress = true,
@@ -882,6 +919,8 @@ fun reduceTimeboxxingState(
                     checkInProgress = false,
                     available = result.update,
                     error = null,
+                    // A freshly found update re-opens the dialog even if a prior one was closed.
+                    dialogDismissed = false,
                 ),
             )
 

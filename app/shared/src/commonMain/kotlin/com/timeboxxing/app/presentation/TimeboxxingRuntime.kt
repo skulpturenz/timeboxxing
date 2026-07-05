@@ -51,6 +51,9 @@ interface TimeboxxingRuntime {
     val initialNotice: String?
     val initialAppearanceMode: AppearanceMode
     val initialUpdateChannel: UpdateChannel
+    val initialNotifyUpdatesOnStartup: Boolean
+    /** True when this build is a stable (master) release; false for prerelease/dev/CI builds. */
+    val isStableBuild: Boolean
     val diagnosticsEnabled: Boolean
     val dataDirectory: String
     val appearanceMode: StateFlow<AppearanceMode>
@@ -64,6 +67,8 @@ interface TimeboxxingRuntime {
 
     suspend fun setUpdateChannel(channel: UpdateChannel)
 
+    suspend fun setNotifyUpdatesOnStartup(enabled: Boolean)
+
     suspend fun restartSidecar()
 }
 
@@ -71,6 +76,8 @@ class StaticTimeboxxingRuntime(
     private val data: com.timeboxxing.domain.model.TimeboxxingMockData = mockTimeboxxingData(),
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System,
     override val initialUpdateChannel: UpdateChannel = UpdateChannel.Stable,
+    override val initialNotifyUpdatesOnStartup: Boolean = true,
+    override val isStableBuild: Boolean = true,
     override val diagnosticsEnabled: Boolean = false,
     override val dataDirectory: String = "",
 ) : TimeboxxingRuntime {
@@ -96,6 +103,8 @@ class StaticTimeboxxingRuntime(
     }
 
     override suspend fun setUpdateChannel(channel: UpdateChannel) = Unit
+
+    override suspend fun setNotifyUpdatesOnStartup(enabled: Boolean) = Unit
 
     override suspend fun restartSidecar() = Unit
 }

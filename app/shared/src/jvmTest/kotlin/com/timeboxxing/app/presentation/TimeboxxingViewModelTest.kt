@@ -44,6 +44,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimeboxxingViewModelTest {
@@ -99,6 +100,60 @@ class TimeboxxingViewModelTest {
         assertEquals(UpdateChannel.Alpha, viewModel.state.value.update.channel)
         assertEquals(UpdateChannel.Alpha, runtime.updateChannel.value)
     }
+
+    @Test
+    fun availableUpdateShowsDialogAndStableBuildCanDismiss() = runTest {
+        val viewModel = TimeboxxingViewModel(fakeRuntime(isStableBuild = true))
+        advanceUntilIdle()
+
+        viewModel.dispatch(anAvailableUpdate())
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+
+        viewModel.dispatch(TimeboxxingAction.DismissUpdateDialog)
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.showUpdateDialog)
+    }
+
+    @Test
+    fun nonStableBuildCannotDismissUpdateDialog() = runTest {
+        val viewModel = TimeboxxingViewModel(fakeRuntime(isStableBuild = false))
+        advanceUntilIdle()
+
+        viewModel.dispatch(anAvailableUpdate())
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+
+        // The dismiss action is a no-op on a non-stable build — the dialog stays forced.
+        viewModel.dispatch(TimeboxxingAction.DismissUpdateDialog)
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+    }
+
+    @Test
+    fun disablingStartupNotifyPersistsAndHidesDialog() = runTest {
+        val runtime = fakeRuntime(isStableBuild = true)
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        viewModel.dispatch(anAvailableUpdate())
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showUpdateDialog)
+
+        viewModel.dispatch(TimeboxxingAction.SetNotifyUpdatesOnStartup(false))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.update.notifyOnStartup)
+        assertFalse(viewModel.state.value.showUpdateDialog)
+        assertFalse(runtime.notifyUpdatesOnStartup.value)
+    }
+
+    private fun anAvailableUpdate(version: String = "9.9.9"): TimeboxxingAction.UpdateCheckSucceeded =
+        TimeboxxingAction.UpdateCheckSucceeded(
+            UpdateCheckResult.Available(
+                AvailableUpdate(version = version, downloadUrl = "https://example.invalid/app", notes = null),
+            ),
+        )
 
     @Test
     fun streamedUsageEventsAreMergedIntoState() = runTest {
@@ -433,6 +488,8 @@ private fun fakeRuntime(
     timesheetRepository: TimesheetRepository = FakeTimesheetRepository(),
     sidecarStatus: TimeboxxingSidecarStatus = TimeboxxingSidecarStatus.Ready,
     dataDirectory: String = "",
+    isStableBuild: Boolean = true,
+    notifyUpdatesOnStartup: Boolean = true,
 ): FakeTimeboxxingRuntime {
     val data = mockTimeboxxingData()
     return FakeTimeboxxingRuntime(
@@ -446,6 +503,8 @@ private fun fakeRuntime(
         ),
         sidecarStatus = sidecarStatus,
         dataDirectory = dataDirectory,
+        isStableBuild = isStableBuild,
+        initialNotifyUpdatesOnStartup = notifyUpdatesOnStartup,
     )
 }
 
@@ -454,6 +513,8 @@ private class FakeTimeboxxingRuntime(
     repositories: TimeboxxingRepositories,
     sidecarStatus: TimeboxxingSidecarStatus,
     override val dataDirectory: String,
+    override val isStableBuild: Boolean = true,
+    override val initialNotifyUpdatesOnStartup: Boolean = true,
 ) : TimeboxxingRuntime {
     override val initialNotice: String? = null
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System
@@ -461,6 +522,7 @@ private class FakeTimeboxxingRuntime(
     override val diagnosticsEnabled: Boolean = false
     override val appearanceMode = MutableStateFlow(initialAppearanceMode)
     val updateChannel = MutableStateFlow(initialUpdateChannel)
+    val notifyUpdatesOnStartup = MutableStateFlow(initialNotifyUpdatesOnStartup)
     override val repositories = MutableStateFlow(repositories)
     override val sidecarStatus = MutableStateFlow(sidecarStatus)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
@@ -474,6 +536,10 @@ private class FakeTimeboxxingRuntime(
 
     override suspend fun setUpdateChannel(channel: UpdateChannel) {
         updateChannel.value = channel
+    }
+
+    override suspend fun setNotifyUpdatesOnStartup(enabled: Boolean) {
+        notifyUpdatesOnStartup.value = enabled
     }
 
     override suspend fun restartSidecar() {
