@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[10062b0](10062b009db608eee97ede13f58202383e6be005)...[b997627](b997627a6d2ccd4a032671c14dfe76e8f7872f12)
+[0603d71](0603d718099c1d36f735fbad559f586090e6b856)...[4f19182](4f19182e296423b422fc8a6efd4e53a3689a6aea)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - include arch to filenames. it's not tested on windows but works on mac. need to setup windows for dev properly. not supporting linux yet because of wayland which is now default on debian, ubuntu, fedora, whether we can do usage tracking depends on the compositor (gnome, kde, xfce, etc). querying the foreground app is not part of the wayland spec ([c946266](c9462661fd57dc779334229133e13f07526587bc))
+
+## 0.0.1-10 - 2026-07-04
+
+[10062b0](10062b009db608eee97ede13f58202383e6be005)...[0603d71](0603d718099c1d36f735fbad559f586090e6b856)
 
 ### Miscellaneous Tasks
 
