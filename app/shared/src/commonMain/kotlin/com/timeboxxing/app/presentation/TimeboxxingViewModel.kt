@@ -39,6 +39,7 @@ class TimeboxxingViewModel(
             dataDirectory = runtime.dataDirectory,
             appVersion = runtime.appUpdater.currentVersion,
             appearanceMode = runtime.initialAppearanceMode,
+            updateChannel = runtime.initialUpdateChannel,
         ).copy(diagnosticsEnabled = runtime.diagnosticsEnabled),
     )
 
@@ -79,6 +80,11 @@ class TimeboxxingViewModel(
         if (action is TimeboxxingAction.UpdateAppearanceMode) {
             viewModelScope.launch {
                 runtime.setAppearanceMode(action.mode)
+            }
+        }
+        if (action is TimeboxxingAction.UpdateUpdateChannel) {
+            viewModelScope.launch {
+                runtime.setUpdateChannel(action.channel)
             }
         }
         if (amaQuestion != null) {
@@ -423,8 +429,9 @@ class TimeboxxingViewModel(
     }
 
     private fun checkForUpdates(silent: Boolean) {
+        val channel = _state.value.update.channel
         viewModelScope.launch {
-            val checked = runCatching { runtime.appUpdater.check() }
+            val checked = runCatching { runtime.appUpdater.check(channel) }
             checked.fold(
                 onSuccess = { result ->
                     when {

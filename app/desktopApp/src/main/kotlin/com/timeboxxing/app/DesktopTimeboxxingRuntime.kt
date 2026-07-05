@@ -18,6 +18,7 @@ import com.timeboxxing.data.repository.UnavailableTimesheetRepository
 import com.timeboxxing.data.repository.UnavailableUsageHistoryRepository
 import com.timeboxxing.data.time.recentUsageDays
 import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.domain.model.UpdateChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,7 @@ import kotlinx.coroutines.withContext
 internal class DesktopTimeboxxingRuntime(
     private val secretStore: SecretStore,
     private val appearancePreferences: AppearancePreferences,
+    private val updateChannelPreferences: UpdateChannelPreferences,
     private val sidecarManager: SidecarProcessManager,
     private val sidecarSessionLog: SidecarSessionLog,
     override val diagnosticsEnabled: Boolean,
@@ -48,6 +50,9 @@ internal class DesktopTimeboxxingRuntime(
     override val initialNotice: String = StartingSidecarMessage
     override val initialAppearanceMode: AppearanceMode = appearancePreferences.load()
     override val dataDirectory: String = sidecarManager.dataDirectory.toString()
+
+    override val initialUpdateChannel: UpdateChannel = updateChannelPreferences.load()
+    private val _updateChannel = MutableStateFlow(initialUpdateChannel)
 
     private val _appearanceMode = MutableStateFlow(initialAppearanceMode)
     override val appearanceMode: StateFlow<AppearanceMode> = _appearanceMode
@@ -77,6 +82,14 @@ internal class DesktopTimeboxxingRuntime(
         _appearanceMode.value = mode
         withContext(Dispatchers.IO) {
             appearancePreferences.save(mode)
+        }
+    }
+
+    override suspend fun setUpdateChannel(channel: UpdateChannel) {
+        if (_updateChannel.value == channel) return
+        _updateChannel.value = channel
+        withContext(Dispatchers.IO) {
+            updateChannelPreferences.save(channel)
         }
     }
 

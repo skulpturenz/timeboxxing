@@ -20,6 +20,7 @@ import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetEntryDraft
 import com.timeboxxing.domain.model.TimesheetExport
 import com.timeboxxing.domain.model.TimesheetExportFormat
+import com.timeboxxing.domain.model.UpdateChannel
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.repository.AmaRepository
@@ -82,6 +83,21 @@ class TimeboxxingViewModelTest {
             "/Users/tester/Library/Application Support/Timeboxxing",
             viewModel.state.value.dataDirectory,
         )
+    }
+
+    @Test
+    fun selectingUpdateChannelUpdatesStateAndPersists() = runTest {
+        val runtime = fakeRuntime()
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        assertEquals(UpdateChannel.Stable, viewModel.state.value.update.channel)
+
+        viewModel.dispatch(TimeboxxingAction.UpdateUpdateChannel(UpdateChannel.Alpha))
+        advanceUntilIdle()
+
+        assertEquals(UpdateChannel.Alpha, viewModel.state.value.update.channel)
+        assertEquals(UpdateChannel.Alpha, runtime.updateChannel.value)
     }
 
     @Test
@@ -441,8 +457,10 @@ private class FakeTimeboxxingRuntime(
 ) : TimeboxxingRuntime {
     override val initialNotice: String? = null
     override val initialAppearanceMode: AppearanceMode = AppearanceMode.System
+    override val initialUpdateChannel: UpdateChannel = UpdateChannel.Stable
     override val diagnosticsEnabled: Boolean = false
     override val appearanceMode = MutableStateFlow(initialAppearanceMode)
+    val updateChannel = MutableStateFlow(initialUpdateChannel)
     override val repositories = MutableStateFlow(repositories)
     override val sidecarStatus = MutableStateFlow(sidecarStatus)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
@@ -452,6 +470,10 @@ private class FakeTimeboxxingRuntime(
 
     override suspend fun setAppearanceMode(mode: AppearanceMode) {
         appearanceMode.value = mode
+    }
+
+    override suspend fun setUpdateChannel(channel: UpdateChannel) {
+        updateChannel.value = channel
     }
 
     override suspend fun restartSidecar() {

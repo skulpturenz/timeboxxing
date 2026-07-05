@@ -61,6 +61,7 @@ dependencies {
     implementation(libs.koin.compose.viewmodel)
     implementation(libs.koin.core)
     implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.kotlinx.serializationJson)
     implementation(libs.sentry)
     implementation(libs.jna)
 

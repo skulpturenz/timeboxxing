@@ -3,8 +3,15 @@ package com.timeboxxing.app
 import com.timeboxxing.app.presentation.AppUpdater
 import com.timeboxxing.app.presentation.AvailableUpdate
 import com.timeboxxing.app.presentation.UpdateCheckResult
+import com.timeboxxing.domain.model.UpdateChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -17,9 +24,11 @@ import kotlin.io.path.absolutePathString
 import kotlin.system.exitProcess
 
 /**
- * Desktop [AppUpdater] backed by GitHub Releases. It checks the repository's latest stable release,
- * downloads the matching jpackage installer (`.dmg`/`.exe`), applies it in place via a detached
- * helper process that waits for this app to exit, then relaunches.
+ * Desktop [AppUpdater] backed by GitHub Releases. It scans the repository's releases, picks the
+ * newest one on the selected [UpdateChannel] (Stable → the `master` branch, Beta → `staging`
+ * branches, Alpha → `canary` branches, matched on each release's `target_commitish`), downloads the
+ * matching jpackage installer (`.dmg`/`.exe`) for the current OS and architecture, applies it in
+ * place via a detached helper process that waits for this app to exit, then relaunches.
  *
  * Update checks are disabled for local/dev builds (see [updatesSupported]) so a developer build does
  * not spuriously report the newest published release as an available update.
@@ -37,16 +46,36 @@ internal class DesktopAppUpdater(
             .build()
     }
 
-    override suspend fun check(): UpdateCheckResult = withContext(Dispatchers.IO) {
+    // The architecture segment of the installer asset names, matching the labels the release
+    // workflow and gradle packager emit (e.g. "Timeboxxing-<tag>-macOS-aarch64.dmg").
+    private val archLabel: String = when (val osArch = System.getProperty("os.arch").orEmpty().lowercase()) {
+        "aarch64", "arm64" -> "aarch64"
+        "amd64", "x86_64", "x64" -> "x86_64"
+        else -> osArch
+    }
+
+    override suspend fun check(channel: UpdateChannel): UpdateCheckResult = withContext(Dispatchers.IO) {
         if (!updatesSupported()) {
             return@withContext UpdateCheckResult.Unsupported
         }
+        val platform = currentPlatform()
+        if (platform == Platform.Unsupported) {
+            return@withContext UpdateCheckResult.Unsupported
+        }
 
-        val body = fetchLatestReleaseJson()
-        val latestTag = TAG_REGEX.find(body)?.groupValues?.get(1)
-            ?: throw IOException("Could not read the latest release version.")
+        val releases = Json.parseToJsonElement(fetchReleasesJson()).jsonArray
+
+        // GitHub returns releases newest-first, so the first release whose origin branch matches the
+        // channel is the newest release on that channel. No match (e.g. Stable with no master
+        // release yet) is simply "up to date" rather than an error.
+        val release = releases
+            .mapNotNull { it as? JsonObject }
+            .firstOrNull { channel.matchesTarget(it.string("target_commitish")) }
+            ?: return@withContext UpdateCheckResult.UpToDate
+
+        val latestTag = release.string("tag_name") ?: return@withContext UpdateCheckResult.UpToDate
         val latestVersion = latestTag.removePrefix("v")
-        val assetUrl = assetUrlRegex()?.find(body)?.groupValues?.get(1)
+        val assetUrl = release.assetDownloadUrl(platform)
 
         if (assetUrl == null || compareVersions(latestVersion, currentVersion) <= 0) {
             UpdateCheckResult.UpToDate
@@ -75,9 +104,11 @@ internal class DesktopAppUpdater(
         return currentPlatform() != Platform.Unsupported
     }
 
-    private fun fetchLatestReleaseJson(): String {
+    private fun fetchReleasesJson(): String {
+        // The releases list (unlike /releases/latest) includes prereleases, so Beta/Alpha channels
+        // resolve and a repo with only prereleases no longer 404s. Unauthenticated calls omit drafts.
         val request = HttpRequest.newBuilder()
-            .uri(URI.create("$ReleasesApiBase/latest"))
+            .uri(URI.create("$ReleasesApiBase?per_page=30"))
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", UserAgent)
             .timeout(Duration.ofSeconds(20))
@@ -203,11 +234,32 @@ internal class DesktopAppUpdater(
             .start()
     }
 
-    private fun assetUrlRegex(): Regex? = when (currentPlatform()) {
-        Platform.MacOs -> Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-macOS\\.dmg)\"")
-        Platform.Windows -> Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]*-Windows\\.exe)\"")
-        Platform.Unsupported -> null
+    /** True if [targetCommitish] (a release's origin branch) belongs to this channel. */
+    private fun UpdateChannel.matchesTarget(targetCommitish: String?): Boolean {
+        val target = targetCommitish?.trim().orEmpty()
+        return when (this) {
+            UpdateChannel.Stable -> target == "master"
+            UpdateChannel.Beta -> target.startsWith("staging/")
+            UpdateChannel.Alpha -> target.startsWith("canary/")
+        }
     }
+
+    /** The `browser_download_url` of this release's installer for the current OS + [archLabel]. */
+    private fun JsonObject.assetDownloadUrl(platform: Platform): String? {
+        val suffix = when (platform) {
+            Platform.MacOs -> "-macOS-$archLabel.dmg"
+            Platform.Windows -> "-Windows-$archLabel.exe"
+            Platform.Unsupported -> return null
+        }
+        val assets = (this["assets"] as? JsonArray) ?: return null
+        return assets
+            .mapNotNull { it as? JsonObject }
+            .firstOrNull { asset -> asset.string("name")?.endsWith(suffix) == true }
+            ?.string("browser_download_url")
+    }
+
+    private fun JsonObject.string(key: String): String? =
+        (this[key] as? JsonPrimitive)?.contentOrNull
 
     private enum class Platform { MacOs, Windows, Unsupported }
 
@@ -220,7 +272,11 @@ internal class DesktopAppUpdater(
         }
     }
 
-    /** Compares dotted numeric versions, ignoring any `-prerelease`/`+build` suffix. */
+    /**
+     * Compares dotted numeric versions. A numeric `-prerelease` counter (e.g. the `11` in
+     * `0.0.1-11`) is compared as a trailing component so `0.0.1-11 < 0.0.1-12`; `+build` metadata
+     * and non-numeric prerelease labels are ignored.
+     */
     private fun compareVersions(a: String, b: String): Int {
         val pa = versionParts(a)
         val pb = versionParts(b)
@@ -232,19 +288,17 @@ internal class DesktopAppUpdater(
         return 0
     }
 
-    private fun versionParts(version: String): List<Int> =
-        version.trim()
-            .removePrefix("v")
-            .substringBefore('-')
-            .substringBefore('+')
-            .split('.')
-            .map { it.toIntOrNull() ?: 0 }
+    private fun versionParts(version: String): List<Int> {
+        val trimmed = version.trim().removePrefix("v").substringBefore('+')
+        val baseParts = trimmed.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val prerelease = trimmed.substringAfter('-', "").toIntOrNull()
+        return if (prerelease != null) baseParts + prerelease else baseParts
+    }
 
     private companion object {
         const val ReleasesApiBase = "https://api.github.com/repos/skulpturenz/timeboxxing/releases"
         const val UserAgent = "Timeboxxing-Updater"
         const val DevSentinelVersion = "0.0.0"
-        val TAG_REGEX = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"")
 
         // Waits for this app to exit, replaces the installed .app bundle from the mounted DMG, then
         // relaunches. Falls back to an admin prompt only when the bundle location is not writable

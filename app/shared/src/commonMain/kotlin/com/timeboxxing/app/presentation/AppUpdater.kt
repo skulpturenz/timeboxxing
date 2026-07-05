@@ -1,5 +1,7 @@
 package com.timeboxxing.app.presentation
 
+import com.timeboxxing.domain.model.UpdateChannel
+
 /** A release that is newer than the running build and can be installed. */
 data class AvailableUpdate(
     val version: String,
@@ -28,8 +30,8 @@ interface AppUpdater {
     /** The version string of the running build (e.g. "0.0.5"). */
     val currentVersion: String
 
-    /** Queries the release source for a newer version. */
-    suspend fun check(): UpdateCheckResult
+    /** Queries the release source on [channel] for a newer version. */
+    suspend fun check(channel: UpdateChannel): UpdateCheckResult
 
     /**
      * Downloads [update] and applies it in place, then relaunches the app. On success this
@@ -43,7 +45,7 @@ interface AppUpdater {
 class StaticAppUpdater(
     override val currentVersion: String = "",
 ) : AppUpdater {
-    override suspend fun check(): UpdateCheckResult = UpdateCheckResult.Unsupported
+    override suspend fun check(channel: UpdateChannel): UpdateCheckResult = UpdateCheckResult.Unsupported
 
     override suspend fun downloadAndInstall(update: AvailableUpdate, onProgress: (Float) -> Unit) {
         onProgress(1f)

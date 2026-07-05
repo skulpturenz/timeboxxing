@@ -24,6 +24,7 @@ import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.TimeboxxingMockData
+import com.timeboxxing.domain.model.UpdateChannel
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.model.UsageSourceType
@@ -179,6 +180,7 @@ data class ScheduleFocusTarget(
 
 data class AppUpdateUiState(
     val currentVersion: String = "",
+    val channel: UpdateChannel = UpdateChannel.Stable,
     val checkInProgress: Boolean = false,
     val available: AvailableUpdate? = null,
     val error: String? = null,
@@ -296,6 +298,7 @@ sealed interface TimeboxxingAction {
         val prunedCounts: DatabasePruneCounts,
     ) : TimeboxxingAction
     data class DatabaseVacuumFailed(val message: String) : TimeboxxingAction
+    data class UpdateUpdateChannel(val channel: UpdateChannel) : TimeboxxingAction
     data object CheckForUpdates : TimeboxxingAction
     data class UpdateCheckSucceeded(val result: UpdateCheckResult) : TimeboxxingAction
     data class UpdateCheckFailed(val message: String) : TimeboxxingAction
@@ -335,6 +338,7 @@ fun createSidecarTimeboxxingState(
     appVersion: String = "",
     data: TimeboxxingMockData = mockTimeboxxingData(),
     appearanceMode: AppearanceMode = AppearanceMode.System,
+    updateChannel: UpdateChannel = UpdateChannel.Stable,
 ): TimeboxxingScreenState {
     val defaultProjectId = data.projects.firstOrNull()?.id.orEmpty()
     val safeUsageDays = usageDays.ifEmpty { data.usageDays }
@@ -354,7 +358,7 @@ fun createSidecarTimeboxxingState(
         usageDays = safeUsageDays,
         dataDirectory = dataDirectory,
         appearanceMode = appearanceMode,
-        update = AppUpdateUiState(currentVersion = appVersion),
+        update = AppUpdateUiState(currentVersion = appVersion, channel = updateChannel),
     )
 }
 
@@ -854,6 +858,15 @@ fun reduceTimeboxxingState(
         is TimeboxxingAction.DatabaseVacuumFailed -> state.copy(
             databaseVacuuming = false,
             databaseMaintenanceError = action.message,
+        )
+
+        is TimeboxxingAction.UpdateUpdateChannel -> state.copy(
+            update = state.update.copy(
+                channel = action.channel,
+                // A channel switch invalidates any pending update found on the previous channel.
+                available = null,
+                error = null,
+            ),
         )
 
         TimeboxxingAction.CheckForUpdates -> state.copy(
