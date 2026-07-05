@@ -116,7 +116,7 @@ class TimeboxxingViewModelTest {
     }
 
     @Test
-    fun nonStableBuildCannotDismissUpdateDialog() = runTest {
+    fun nonStableBuildCanDismissUpdateDialogForTheSession() = runTest {
         val viewModel = TimeboxxingViewModel(fakeRuntime(isStableBuild = false))
         advanceUntilIdle()
 
@@ -124,8 +124,13 @@ class TimeboxxingViewModelTest {
         advanceUntilIdle()
         assertTrue(viewModel.state.value.showUpdateDialog)
 
-        // The dismiss action is a no-op on a non-stable build — the dialog stays forced.
+        // The dialog can be closed for the session on any build...
         viewModel.dispatch(TimeboxxingAction.DismissUpdateDialog)
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.showUpdateDialog)
+
+        // ...but a non-stable build has no persistent opt-out, so a fresh check re-opens it.
+        viewModel.dispatch(anAvailableUpdate())
         advanceUntilIdle()
         assertTrue(viewModel.state.value.showUpdateDialog)
     }

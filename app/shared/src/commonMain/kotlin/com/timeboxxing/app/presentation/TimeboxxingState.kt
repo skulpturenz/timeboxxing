@@ -890,13 +890,11 @@ fun reduceTimeboxxingState(
             ),
         )
 
-        // Non-stable (prerelease/dev) builds cannot dismiss the update dialog — it stays forced.
-        TimeboxxingAction.DismissUpdateDialog ->
-            if (state.isStableBuild) {
-                state.copy(update = state.update.copy(dialogDismissed = true))
-            } else {
-                state
-            }
+        // Closes the dialog for this session; it reappears on the next startup check unless the
+        // user (on a stable build) has also opted out of startup notifications.
+        TimeboxxingAction.DismissUpdateDialog -> state.copy(
+            update = state.update.copy(dialogDismissed = true),
+        )
 
         is TimeboxxingAction.SetNotifyUpdatesOnStartup -> state.copy(
             update = state.update.copy(

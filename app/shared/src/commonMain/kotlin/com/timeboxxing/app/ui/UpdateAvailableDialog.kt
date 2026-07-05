@@ -22,9 +22,9 @@ import com.timeboxxing.app.presentation.TimeboxxingAction
 import com.timeboxxing.app.presentation.TimeboxxingScreenState
 
 /**
- * App-wide modal shown when an update is available. On non-stable (prerelease/dev) builds it cannot
- * be dismissed — the only way out is to install. On stable builds it can be closed, and offers a
- * "Don't notify on startup" opt-out. Visibility is driven by [TimeboxxingScreenState.showUpdateDialog].
+ * App-wide modal shown when an update is available. It can always be dismissed (closed for the
+ * session); on stable builds it additionally offers a persistent "Don't notify on startup" opt-out.
+ * Visibility is driven by [TimeboxxingScreenState.showUpdateDialog].
  */
 @Composable
 fun UpdateAvailableDialog(
@@ -33,15 +33,16 @@ fun UpdateAvailableDialog(
 ) {
     val update = state.update
     val available = update.available ?: return
-    val forced = !state.isStableBuild
+    // Only stable builds may permanently silence the startup notification; prerelease/dev builds can
+    // still close the dialog for now, but it returns on the next launch.
+    val canDisableStartupNotify = state.isStableBuild
     val progress = update.downloadProgress
 
     Dialog(
-        onDismissRequest = { if (!forced) onAction(TimeboxxingAction.DismissUpdateDialog) },
-        // On forced (prerelease) builds, block Esc / scrim-tap dismissal.
+        onDismissRequest = { onAction(TimeboxxingAction.DismissUpdateDialog) },
         properties = DialogProperties(
-            dismissOnBackPress = !forced,
-            dismissOnClickOutside = !forced,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
         ),
     ) {
         TbSurface(
@@ -69,14 +70,12 @@ fun UpdateAvailableDialog(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (!forced) {
-                        TbIconButton(
-                            icon = Icons.Rounded.Close,
-                            contentDescription = "Close",
-                            onClick = { onAction(TimeboxxingAction.DismissUpdateDialog) },
-                            variant = TbButtonVariant.Ghost,
-                        )
-                    }
+                    TbIconButton(
+                        icon = Icons.Rounded.Close,
+                        contentDescription = "Close",
+                        onClick = { onAction(TimeboxxingAction.DismissUpdateDialog) },
+                        variant = TbButtonVariant.Ghost,
+                    )
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -91,9 +90,9 @@ fun UpdateAvailableDialog(
                             color = TbTheme.colors.secondaryText,
                         )
                     }
-                    if (forced) {
+                    if (!canDisableStartupNotify) {
                         TbText(
-                            text = "This is a prerelease build — updating is required to continue.",
+                            text = "This is a prerelease build — please keep it up to date.",
                             style = TbTheme.typography.bodySmall,
                             color = TbTheme.colors.secondaryText,
                         )
@@ -113,7 +112,7 @@ fun UpdateAvailableDialog(
                     horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (!forced) {
+                    if (canDisableStartupNotify) {
                         TbButton(
                             onClick = { onAction(TimeboxxingAction.SetNotifyUpdatesOnStartup(false)) },
                             variant = TbButtonVariant.Secondary,
