@@ -37,7 +37,7 @@ class SidecarProcessManagerTest {
         )
 
         assertEquals(
-            File("/Users/tester/AppData/Local/Timeboxxing").toPath(),
+            File("/Users/tester/AppData/Local/Skulpture/Timeboxxing").toPath(),
             dir,
         )
     }
@@ -51,7 +51,7 @@ class SidecarProcessManagerTest {
         )
 
         assertEquals(
-            File("/Users/tester/AppData/Local/Timeboxxing").toPath(),
+            File("/Users/tester/AppData/Local/Skulpture/Timeboxxing").toPath(),
             dir,
         )
     }
