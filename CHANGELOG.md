@@ -4,7 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[0603d71](0603d718099c1d36f735fbad559f586090e6b856)...[4f19182](4f19182e296423b422fc8a6efd4e53a3689a6aea)
+[ffa4b19](ffa4b19fc15f64fe1737d8318f5f67213e7db86f)...[fc67555](fc67555c0b085bced0fd90bdbdf2c4807b7d2309)
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - update according to release channel, should've thought of this before ([84b17b9](84b17b9db3235d9ef05e6f444842276daf22b27d))
+- Mvp vibe slop - upload artefacts for ci build runs ([73b4bd3](73b4bd327474702394a821b1dabd853922c0df37))
+- Mvp vibe slop - fix ci tags, marking it as development with version at 0 should allow users to update to either a canary, staging or stable release since these will always be bigger. previously it was 1 (2 after normalizing because major has to start at 1) ([54ae748](54ae748627fcccb6125f82ea188193cf32e66748))
+- Mvp vibe slop - in app updates causing data loss ([1e2ba51](1e2ba5172c08bbb98290ecd11d1cc45efd27b96c))
+- Mvp vibe slop - fix update checks by normalizing semver. we kind of need a semver string to map to a number which we can compare to determine if we need to upgrade ([8e8d873](8e8d873b0c6e075e8a160c25ae123b5d4f5a21dd))
+- Mvp vibe slop - allow update dialogs to be dismissed ([051400a](051400ac90c7920c70cf566b0ab081b561345891))
+- Mvp vibe slop - fix wrong version launched after installing update ([24a40e2](24a40e2dcd9a6365931dd917a4a0886f50f01f92))
+- Mvp vibe slop - build app exe's as well as installer exe's. update in place and relaunch ([f27e63f](f27e63fab2914a3d8f58919e8c7c35543bfc956a))
+
+## 0.0.1-11 - 2026-07-05
+
+[0603d71](0603d718099c1d36f735fbad559f586090e6b856)...[ffa4b19](ffa4b19fc15f64fe1737d8318f5f67213e7db86f)
 
 ### Miscellaneous Tasks
 
