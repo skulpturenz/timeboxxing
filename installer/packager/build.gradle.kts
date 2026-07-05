@@ -210,6 +210,40 @@ tasks.matching {
     dependsOn(syncInstallerResources)
 }
 
+// jpackage names the installer "<packageName>-<packageVersion>.<ext>" with no architecture, so a
+// DMG built on Apple Silicon and one built on Intel are indistinguishable by filename. Insert the
+// arch before the extension after packaging so the produced installer carries it (e.g.
+// "Timeboxxing-1.0.0-aarch64.dmg"). The CI release step renames on top of this; local builds get
+// the arch too. Maps the JVM os.arch to the same labels the release workflow uses.
+val archLabel = when (val osArch = System.getProperty("os.arch").lowercase()) {
+    "aarch64", "arm64" -> "aarch64"
+    "amd64", "x86_64", "x64" -> "x86_64"
+    else -> osArch
+}
+
+fun addArchToInstaller(binariesSubdir: String, extension: String) {
+    val dir = layout.buildDirectory.dir("compose/binaries/main/$binariesSubdir").get().asFile
+    val installer = dir.listFiles { file -> file.isFile && file.name.endsWith(".$extension") }
+        ?.firstOrNull { !it.nameWithoutExtension.endsWith("-$archLabel") }
+        ?: return
+    val renamed = dir.resolve("${installer.nameWithoutExtension}-$archLabel.$extension")
+    if (renamed.exists() && !renamed.delete()) {
+        throw GradleException("Failed to remove stale installer $renamed")
+    }
+    if (!installer.renameTo(renamed)) {
+        throw GradleException("Failed to add arch suffix to installer $installer")
+    }
+    logger.lifecycle("Renamed installer to ${renamed.name}")
+}
+
+tasks.matching { it.name == "packageDmg" }.configureEach {
+    doLast { addArchToInstaller("dmg", "dmg") }
+}
+
+tasks.matching { it.name == "packageExe" }.configureEach {
+    doLast { addArchToInstaller("exe", "exe") }
+}
+
 // jpackage copies app content into the macOS .app with the executable bit stripped (0644), so the
 // bundled Go sidecar can't be spawned and the app hangs on its loading screen. Restore the exec bit
 // on the app image after createDistributable (which runs before packageDmg), so it works even when
