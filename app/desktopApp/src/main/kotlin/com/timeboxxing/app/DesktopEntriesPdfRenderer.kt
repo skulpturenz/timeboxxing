@@ -33,8 +33,12 @@ import java.io.File
 internal class DesktopEntriesPdfRenderer(
     private val browsersDir: File,
 ) : EntriesPdfRenderer {
-    private val handlebars: Handlebars = Handlebars().apply {
-        registerHelper("tailwindRuntime", Helper<Any?> { _, _ -> Handlebars.SafeString(tailwindScriptTag) })
+    // Lazily initialized so constructing this renderer at app startup does no work and cannot throw
+    // (e.g. from a missing bundled resource); any such failure surfaces only when a PDF is exported.
+    private val handlebars: Handlebars by lazy {
+        Handlebars().apply {
+            registerHelper("tailwindRuntime", Helper<Any?> { _, _ -> Handlebars.SafeString(tailwindScriptTag) })
+        }
     }
 
     override suspend fun render(
@@ -126,8 +130,8 @@ internal class DesktopEntriesPdfRenderer(
         browsersDir.listFiles()?.any { it.isDirectory && it.name.startsWith("chromium-") } == true
 
     private companion object {
-        val defaultTemplateSource: String = readResource("export/default-template.hbs")
-        val tailwindScriptTag: String = "<script>${readResource("export/tailwind-runtime.js")}</script>"
+        val defaultTemplateSource: String by lazy { readResource("export/default-template.hbs") }
+        val tailwindScriptTag: String by lazy { "<script>${readResource("export/tailwind-runtime.js")}</script>" }
         val percentPattern = Regex("""(\d{1,3})\s*%""")
         val downloadingHeaderPattern = Regex("""(?i)\bDownloading\b""")
 
