@@ -64,6 +64,8 @@ dependencies {
     implementation(libs.kotlinx.serializationJson)
     implementation(libs.sentry)
     implementation(libs.jna)
+    implementation(libs.handlebars)
+    implementation(libs.playwright)
 
     implementation(libs.compose.uiToolingPreview)
 
@@ -191,8 +193,11 @@ compose.desktop {
             packageVersion = "1.0.0"
             // Keep in sync with installer/packager: the updater needs java.net.http (HttpClient,
             // loaded at startup) and jdk.crypto.ec (TLS ECDHE to GitHub); neither is in jlink's
-            // default module set, so the packaged app crashes on launch without them.
-            modules("java.net.http", "jdk.crypto.ec")
+            // default module set, so the packaged app crashes on launch without them. jdk.zipfs
+            // provides the "jar" filesystem provider Playwright's driver needs to unpack itself;
+            // jdk.unsupported provides sun.misc.Unsafe, which gson (bundled by Playwright) needs to
+            // instantiate option types like ViewportSize during a PDF render.
+            modules("java.net.http", "jdk.crypto.ec", "jdk.zipfs", "jdk.unsupported")
         }
     }
 }

@@ -33,6 +33,7 @@ type Querier interface {
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListSemanticModels(ctx context.Context) ([]SemanticModel, error)
 	ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]TimesheetEntry, error)
+	ListTimesheetEntriesInRange(ctx context.Context, arg ListTimesheetEntriesInRangeParams) ([]ListTimesheetEntriesInRangeRow, error)
 	ListTimesheetEntryUsageBlocks(ctx context.Context, timesheetEntryID string) ([]string, error)
 	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
 	UpsertAISettings(ctx context.Context, arg UpsertAISettingsParams) error

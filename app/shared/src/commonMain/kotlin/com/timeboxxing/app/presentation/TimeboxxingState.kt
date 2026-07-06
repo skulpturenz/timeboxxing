@@ -19,6 +19,7 @@ import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
 import com.timeboxxing.domain.model.DatabasePruneCounts
 import com.timeboxxing.domain.model.DatabasePruneResult
 import com.timeboxxing.domain.model.DatabaseVacuumResult
+import com.timeboxxing.domain.model.EntriesExportFormat
 import com.timeboxxing.domain.model.EntryDraft
 import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
@@ -28,6 +29,7 @@ import com.timeboxxing.domain.model.UpdateChannel
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.UsageEvent
 import com.timeboxxing.domain.model.UsageSourceType
+import com.timeboxxing.domain.model.daysBetweenInclusive
 import com.timeboxxing.domain.model.formatDuration
 import com.timeboxxing.domain.model.plusDays
 
@@ -36,6 +38,7 @@ private const val NoProjectColorArgb: Long = 0xFF6E7F80
 private const val InvalidDraftProjectNotice = "Choose an existing project or No project."
 private const val AddEntryBeforeExportNotice = "Add an entry before exporting."
 private const val UsageDayMinutes = 24 * 60
+internal const val MaxExportRangeDays = 31
 internal const val MinimumScheduleUsageDurationMinutes = 1
 private const val SidecarUsageIdPrefix = "sidecar-"
 
@@ -80,6 +83,15 @@ data class TimeboxxingScreenState(
     val databasePruneEndDate: CalendarDate? = null,
     val databaseMaintenanceError: String? = null,
     val databaseMaintenanceMessage: String? = null,
+    val exportStartDate: CalendarDate? = null,
+    val exportEndDate: CalendarDate? = null,
+    val exportFormat: EntriesExportFormat = EntriesExportFormat.Json,
+    val exportTemplateName: String? = null,
+    val exportTemplateContents: String? = null,
+    val entriesExporting: Boolean = false,
+    val entriesExportProgress: Float? = null,
+    val entriesExportStatus: String? = null,
+    val entriesExportMessage: String? = null,
     val dataDirectory: String = "",
     val appearanceMode: AppearanceMode = AppearanceMode.System,
     val diagnosticsEnabled: Boolean = false,
@@ -137,9 +149,28 @@ data class TimeboxxingScreenState(
             return !databasePruning && !databaseVacuuming && startedAt <= endedAt
         }
 
+    /** A validation message for the chosen export range, or null when the range is valid or incomplete. */
+    val exportRangeError: String?
+        get() {
+            val start = exportStartDate ?: return null
+            val end = exportEndDate ?: return null
+            return when {
+                start > end -> "Choose an end date on or after the start date."
+                daysBetweenInclusive(start, end) > MaxExportRangeDays -> "Export range can be at most one month."
+                else -> null
+            }
+        }
+
+    val canExportEntries: Boolean
+        get() = !entriesExporting &&
+            exportStartDate != null &&
+            exportEndDate != null &&
+            exportRangeError == null
+
     val visibleNavigationSections: List<TimeboxxingSection>
         get() = buildList {
             add(TimeboxxingSection.Overview)
+            add(TimeboxxingSection.Export)
             if (isAmaConfigured) {
                 add(TimeboxxingSection.Ama)
             }
@@ -205,6 +236,7 @@ data class AppUpdateUiState(
 
 enum class TimeboxxingSection {
     Overview,
+    Export,
     Ama,
     Diagnostics,
     Settings,
@@ -269,6 +301,21 @@ sealed interface TimeboxxingAction {
     data class ExportTimesheetSucceeded(val fileName: String) : TimeboxxingAction
     data object ExportTimesheetCanceled : TimeboxxingAction
     data class ExportTimesheetFailed(val message: String) : TimeboxxingAction
+    data class UpdateExportStartDate(val date: CalendarDate) : TimeboxxingAction
+    data class UpdateExportEndDate(val date: CalendarDate) : TimeboxxingAction
+    data class SelectEntriesExportFormat(val format: EntriesExportFormat) : TimeboxxingAction
+    data object ChooseExportTemplate : TimeboxxingAction
+    data class ExportTemplateChosen(val name: String, val contents: String) : TimeboxxingAction
+    data object ClearExportTemplate : TimeboxxingAction
+    data object DownloadDefaultTemplate : TimeboxxingAction
+    data class DownloadTemplateSucceeded(val fileName: String) : TimeboxxingAction
+    data object DownloadTemplateCanceled : TimeboxxingAction
+    data class DownloadTemplateFailed(val message: String) : TimeboxxingAction
+    data object ExportEntries : TimeboxxingAction
+    data class ExportEntriesProgress(val fraction: Float?, val label: String) : TimeboxxingAction
+    data class ExportEntriesSucceeded(val fileName: String) : TimeboxxingAction
+    data object ExportEntriesCanceled : TimeboxxingAction
+    data class ExportEntriesFailed(val message: String) : TimeboxxingAction
     data object DismissNotice : TimeboxxingAction
     data class UpdateAmaInput(val input: String) : TimeboxxingAction
     data object SubmitAmaQuestion : TimeboxxingAction
@@ -646,6 +693,85 @@ fun reduceTimeboxxingState(
         is TimeboxxingAction.ExportTimesheetFailed -> state.copy(
             timesheetExporting = false,
             notice = action.message,
+        )
+
+        is TimeboxxingAction.UpdateExportStartDate -> state.copy(
+            exportStartDate = action.date,
+            entriesExportMessage = null,
+        )
+
+        is TimeboxxingAction.UpdateExportEndDate -> state.copy(
+            exportEndDate = action.date,
+            entriesExportMessage = null,
+        )
+
+        is TimeboxxingAction.SelectEntriesExportFormat -> state.copy(
+            exportFormat = action.format,
+            entriesExportMessage = null,
+        )
+
+        TimeboxxingAction.ChooseExportTemplate -> state
+
+        is TimeboxxingAction.ExportTemplateChosen -> state.copy(
+            exportTemplateName = action.name,
+            exportTemplateContents = action.contents,
+            entriesExportMessage = null,
+        )
+
+        TimeboxxingAction.ClearExportTemplate -> state.copy(
+            exportTemplateName = null,
+            exportTemplateContents = null,
+        )
+
+        TimeboxxingAction.DownloadDefaultTemplate -> state
+
+        is TimeboxxingAction.DownloadTemplateSucceeded -> state.copy(
+            entriesExportMessage = null,
+            notice = "Saved ${action.fileName}.",
+        )
+
+        TimeboxxingAction.DownloadTemplateCanceled -> state
+
+        is TimeboxxingAction.DownloadTemplateFailed -> state.copy(
+            entriesExportMessage = action.message,
+        )
+
+        TimeboxxingAction.ExportEntries -> if (!state.canExportEntries) {
+            state
+        } else {
+            state.copy(
+                entriesExporting = true,
+                entriesExportProgress = 0.08f,
+                entriesExportStatus = "Preparing",
+                entriesExportMessage = null,
+            )
+        }
+
+        is TimeboxxingAction.ExportEntriesProgress -> if (!state.entriesExporting) {
+            state
+        } else {
+            state.copy(entriesExportProgress = action.fraction, entriesExportStatus = action.label)
+        }
+
+        is TimeboxxingAction.ExportEntriesSucceeded -> state.copy(
+            entriesExporting = false,
+            entriesExportProgress = null,
+            entriesExportStatus = null,
+            entriesExportMessage = null,
+            notice = "Saved ${action.fileName}.",
+        )
+
+        TimeboxxingAction.ExportEntriesCanceled -> state.copy(
+            entriesExporting = false,
+            entriesExportProgress = null,
+            entriesExportStatus = null,
+        )
+
+        is TimeboxxingAction.ExportEntriesFailed -> state.copy(
+            entriesExporting = false,
+            entriesExportProgress = null,
+            entriesExportStatus = null,
+            entriesExportMessage = action.message,
         )
 
         TimeboxxingAction.DismissNotice -> state.copy(scheduleFocusEntryId = null, notice = null)

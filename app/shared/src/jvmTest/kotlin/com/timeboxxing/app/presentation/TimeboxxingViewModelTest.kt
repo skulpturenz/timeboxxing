@@ -15,7 +15,9 @@ import com.timeboxxing.domain.model.DatabasePruneRange
 import com.timeboxxing.domain.model.DatabasePruneResult
 import com.timeboxxing.domain.model.DatabaseVacuumResult
 import com.timeboxxing.domain.model.DiagnosticsLogLine
+import com.timeboxxing.domain.model.EntriesExportFormat
 import com.timeboxxing.domain.model.Project
+import com.timeboxxing.domain.model.RangedTimesheetDay
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetEntryDraft
 import com.timeboxxing.domain.model.TimesheetExport
@@ -44,6 +46,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -483,6 +487,80 @@ class TimeboxxingViewModelTest {
         assertEquals(1, runtime.timesheetExportFileWriter.savedExports.size)
         assertEquals("Exported timesheet-test.csv.", viewModel.state.value.notice)
     }
+
+    @Test
+    fun exportEntriesInRangeSavesJson() = runTest {
+        val entry = TimeEntry(
+            id = "entry-1",
+            projectId = "",
+            title = "Work",
+            notes = "",
+            startMinute = 9 * 60,
+            durationMinutes = 30,
+            billable = true,
+            sourceUsageIds = emptySet(),
+        )
+        val timesheetRepository = FakeTimesheetRepository(loadedEntries = listOf(entry))
+        val runtime = fakeRuntime(timesheetRepository = timesheetRepository)
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.UpdateExportStartDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.UpdateExportEndDate(CalendarDate(2025, 5, 3)))
+        viewModel.dispatch(TimeboxxingAction.SelectEntriesExportFormat(EntriesExportFormat.Json))
+        viewModel.dispatch(TimeboxxingAction.ExportEntries)
+        advanceUntilIdle()
+
+        assertEquals(1, timesheetRepository.rangeCalls.size)
+        val saved = runtime.timesheetExportFileWriter.savedExports.single()
+        assertEquals("entries-2025-05-01_2025-05-03.json", saved.fileName)
+        assertEquals("application/json", saved.contentType)
+        assertEquals(0, runtime.entriesPdfRenderer.renderCount)
+        assertEquals("Saved entries-2025-05-01_2025-05-03.json.", viewModel.state.value.notice)
+        assertNull(viewModel.state.value.entriesExportMessage)
+    }
+
+    @Test
+    fun exportEntriesPdfUsesRendererWithUploadedTemplate() = runTest {
+        val timesheetRepository = FakeTimesheetRepository()
+        val runtime = fakeRuntime(timesheetRepository = timesheetRepository)
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.UpdateExportStartDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.UpdateExportEndDate(CalendarDate(2025, 5, 1)))
+        viewModel.dispatch(TimeboxxingAction.SelectEntriesExportFormat(EntriesExportFormat.Pdf))
+        viewModel.dispatch(TimeboxxingAction.ExportTemplateChosen("invoice.hbs", "<html>{{rangeLabel}}</html>"))
+        viewModel.dispatch(TimeboxxingAction.ExportEntries)
+        advanceUntilIdle()
+
+        assertEquals(1, runtime.entriesPdfRenderer.renderCount)
+        assertEquals("<html>{{rangeLabel}}</html>", runtime.entriesPdfRenderer.lastTemplate)
+        val saved = runtime.timesheetExportFileWriter.savedExports.single()
+        assertEquals("entries-2025-05-01.pdf", saved.fileName)
+        assertEquals("application/pdf", saved.contentType)
+    }
+
+    @Test
+    fun exportRangeBeyondOneMonthIsBlocked() = runTest {
+        val timesheetRepository = FakeTimesheetRepository()
+        val runtime = fakeRuntime(timesheetRepository = timesheetRepository)
+        val viewModel = TimeboxxingViewModel(runtime)
+        advanceUntilIdle()
+
+        viewModel.dispatch(TimeboxxingAction.UpdateExportStartDate(CalendarDate(2025, 1, 1)))
+        viewModel.dispatch(TimeboxxingAction.UpdateExportEndDate(CalendarDate(2025, 3, 1)))
+        runCurrent()
+
+        assertFalse(viewModel.state.value.canExportEntries)
+        assertNotNull(viewModel.state.value.exportRangeError)
+
+        viewModel.dispatch(TimeboxxingAction.ExportEntries)
+        advanceUntilIdle()
+
+        assertEquals(0, timesheetRepository.rangeCalls.size)
+        assertEquals(0, runtime.timesheetExportFileWriter.savedExports.size)
+    }
 }
 
 private fun fakeRuntime(
@@ -533,6 +611,8 @@ private class FakeTimeboxxingRuntime(
     override val sidecarStatus = MutableStateFlow(sidecarStatus)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
     override val timesheetExportFileWriter = StaticTimesheetExportFileWriter()
+    override val entriesPdfRenderer = RecordingEntriesPdfRenderer()
+    override val entriesTemplateFileReader = RecordingEntriesTemplateFileReader()
     override val appUpdater = StaticAppUpdater()
     var restartCount = 0
 
@@ -551,6 +631,32 @@ private class FakeTimeboxxingRuntime(
     override suspend fun restartSidecar() {
         restartCount++
     }
+}
+
+private class RecordingEntriesPdfRenderer : EntriesPdfRenderer {
+    var lastModelJson: String? = null
+    var lastTemplate: String? = null
+    var renderCount = 0
+
+    override suspend fun render(
+        modelJson: String,
+        template: String?,
+        onProgress: (stage: PdfRenderStage, fraction: Float?) -> Unit,
+    ): ByteArray {
+        lastModelJson = modelJson
+        lastTemplate = template
+        renderCount++
+        onProgress(PdfRenderStage.Rendering, null)
+        return byteArrayOf(0x25, 0x50, 0x44, 0x46) // "%PDF"
+    }
+
+    override fun defaultTemplate(): String = "DEFAULT TEMPLATE"
+}
+
+private class RecordingEntriesTemplateFileReader(
+    private val file: TemplateFile? = null,
+) : EntriesTemplateFileReader {
+    override suspend fun open(): TemplateFile? = file
 }
 
 private class FakeUsageHistoryRepository(
@@ -672,10 +778,18 @@ private class FakeTimesheetRepository(
     var listCalls = 0
     private var nextEntryNumber = 1
 
+    val rangeCalls = mutableListOf<Pair<UsageDay, UsageDay>>()
+
     override suspend fun listEntries(day: UsageDay): List<TimeEntry> {
         listCalls++
         error?.let { throw it }
         return loadedEntries
+    }
+
+    override suspend fun listEntriesInRange(rangeStart: UsageDay, rangeEnd: UsageDay): List<RangedTimesheetDay> {
+        rangeCalls += rangeStart to rangeEnd
+        error?.let { throw it }
+        return listOf(RangedTimesheetDay(day = rangeStart, entries = loadedEntries))
     }
 
     override suspend fun createEntry(day: UsageDay, draft: TimesheetEntryDraft): TimeEntry {

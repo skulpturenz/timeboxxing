@@ -2,12 +2,19 @@ package com.timeboxxing.app.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.timeboxxing.data.repository.EntriesExportBuilder
+import com.timeboxxing.data.repository.entriesExportContentType
+import com.timeboxxing.data.repository.entriesExportFileName
 import com.timeboxxing.data.time.usageDayForCalendarDate
 import com.timeboxxing.domain.model.AiSettings
 import com.timeboxxing.domain.model.AmaStructuredQuery
 import com.timeboxxing.domain.model.AppearanceMode
+import com.timeboxxing.domain.model.CalendarDate
 import com.timeboxxing.domain.model.DatabasePruneRange
+import com.timeboxxing.domain.model.EntriesExportFormat
+import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimesheetEntryDraft
+import com.timeboxxing.domain.model.TimesheetExport
 import com.timeboxxing.domain.model.TimesheetExportFormat
 import com.timeboxxing.domain.model.UsageDay
 import com.timeboxxing.domain.model.plusDays
@@ -76,6 +83,7 @@ class TimeboxxingViewModel(
         val duplicateEntryToCreate = currentState.duplicateEntryToCreateFor(action)
         val entryToDelete = currentState.entryToDeleteFor(action)
         val timesheetToExport = currentState.timesheetToExportFor(action)
+        val entriesToExport = currentState.entriesToExportFor(action)
         val databasePrune = currentState.databasePruneRangeFor(action)
 
         reduce(action)
@@ -121,6 +129,15 @@ class TimeboxxingViewModel(
         }
         if (timesheetToExport != null) {
             exportTimesheet(currentRepositories.timesheetRepository, timesheetToExport)
+        }
+        if (entriesToExport != null) {
+            exportEntries(currentRepositories.timesheetRepository, entriesToExport)
+        }
+        if (action is TimeboxxingAction.ChooseExportTemplate) {
+            chooseExportTemplate()
+        }
+        if (action is TimeboxxingAction.DownloadDefaultTemplate) {
+            downloadDefaultTemplate()
         }
         if (databasePrune != null) {
             pruneDatabaseRange(
@@ -580,6 +597,101 @@ class TimeboxxingViewModel(
         }
     }
 
+    private fun exportEntries(repository: TimesheetRepository, request: EntriesExportRequest) {
+        viewModelScope.launch {
+            val exported = runCatching {
+                reduce(TimeboxxingAction.ExportEntriesProgress(0.05f, "Collecting entries"))
+                val days = repository.listEntriesInRange(request.rangeStartDay, request.rangeEndDay)
+                val model = EntriesExportBuilder.buildModel(
+                    days = days,
+                    projects = request.projects,
+                    rangeStart = request.rangeStart,
+                    rangeEnd = request.rangeEnd,
+                )
+                val content = when (request.format) {
+                    EntriesExportFormat.Json -> EntriesExportBuilder.encodeJson(model).encodeToByteArray()
+                    EntriesExportFormat.Csv -> EntriesExportBuilder.encodeCsv(model).encodeToByteArray()
+                    EntriesExportFormat.Pdf -> runtime.entriesPdfRenderer.render(
+                        modelJson = EntriesExportBuilder.encodeContextJson(model),
+                        template = request.template,
+                    ) { stage, fraction ->
+                        when (stage) {
+                            // Map the browser download (0..1) into a determinate slice of the export bar,
+                            // falling back to indeterminate (null) if the fraction isn't known yet.
+                            PdfRenderStage.DownloadingBrowser ->
+                                reduce(TimeboxxingAction.ExportEntriesProgress(
+                                    fraction?.let { 0.1f + 0.75f * it },
+                                    "Downloading browser (one-time setup)",
+                                ))
+                            PdfRenderStage.Rendering ->
+                                reduce(TimeboxxingAction.ExportEntriesProgress(0.9f, "Rendering PDF"))
+                        }
+                    }
+                }
+                reduce(TimeboxxingAction.ExportEntriesProgress(0.95f, "Saving"))
+                val export = TimesheetExport(
+                    fileName = entriesExportFileName(request.rangeStart, request.rangeEnd, request.format),
+                    contentType = entriesExportContentType(request.format),
+                    content = content,
+                )
+                export to runtime.timesheetExportFileWriter.save(export)
+            }
+            exported.fold(
+                onSuccess = { (export, destination) ->
+                    if (destination == null) {
+                        reduce(TimeboxxingAction.ExportEntriesCanceled)
+                    } else {
+                        reduce(TimeboxxingAction.ExportEntriesSucceeded(export.fileName))
+                    }
+                },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.ExportEntriesFailed(error.message ?: "Entries could not be exported."))
+                },
+            )
+        }
+    }
+
+    private fun chooseExportTemplate() {
+        viewModelScope.launch {
+            val opened = runCatching { runtime.entriesTemplateFileReader.open() }
+            opened.fold(
+                onSuccess = { file ->
+                    if (file != null) {
+                        reduce(TimeboxxingAction.ExportTemplateChosen(file.name, file.contents))
+                    }
+                },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.ExportEntriesFailed(error.message ?: "Template could not be opened."))
+                },
+            )
+        }
+    }
+
+    private fun downloadDefaultTemplate() {
+        viewModelScope.launch {
+            val saved = runCatching {
+                val export = TimesheetExport(
+                    fileName = "timeboxxing-template.hbs",
+                    contentType = "text/plain",
+                    content = runtime.entriesPdfRenderer.defaultTemplate().encodeToByteArray(),
+                )
+                export to runtime.timesheetExportFileWriter.save(export)
+            }
+            saved.fold(
+                onSuccess = { (export, destination) ->
+                    if (destination == null) {
+                        reduce(TimeboxxingAction.DownloadTemplateCanceled)
+                    } else {
+                        reduce(TimeboxxingAction.DownloadTemplateSucceeded(export.fileName))
+                    }
+                },
+                onFailure = { error ->
+                    reduce(TimeboxxingAction.DownloadTemplateFailed(error.message ?: "Template could not be saved."))
+                },
+            )
+        }
+    }
+
     private fun pruneDatabaseRange(
         settingsRepository: SettingsRepository,
         usageRepository: UsageHistoryRepository,
@@ -720,6 +832,16 @@ private data class DatabasePruneRequest(
     val day: UsageDay,
 )
 
+private data class EntriesExportRequest(
+    val rangeStart: CalendarDate,
+    val rangeEnd: CalendarDate,
+    val rangeStartDay: UsageDay,
+    val rangeEndDay: UsageDay,
+    val projects: List<Project>,
+    val format: EntriesExportFormat,
+    val template: String?,
+)
+
 private fun TimeboxxingScreenState.draftEntryToCreateFor(action: TimeboxxingAction): TimesheetEntryCreateRequest? {
     if (action != TimeboxxingAction.AddDraftEntry || entrySaving || !hasValidDraftProject()) return null
     return TimesheetEntryCreateRequest(
@@ -765,6 +887,21 @@ private fun TimeboxxingScreenState.timesheetToExportFor(action: TimeboxxingActio
     if (action !is TimeboxxingAction.ExportTimesheet) return null
     if (entries.isEmpty() || timesheetExporting) return null
     return TimesheetExportRequest(selectedDay, action.format)
+}
+
+private fun TimeboxxingScreenState.entriesToExportFor(action: TimeboxxingAction): EntriesExportRequest? {
+    if (action != TimeboxxingAction.ExportEntries || !canExportEntries) return null
+    val start = exportStartDate ?: return null
+    val end = exportEndDate ?: return null
+    return EntriesExportRequest(
+        rangeStart = start,
+        rangeEnd = end,
+        rangeStartDay = usageDayForCalendarDate(start),
+        rangeEndDay = usageDayForCalendarDate(end.plusDays(1)),
+        projects = projects,
+        format = exportFormat,
+        template = exportTemplateContents,
+    )
 }
 
 private fun TimeboxxingScreenState.databasePruneRangeFor(action: TimeboxxingAction): DatabasePruneRequest? {

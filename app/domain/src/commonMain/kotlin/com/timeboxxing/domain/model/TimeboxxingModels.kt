@@ -34,6 +34,13 @@ enum class TimesheetExportFormat {
     Csv,
 }
 
+/** Output formats for the multi-day entries export screen. [Pdf] renders a Handlebars template. */
+enum class EntriesExportFormat {
+    Json,
+    Csv,
+    Pdf,
+}
+
 enum class AmaMessageRole {
     User,
     Assistant,
@@ -98,6 +105,12 @@ data class TimesheetExport(
     val fileName: String,
     val contentType: String,
     val content: ByteArray,
+)
+
+/** Entries for a single day, as returned by a ranged timesheet query. */
+data class RangedTimesheetDay(
+    val day: UsageDay,
+    val entries: List<TimeEntry>,
 )
 
 data class EntryDraft(

@@ -40,6 +40,60 @@ class StaticTimesheetExportFileWriter : TimesheetExportFileWriter {
     }
 }
 
+/** A Handlebars template the user uploaded from disk. */
+data class TemplateFile(val name: String, val contents: String)
+
+/** Phases the PDF renderer reports so the UI can explain slow first-run browser setup. */
+enum class PdfRenderStage {
+    /** The headless browser is being downloaded (one-time, first use). Can take a while. */
+    DownloadingBrowser,
+    /** The browser is ready and the page is being rendered to PDF. */
+    Rendering,
+}
+
+/**
+ * Renders the entries export model (as JSON) through a Handlebars template into PDF bytes. The
+ * real implementation lives on the desktop (Handlebars + a bundled headless Chromium).
+ */
+interface EntriesPdfRenderer {
+    /**
+     * Renders [modelJson] through [template] (or the built-in default when null). [onProgress]
+     * reports the current phase and, for [PdfRenderStage.DownloadingBrowser], a 0..1 download
+     * fraction (or null when the fraction is not yet known) so the UI can show a determinate
+     * "downloading browser" bar on first use.
+     */
+    suspend fun render(
+        modelJson: String,
+        template: String?,
+        onProgress: (stage: PdfRenderStage, fraction: Float?) -> Unit,
+    ): ByteArray
+
+    /** The bundled default template, used for the "download default template" action. */
+    fun defaultTemplate(): String
+}
+
+/** Opens a native file picker so the user can upload a custom Handlebars template. */
+interface EntriesTemplateFileReader {
+    suspend fun open(): TemplateFile?
+}
+
+class StaticEntriesPdfRenderer : EntriesPdfRenderer {
+    override suspend fun render(
+        modelJson: String,
+        template: String?,
+        onProgress: (stage: PdfRenderStage, fraction: Float?) -> Unit,
+    ): ByteArray {
+        onProgress(PdfRenderStage.Rendering, null)
+        return (template ?: defaultTemplate()).encodeToByteArray()
+    }
+
+    override fun defaultTemplate(): String = "PDF export is unavailable in preview."
+}
+
+class StaticEntriesTemplateFileReader : EntriesTemplateFileReader {
+    override suspend fun open(): TemplateFile? = null
+}
+
 sealed interface TimeboxxingSidecarStatus {
     data object Starting : TimeboxxingSidecarStatus
     data object Ready : TimeboxxingSidecarStatus
@@ -67,6 +121,8 @@ interface TimeboxxingRuntime {
     val sidecarStatus: StateFlow<TimeboxxingSidecarStatus>
     val diagnosticsLogs: StateFlow<List<DiagnosticsLogLine>>
     val timesheetExportFileWriter: TimesheetExportFileWriter
+    val entriesPdfRenderer: EntriesPdfRenderer
+    val entriesTemplateFileReader: EntriesTemplateFileReader
     val appUpdater: AppUpdater
 
     suspend fun setAppearanceMode(mode: AppearanceMode)
@@ -103,6 +159,8 @@ class StaticTimeboxxingRuntime(
     override val sidecarStatus = MutableStateFlow<TimeboxxingSidecarStatus>(TimeboxxingSidecarStatus.Ready)
     override val diagnosticsLogs = MutableStateFlow(emptyList<DiagnosticsLogLine>())
     override val timesheetExportFileWriter = StaticTimesheetExportFileWriter()
+    override val entriesPdfRenderer: EntriesPdfRenderer = StaticEntriesPdfRenderer()
+    override val entriesTemplateFileReader: EntriesTemplateFileReader = StaticEntriesTemplateFileReader()
     override val appUpdater: AppUpdater = StaticAppUpdater()
 
     override suspend fun setAppearanceMode(mode: AppearanceMode) {

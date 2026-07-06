@@ -25,6 +25,8 @@ dependencies {
     implementation(libs.kotlinx.serializationJson)
     implementation(libs.sentry)
     implementation(libs.jna)
+    implementation(libs.handlebars)
+    implementation(libs.playwright)
 
     implementation(libs.compose.uiToolingPreview)
 }
@@ -148,6 +150,15 @@ kotlin {
     }
 }
 
+// The packager reuses desktopApp's Kotlin sources (above) but not its module, so its classpath
+// resources (e.g. the PDF export template + vendored Tailwind runtime) must be bundled explicitly,
+// or they are missing from the installer and the app crashes at startup trying to load them.
+sourceSets {
+    main {
+        resources.srcDir(rootProject.layout.projectDirectory.dir("../app/desktopApp/src/main/resources"))
+    }
+}
+
 tasks.named("compileKotlin") {
     dependsOn(generateDesktopBuildConfig)
 }
@@ -207,7 +218,12 @@ compose.desktop {
             // java.net.http.HttpClient (java.net.http), which loads at startup, and reaches GitHub
             // over HTTPS with ECDHE cipher suites (jdk.crypto.ec) — neither is in the default set,
             // so both must be requested explicitly or the app crashes on launch / TLS handshake.
-            modules("java.net.http", "jdk.crypto.ec")
+            // jdk.zipfs provides the "jar" filesystem provider Playwright's driver uses to unpack
+            // itself; without it PDF export fails with 'ProviderNotFoundException: Provider "jar"'.
+            // jdk.unsupported provides sun.misc.Unsafe, which gson (bundled by Playwright) needs to
+            // instantiate no-arg-less option types like ViewportSize during a render; without it PDF
+            // export fails with 'Unable to create instance of class ...ViewportSize'.
+            modules("java.net.http", "jdk.crypto.ec", "jdk.zipfs", "jdk.unsupported")
 
             macOS {
                 bundleID = "com.skulpture.timeboxxing"

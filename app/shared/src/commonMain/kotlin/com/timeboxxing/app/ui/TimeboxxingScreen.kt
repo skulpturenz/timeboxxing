@@ -88,6 +88,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Minimize
@@ -111,7 +112,11 @@ import com.timeboxxing.domain.model.AmaUsageTimeline
 import com.timeboxxing.domain.model.AmaUsageTimelineEvent
 import com.timeboxxing.domain.model.CalendarDate
 import com.timeboxxing.domain.model.DiagnosticsLogLine
+import com.timeboxxing.domain.model.daysBetweenInclusive
 import com.timeboxxing.domain.model.formatClockTime
+import com.timeboxxing.domain.model.isoLabel
+import com.timeboxxing.domain.model.maxCalendarDate
+import com.timeboxxing.domain.model.minCalendarDate
 import com.timeboxxing.domain.model.plusDays
 import com.timeboxxing.app.presentation.TimeboxxingAction
 import com.timeboxxing.app.presentation.TimeboxxingScreenState
@@ -276,6 +281,12 @@ fun TimeboxxingScreen(
                             WorkspaceLayout.Compact -> TabbedWorkspace(state, onAction, usageIconLoader, scheduleScrollState)
                         }
                     }
+
+                    TimeboxxingSection.Export -> ExportPane(
+                        state = state,
+                        onAction = onAction,
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
                     TimeboxxingSection.Ama -> AmaPane(
                         state = state,
@@ -3105,25 +3116,6 @@ private fun amaLimitOptionsFor(kind: AmaQueryKind): List<Int> =
         listOf(5, 10, 20)
     }
 
-private fun CalendarDate.isoLabel(): String =
-    "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${dayOfMonth.toString().padStart(2, '0')}"
-
-private fun minCalendarDate(first: CalendarDate, second: CalendarDate): CalendarDate =
-    if (first <= second) first else second
-
-private fun maxCalendarDate(first: CalendarDate, second: CalendarDate): CalendarDate =
-    if (first >= second) first else second
-
-private fun daysBetweenInclusive(start: CalendarDate, end: CalendarDate): Int {
-    var cursor = start
-    var count = 1
-    while (cursor < end) {
-        cursor = cursor.plusDays(1)
-        count += 1
-    }
-    return count
-}
-
 @Composable
 private fun AmaFreeformComposer(
     value: String,
@@ -3225,6 +3217,7 @@ private val OverviewPane.icon: ImageVector
 private val TimeboxxingSection.label: String
     get() = when (this) {
         TimeboxxingSection.Overview -> "Overview"
+        TimeboxxingSection.Export -> "Export"
         TimeboxxingSection.Ama -> "AMA"
         TimeboxxingSection.Diagnostics -> "Diagnostics"
         TimeboxxingSection.Settings -> "Settings"
@@ -3233,6 +3226,7 @@ private val TimeboxxingSection.label: String
 private val TimeboxxingSection.icon: ImageVector
     get() = when (this) {
         TimeboxxingSection.Overview -> Icons.Rounded.Dashboard
+        TimeboxxingSection.Export -> Icons.Rounded.FileDownload
         TimeboxxingSection.Ama -> Icons.Rounded.QuestionAnswer
         TimeboxxingSection.Diagnostics -> Icons.Rounded.BugReport
         TimeboxxingSection.Settings -> Icons.Rounded.Settings
