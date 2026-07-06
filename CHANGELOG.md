@@ -4,7 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[d0df1a3](d0df1a370cca3ad119b8f4d62eb4edc00fd7bb9e)...[de6d2b9](de6d2b913a30ca8b00da8520b19b23754246857d)
+[225a5e3](225a5e387fac4f76eb93f72b71a28de0d7c92e34)...[f1fd4d0](f1fd4d0aab0b0f1db2286684d1f20e009019158c)
+
+### Features
+
+- Mvp vibe slop - allow exporting in bulk and as a pdf. pdfs are generated from handlebar templates which are rendered in Chrome with tailwind (vendored) available for styling. chrome is lazy loaded and cached so that the installer doesn't bloat ([dc0eeb3](dc0eeb308d72fcf56bd0557863460ccaa69e9636))
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - fix installer build ([d4e3972](d4e39722b8bd94063a6335b676d44d0638f6dbe4))
+- Mvp vibe slop - fix crash after installing, missing runtime libraries in build ([48d7ac0](48d7ac0f65ddd2d6e146395744f1c2feab2d37f3))
+- V0.0.1-14 (#21) ([f1fd4d0](f1fd4d0aab0b0f1db2286684d1f20e009019158c))
+
+## 0.0.1-13 - 2026-07-05
+
+[d0df1a3](d0df1a370cca3ad119b8f4d62eb4edc00fd7bb9e)...[225a5e3](225a5e387fac4f76eb93f72b71a28de0d7c92e34)
 
 ### Miscellaneous Tasks
 
