@@ -226,6 +226,86 @@ func TestExportTimesheetJSONAndCSV(t *testing.T) {
 	}
 }
 
+func TestListTimesheetEntriesInRangeGroupsByDay(t *testing.T) {
+	ctx := context.Background()
+	server, _, cleanup := newTestTimesheetsServer(t, ctx)
+	defer cleanup()
+
+	day1Start := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	day3Start := time.Date(2025, 5, 3, 0, 0, 0, 0, time.UTC)
+
+	// Two entries on day 1 (out of clock order) and one on day 3.
+	if _, err := server.CreateTimesheetEntry(ctx, &timesheetsv1.CreateTimesheetEntryRequest{
+		DayStartedAt:    timestamppb.New(day1Start),
+		DayEndedAt:      timestamppb.New(day1Start.Add(24 * time.Hour)),
+		Title:           "Afternoon",
+		StartMinute:     14 * 60,
+		DurationMinutes: 30,
+		Billable:        true,
+	}); err != nil {
+		t.Fatalf("create day1 afternoon: %v", err)
+	}
+	if _, err := server.CreateTimesheetEntry(ctx, &timesheetsv1.CreateTimesheetEntryRequest{
+		DayStartedAt:    timestamppb.New(day1Start),
+		DayEndedAt:      timestamppb.New(day1Start.Add(24 * time.Hour)),
+		Title:           "Morning",
+		StartMinute:     9 * 60,
+		DurationMinutes: 30,
+		Billable:        true,
+	}); err != nil {
+		t.Fatalf("create day1 morning: %v", err)
+	}
+	if _, err := server.CreateTimesheetEntry(ctx, &timesheetsv1.CreateTimesheetEntryRequest{
+		DayStartedAt:    timestamppb.New(day3Start),
+		DayEndedAt:      timestamppb.New(day3Start.Add(24 * time.Hour)),
+		Title:           "Later day",
+		StartMinute:     10 * 60,
+		DurationMinutes: 60,
+		Billable:        false,
+	}); err != nil {
+		t.Fatalf("create day3 entry: %v", err)
+	}
+
+	resp, err := server.ListTimesheetEntriesInRange(ctx, &timesheetsv1.ListTimesheetEntriesInRangeRequest{
+		RangeStartedAt: timestamppb.New(day1Start),
+		RangeEndedAt:   timestamppb.New(time.Date(2025, 5, 4, 0, 0, 0, 0, time.UTC)),
+	})
+	if err != nil {
+		t.Fatalf("list in range: %v", err)
+	}
+	if len(resp.GetDays()) != 2 {
+		t.Fatalf("expected 2 days (empty day 2 omitted), got %d", len(resp.GetDays()))
+	}
+	first := resp.GetDays()[0]
+	if !first.GetDayStartedAt().AsTime().Equal(day1Start) {
+		t.Fatalf("expected first day %v, got %v", day1Start, first.GetDayStartedAt().AsTime())
+	}
+	if len(first.GetEntries()) != 2 {
+		t.Fatalf("expected 2 entries on day 1, got %d", len(first.GetEntries()))
+	}
+	if first.GetEntries()[0].GetTitle() != "Morning" || first.GetEntries()[1].GetTitle() != "Afternoon" {
+		t.Fatalf("entries not ordered by start minute: %q, %q", first.GetEntries()[0].GetTitle(), first.GetEntries()[1].GetTitle())
+	}
+	second := resp.GetDays()[1]
+	if !second.GetDayStartedAt().AsTime().Equal(day3Start) || len(second.GetEntries()) != 1 {
+		t.Fatalf("unexpected second day: %v with %d entries", second.GetDayStartedAt().AsTime(), len(second.GetEntries()))
+	}
+}
+
+func TestListTimesheetEntriesInRangeRejectsInvalidWindow(t *testing.T) {
+	ctx := context.Background()
+	server, _, cleanup := newTestTimesheetsServer(t, ctx)
+	defer cleanup()
+
+	start := time.Date(2025, 5, 5, 0, 0, 0, 0, time.UTC)
+	if _, err := server.ListTimesheetEntriesInRange(ctx, &timesheetsv1.ListTimesheetEntriesInRangeRequest{
+		RangeStartedAt: timestamppb.New(start),
+		RangeEndedAt:   timestamppb.New(start),
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected invalid argument for non-positive window, got %v", err)
+	}
+}
+
 func newTestTimesheetsServer(t *testing.T, ctx context.Context) (*Server, *db.Database, func()) {
 	t.Helper()
 

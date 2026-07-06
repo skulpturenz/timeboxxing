@@ -1,5 +1,6 @@
 package com.timeboxxing.data.repository
 
+import com.timeboxxing.domain.model.RangedTimesheetDay
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetEntryDraft
 import com.timeboxxing.domain.model.TimesheetExport
@@ -22,6 +23,24 @@ class StaticTimesheetRepository(
 
     override suspend fun listEntries(day: UsageDay): List<TimeEntry> =
         entriesFor(day).toList()
+
+    override suspend fun listEntriesInRange(rangeStart: UsageDay, rangeEnd: UsageDay): List<RangedTimesheetDay> {
+        val startMillis = rangeStart.startedAtEpochMillis
+        val endMillis = rangeEnd.startedAtEpochMillis
+        return entriesByDay
+            .filterKeys { it in startMillis until endMillis }
+            .toSortedMap()
+            .map { (dayStart, entries) ->
+                RangedTimesheetDay(
+                    day = UsageDay(
+                        label = "",
+                        startedAtEpochMillis = dayStart,
+                        endedAtEpochMillis = dayStart + MillisPerDay,
+                    ),
+                    entries = entries.toList(),
+                )
+            }
+    }
 
     override suspend fun createEntry(day: UsageDay, draft: TimesheetEntryDraft): TimeEntry {
         val entry = TimeEntry(
@@ -70,6 +89,10 @@ class UnavailableTimesheetRepository(
     private val message: String,
 ) : TimesheetRepository {
     override suspend fun listEntries(day: UsageDay): List<TimeEntry> {
+        throw IllegalStateException(message)
+    }
+
+    override suspend fun listEntriesInRange(rangeStart: UsageDay, rangeEnd: UsageDay): List<RangedTimesheetDay> {
         throw IllegalStateException(message)
     }
 
@@ -157,3 +180,4 @@ private fun csvEscape(value: String): String {
 }
 
 private const val MillisPerMinute = 60_000L
+private const val MillisPerDay = 24L * 60 * 60 * 1_000

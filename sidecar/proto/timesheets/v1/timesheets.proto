@@ -10,6 +10,7 @@ option java_package = "com.timeboxxing.sidecar.timesheets.v1";
 
 service TimesheetsService {
   rpc ListTimesheetEntries(ListTimesheetEntriesRequest) returns (ListTimesheetEntriesResponse);
+  rpc ListTimesheetEntriesInRange(ListTimesheetEntriesInRangeRequest) returns (ListTimesheetEntriesInRangeResponse);
   rpc CreateTimesheetEntry(CreateTimesheetEntryRequest) returns (TimesheetEntry);
   rpc DeleteTimesheetEntry(DeleteTimesheetEntryRequest) returns (DeleteTimesheetEntryResponse);
   rpc ExportTimesheet(ExportTimesheetRequest) returns (ExportTimesheetResponse);
@@ -33,6 +34,23 @@ message ListTimesheetEntriesRequest {
 
 message ListTimesheetEntriesResponse {
   repeated TimesheetEntry entries = 1;
+}
+
+message ListTimesheetEntriesInRangeRequest {
+  // Inclusive lower bound: 00:00 of the first day in the range.
+  google.protobuf.Timestamp range_started_at = 1;
+  // Exclusive upper bound: 00:00 of the day after the last day in the range.
+  google.protobuf.Timestamp range_ended_at = 2;
+}
+
+message ListTimesheetEntriesInRangeResponse {
+  repeated RangedTimesheetDay days = 1;
+}
+
+message RangedTimesheetDay {
+  google.protobuf.Timestamp day_started_at = 1;
+  google.protobuf.Timestamp day_ended_at = 2;
+  repeated TimesheetEntry entries = 3;
 }
 
 message CreateTimesheetEntryRequest {

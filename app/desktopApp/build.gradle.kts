@@ -64,6 +64,8 @@ dependencies {
     implementation(libs.kotlinx.serializationJson)
     implementation(libs.sentry)
     implementation(libs.jna)
+    implementation(libs.handlebars)
+    implementation(libs.playwright)
 
     implementation(libs.compose.uiToolingPreview)
 

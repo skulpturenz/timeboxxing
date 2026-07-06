@@ -20,6 +20,7 @@ import com.timeboxxing.domain.model.DatabaseMaintenanceStatus
 import com.timeboxxing.domain.model.DatabasePruneCounts
 import com.timeboxxing.domain.model.DatabasePruneResult
 import com.timeboxxing.domain.model.DatabaseVacuumResult
+import com.timeboxxing.domain.model.EntriesExportFormat
 import com.timeboxxing.domain.model.Project
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetExportFormat
@@ -50,6 +51,8 @@ import com.timeboxxing.app.ui.ProjectPaletteColorOptions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.math.abs
 import kotlin.math.max
@@ -213,7 +216,10 @@ class TimeboxxingReducerTest {
         assertFalse(initial.isAmaConfigured)
         assertFalse(TimeboxxingSection.Ama in initial.visibleNavigationSections)
         assertFalse(TimeboxxingSection.Diagnostics in initial.visibleNavigationSections)
-        assertEquals(listOf(TimeboxxingSection.Overview, TimeboxxingSection.Settings), initial.visibleNavigationSections)
+        assertEquals(
+            listOf(TimeboxxingSection.Overview, TimeboxxingSection.Export, TimeboxxingSection.Settings),
+            initial.visibleNavigationSections,
+        )
     }
 
     @Test
@@ -223,7 +229,12 @@ class TimeboxxingReducerTest {
 
         assertFalse(TimeboxxingSection.Diagnostics in disabled.visibleNavigationSections)
         assertEquals(
-            listOf(TimeboxxingSection.Overview, TimeboxxingSection.Diagnostics, TimeboxxingSection.Settings),
+            listOf(
+                TimeboxxingSection.Overview,
+                TimeboxxingSection.Export,
+                TimeboxxingSection.Diagnostics,
+                TimeboxxingSection.Settings,
+            ),
             enabled.visibleNavigationSections,
         )
     }
@@ -260,12 +271,49 @@ class TimeboxxingReducerTest {
         assertEquals(
             listOf(
                 TimeboxxingSection.Overview,
+                TimeboxxingSection.Export,
                 TimeboxxingSection.Ama,
                 TimeboxxingSection.Diagnostics,
                 TimeboxxingSection.Settings,
             ),
             state.visibleNavigationSections,
         )
+    }
+
+    @Test
+    fun exportRangeValidatesOrderAndOneMonthCap() {
+        val base = createInitialTimeboxxingState()
+
+        val valid = reduceTimeboxxingState(
+            reduceTimeboxxingState(base, TimeboxxingAction.UpdateExportStartDate(CalendarDate(2025, 5, 1))),
+            TimeboxxingAction.UpdateExportEndDate(CalendarDate(2025, 5, 10)),
+        )
+        assertNull(valid.exportRangeError)
+        assertTrue(valid.canExportEntries)
+
+        val reversed = reduceTimeboxxingState(valid, TimeboxxingAction.UpdateExportEndDate(CalendarDate(2025, 4, 1)))
+        assertNotNull(reversed.exportRangeError)
+        assertFalse(reversed.canExportEntries)
+
+        val tooLong = reduceTimeboxxingState(valid, TimeboxxingAction.UpdateExportEndDate(CalendarDate(2025, 7, 1)))
+        assertNotNull(tooLong.exportRangeError)
+        assertFalse(tooLong.canExportEntries)
+    }
+
+    @Test
+    fun selectingFormatAndTemplateUpdatesState() {
+        val base = createInitialTimeboxxingState()
+
+        val pdf = reduceTimeboxxingState(base, TimeboxxingAction.SelectEntriesExportFormat(EntriesExportFormat.Pdf))
+        assertEquals(EntriesExportFormat.Pdf, pdf.exportFormat)
+
+        val chosen = reduceTimeboxxingState(pdf, TimeboxxingAction.ExportTemplateChosen("invoice.hbs", "<html></html>"))
+        assertEquals("invoice.hbs", chosen.exportTemplateName)
+        assertEquals("<html></html>", chosen.exportTemplateContents)
+
+        val cleared = reduceTimeboxxingState(chosen, TimeboxxingAction.ClearExportTemplate)
+        assertNull(cleared.exportTemplateName)
+        assertNull(cleared.exportTemplateContents)
     }
 
     @Test

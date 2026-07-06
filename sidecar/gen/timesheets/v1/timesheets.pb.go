@@ -267,6 +267,164 @@ func (x *ListTimesheetEntriesResponse) GetEntries() []*TimesheetEntry {
 	return nil
 }
 
+type ListTimesheetEntriesInRangeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Inclusive lower bound: 00:00 of the first day in the range.
+	RangeStartedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=range_started_at,json=rangeStartedAt,proto3" json:"range_started_at,omitempty"`
+	// Exclusive upper bound: 00:00 of the day after the last day in the range.
+	RangeEndedAt  *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=range_ended_at,json=rangeEndedAt,proto3" json:"range_ended_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTimesheetEntriesInRangeRequest) Reset() {
+	*x = ListTimesheetEntriesInRangeRequest{}
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTimesheetEntriesInRangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTimesheetEntriesInRangeRequest) ProtoMessage() {}
+
+func (x *ListTimesheetEntriesInRangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTimesheetEntriesInRangeRequest.ProtoReflect.Descriptor instead.
+func (*ListTimesheetEntriesInRangeRequest) Descriptor() ([]byte, []int) {
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ListTimesheetEntriesInRangeRequest) GetRangeStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RangeStartedAt
+	}
+	return nil
+}
+
+func (x *ListTimesheetEntriesInRangeRequest) GetRangeEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RangeEndedAt
+	}
+	return nil
+}
+
+type ListTimesheetEntriesInRangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Days          []*RangedTimesheetDay  `protobuf:"bytes,1,rep,name=days,proto3" json:"days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTimesheetEntriesInRangeResponse) Reset() {
+	*x = ListTimesheetEntriesInRangeResponse{}
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTimesheetEntriesInRangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTimesheetEntriesInRangeResponse) ProtoMessage() {}
+
+func (x *ListTimesheetEntriesInRangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTimesheetEntriesInRangeResponse.ProtoReflect.Descriptor instead.
+func (*ListTimesheetEntriesInRangeResponse) Descriptor() ([]byte, []int) {
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ListTimesheetEntriesInRangeResponse) GetDays() []*RangedTimesheetDay {
+	if x != nil {
+		return x.Days
+	}
+	return nil
+}
+
+type RangedTimesheetDay struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DayStartedAt  *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=day_started_at,json=dayStartedAt,proto3" json:"day_started_at,omitempty"`
+	DayEndedAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=day_ended_at,json=dayEndedAt,proto3" json:"day_ended_at,omitempty"`
+	Entries       []*TimesheetEntry      `protobuf:"bytes,3,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RangedTimesheetDay) Reset() {
+	*x = RangedTimesheetDay{}
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RangedTimesheetDay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RangedTimesheetDay) ProtoMessage() {}
+
+func (x *RangedTimesheetDay) ProtoReflect() protoreflect.Message {
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RangedTimesheetDay.ProtoReflect.Descriptor instead.
+func (*RangedTimesheetDay) Descriptor() ([]byte, []int) {
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RangedTimesheetDay) GetDayStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DayStartedAt
+	}
+	return nil
+}
+
+func (x *RangedTimesheetDay) GetDayEndedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DayEndedAt
+	}
+	return nil
+}
+
+func (x *RangedTimesheetDay) GetEntries() []*TimesheetEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
 type CreateTimesheetEntryRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	DayStartedAt    *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=day_started_at,json=dayStartedAt,proto3" json:"day_started_at,omitempty"`
@@ -284,7 +442,7 @@ type CreateTimesheetEntryRequest struct {
 
 func (x *CreateTimesheetEntryRequest) Reset() {
 	*x = CreateTimesheetEntryRequest{}
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[3]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -296,7 +454,7 @@ func (x *CreateTimesheetEntryRequest) String() string {
 func (*CreateTimesheetEntryRequest) ProtoMessage() {}
 
 func (x *CreateTimesheetEntryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[3]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -309,7 +467,7 @@ func (x *CreateTimesheetEntryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTimesheetEntryRequest.ProtoReflect.Descriptor instead.
 func (*CreateTimesheetEntryRequest) Descriptor() ([]byte, []int) {
-	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{3}
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateTimesheetEntryRequest) GetDayStartedAt() *timestamppb.Timestamp {
@@ -384,7 +542,7 @@ type DeleteTimesheetEntryRequest struct {
 
 func (x *DeleteTimesheetEntryRequest) Reset() {
 	*x = DeleteTimesheetEntryRequest{}
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[4]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -396,7 +554,7 @@ func (x *DeleteTimesheetEntryRequest) String() string {
 func (*DeleteTimesheetEntryRequest) ProtoMessage() {}
 
 func (x *DeleteTimesheetEntryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[4]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -409,7 +567,7 @@ func (x *DeleteTimesheetEntryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTimesheetEntryRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTimesheetEntryRequest) Descriptor() ([]byte, []int) {
-	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{4}
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DeleteTimesheetEntryRequest) GetId() string {
@@ -427,7 +585,7 @@ type DeleteTimesheetEntryResponse struct {
 
 func (x *DeleteTimesheetEntryResponse) Reset() {
 	*x = DeleteTimesheetEntryResponse{}
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[5]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -439,7 +597,7 @@ func (x *DeleteTimesheetEntryResponse) String() string {
 func (*DeleteTimesheetEntryResponse) ProtoMessage() {}
 
 func (x *DeleteTimesheetEntryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[5]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -452,7 +610,7 @@ func (x *DeleteTimesheetEntryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTimesheetEntryResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTimesheetEntryResponse) Descriptor() ([]byte, []int) {
-	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{5}
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{8}
 }
 
 type ExportTimesheetRequest struct {
@@ -466,7 +624,7 @@ type ExportTimesheetRequest struct {
 
 func (x *ExportTimesheetRequest) Reset() {
 	*x = ExportTimesheetRequest{}
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[6]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -478,7 +636,7 @@ func (x *ExportTimesheetRequest) String() string {
 func (*ExportTimesheetRequest) ProtoMessage() {}
 
 func (x *ExportTimesheetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[6]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -491,7 +649,7 @@ func (x *ExportTimesheetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportTimesheetRequest.ProtoReflect.Descriptor instead.
 func (*ExportTimesheetRequest) Descriptor() ([]byte, []int) {
-	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{6}
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ExportTimesheetRequest) GetDayStartedAt() *timestamppb.Timestamp {
@@ -526,7 +684,7 @@ type ExportTimesheetResponse struct {
 
 func (x *ExportTimesheetResponse) Reset() {
 	*x = ExportTimesheetResponse{}
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[7]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -538,7 +696,7 @@ func (x *ExportTimesheetResponse) String() string {
 func (*ExportTimesheetResponse) ProtoMessage() {}
 
 func (x *ExportTimesheetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_timesheets_v1_timesheets_proto_msgTypes[7]
+	mi := &file_timesheets_v1_timesheets_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -551,7 +709,7 @@ func (x *ExportTimesheetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportTimesheetResponse.ProtoReflect.Descriptor instead.
 func (*ExportTimesheetResponse) Descriptor() ([]byte, []int) {
-	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{7}
+	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ExportTimesheetResponse) GetFileName() string {
@@ -595,7 +753,17 @@ const file_timesheets_v1_timesheets_proto_rawDesc = "" +
 	"\fday_ended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"dayEndedAt\"W\n" +
 	"\x1cListTimesheetEntriesResponse\x127\n" +
-	"\aentries\x18\x01 \x03(\v2\x1d.timesheets.v1.TimesheetEntryR\aentries\"\xfc\x02\n" +
+	"\aentries\x18\x01 \x03(\v2\x1d.timesheets.v1.TimesheetEntryR\aentries\"\xac\x01\n" +
+	"\"ListTimesheetEntriesInRangeRequest\x12D\n" +
+	"\x10range_started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0erangeStartedAt\x12@\n" +
+	"\x0erange_ended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\frangeEndedAt\"\\\n" +
+	"#ListTimesheetEntriesInRangeResponse\x125\n" +
+	"\x04days\x18\x01 \x03(\v2!.timesheets.v1.RangedTimesheetDayR\x04days\"\xcd\x01\n" +
+	"\x12RangedTimesheetDay\x12@\n" +
+	"\x0eday_started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\fdayStartedAt\x12<\n" +
+	"\fday_ended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"dayEndedAt\x127\n" +
+	"\aentries\x18\x03 \x03(\v2\x1d.timesheets.v1.TimesheetEntryR\aentries\"\xfc\x02\n" +
 	"\x1bCreateTimesheetEntryRequest\x12@\n" +
 	"\x0eday_started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\fdayStartedAt\x12<\n" +
 	"\fday_ended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
@@ -623,9 +791,10 @@ const file_timesheets_v1_timesheets_proto_rawDesc = "" +
 	"\x15TimesheetExportFormat\x12'\n" +
 	"#TIMESHEET_EXPORT_FORMAT_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cTIMESHEET_EXPORT_FORMAT_JSON\x10\x01\x12\x1f\n" +
-	"\x1bTIMESHEET_EXPORT_FORMAT_CSV\x10\x022\xba\x03\n" +
+	"\x1bTIMESHEET_EXPORT_FORMAT_CSV\x10\x022\xc1\x04\n" +
 	"\x11TimesheetsService\x12o\n" +
-	"\x14ListTimesheetEntries\x12*.timesheets.v1.ListTimesheetEntriesRequest\x1a+.timesheets.v1.ListTimesheetEntriesResponse\x12a\n" +
+	"\x14ListTimesheetEntries\x12*.timesheets.v1.ListTimesheetEntriesRequest\x1a+.timesheets.v1.ListTimesheetEntriesResponse\x12\x84\x01\n" +
+	"\x1bListTimesheetEntriesInRange\x121.timesheets.v1.ListTimesheetEntriesInRangeRequest\x1a2.timesheets.v1.ListTimesheetEntriesInRangeResponse\x12a\n" +
 	"\x14CreateTimesheetEntry\x12*.timesheets.v1.CreateTimesheetEntryRequest\x1a\x1d.timesheets.v1.TimesheetEntry\x12o\n" +
 	"\x14DeleteTimesheetEntry\x12*.timesheets.v1.DeleteTimesheetEntryRequest\x1a+.timesheets.v1.DeleteTimesheetEntryResponse\x12`\n" +
 	"\x0fExportTimesheet\x12%.timesheets.v1.ExportTimesheetRequest\x1a&.timesheets.v1.ExportTimesheetResponseB\xc4\x01\n" +
@@ -644,41 +813,52 @@ func file_timesheets_v1_timesheets_proto_rawDescGZIP() []byte {
 }
 
 var file_timesheets_v1_timesheets_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_timesheets_v1_timesheets_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_timesheets_v1_timesheets_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_timesheets_v1_timesheets_proto_goTypes = []any{
-	(TimesheetExportFormat)(0),           // 0: timesheets.v1.TimesheetExportFormat
-	(*TimesheetEntry)(nil),               // 1: timesheets.v1.TimesheetEntry
-	(*ListTimesheetEntriesRequest)(nil),  // 2: timesheets.v1.ListTimesheetEntriesRequest
-	(*ListTimesheetEntriesResponse)(nil), // 3: timesheets.v1.ListTimesheetEntriesResponse
-	(*CreateTimesheetEntryRequest)(nil),  // 4: timesheets.v1.CreateTimesheetEntryRequest
-	(*DeleteTimesheetEntryRequest)(nil),  // 5: timesheets.v1.DeleteTimesheetEntryRequest
-	(*DeleteTimesheetEntryResponse)(nil), // 6: timesheets.v1.DeleteTimesheetEntryResponse
-	(*ExportTimesheetRequest)(nil),       // 7: timesheets.v1.ExportTimesheetRequest
-	(*ExportTimesheetResponse)(nil),      // 8: timesheets.v1.ExportTimesheetResponse
-	(*timestamppb.Timestamp)(nil),        // 9: google.protobuf.Timestamp
+	(TimesheetExportFormat)(0),                  // 0: timesheets.v1.TimesheetExportFormat
+	(*TimesheetEntry)(nil),                      // 1: timesheets.v1.TimesheetEntry
+	(*ListTimesheetEntriesRequest)(nil),         // 2: timesheets.v1.ListTimesheetEntriesRequest
+	(*ListTimesheetEntriesResponse)(nil),        // 3: timesheets.v1.ListTimesheetEntriesResponse
+	(*ListTimesheetEntriesInRangeRequest)(nil),  // 4: timesheets.v1.ListTimesheetEntriesInRangeRequest
+	(*ListTimesheetEntriesInRangeResponse)(nil), // 5: timesheets.v1.ListTimesheetEntriesInRangeResponse
+	(*RangedTimesheetDay)(nil),                  // 6: timesheets.v1.RangedTimesheetDay
+	(*CreateTimesheetEntryRequest)(nil),         // 7: timesheets.v1.CreateTimesheetEntryRequest
+	(*DeleteTimesheetEntryRequest)(nil),         // 8: timesheets.v1.DeleteTimesheetEntryRequest
+	(*DeleteTimesheetEntryResponse)(nil),        // 9: timesheets.v1.DeleteTimesheetEntryResponse
+	(*ExportTimesheetRequest)(nil),              // 10: timesheets.v1.ExportTimesheetRequest
+	(*ExportTimesheetResponse)(nil),             // 11: timesheets.v1.ExportTimesheetResponse
+	(*timestamppb.Timestamp)(nil),               // 12: google.protobuf.Timestamp
 }
 var file_timesheets_v1_timesheets_proto_depIdxs = []int32{
-	9,  // 0: timesheets.v1.ListTimesheetEntriesRequest.day_started_at:type_name -> google.protobuf.Timestamp
-	9,  // 1: timesheets.v1.ListTimesheetEntriesRequest.day_ended_at:type_name -> google.protobuf.Timestamp
+	12, // 0: timesheets.v1.ListTimesheetEntriesRequest.day_started_at:type_name -> google.protobuf.Timestamp
+	12, // 1: timesheets.v1.ListTimesheetEntriesRequest.day_ended_at:type_name -> google.protobuf.Timestamp
 	1,  // 2: timesheets.v1.ListTimesheetEntriesResponse.entries:type_name -> timesheets.v1.TimesheetEntry
-	9,  // 3: timesheets.v1.CreateTimesheetEntryRequest.day_started_at:type_name -> google.protobuf.Timestamp
-	9,  // 4: timesheets.v1.CreateTimesheetEntryRequest.day_ended_at:type_name -> google.protobuf.Timestamp
-	9,  // 5: timesheets.v1.ExportTimesheetRequest.day_started_at:type_name -> google.protobuf.Timestamp
-	9,  // 6: timesheets.v1.ExportTimesheetRequest.day_ended_at:type_name -> google.protobuf.Timestamp
-	0,  // 7: timesheets.v1.ExportTimesheetRequest.format:type_name -> timesheets.v1.TimesheetExportFormat
-	2,  // 8: timesheets.v1.TimesheetsService.ListTimesheetEntries:input_type -> timesheets.v1.ListTimesheetEntriesRequest
-	4,  // 9: timesheets.v1.TimesheetsService.CreateTimesheetEntry:input_type -> timesheets.v1.CreateTimesheetEntryRequest
-	5,  // 10: timesheets.v1.TimesheetsService.DeleteTimesheetEntry:input_type -> timesheets.v1.DeleteTimesheetEntryRequest
-	7,  // 11: timesheets.v1.TimesheetsService.ExportTimesheet:input_type -> timesheets.v1.ExportTimesheetRequest
-	3,  // 12: timesheets.v1.TimesheetsService.ListTimesheetEntries:output_type -> timesheets.v1.ListTimesheetEntriesResponse
-	1,  // 13: timesheets.v1.TimesheetsService.CreateTimesheetEntry:output_type -> timesheets.v1.TimesheetEntry
-	6,  // 14: timesheets.v1.TimesheetsService.DeleteTimesheetEntry:output_type -> timesheets.v1.DeleteTimesheetEntryResponse
-	8,  // 15: timesheets.v1.TimesheetsService.ExportTimesheet:output_type -> timesheets.v1.ExportTimesheetResponse
-	12, // [12:16] is the sub-list for method output_type
-	8,  // [8:12] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	12, // 3: timesheets.v1.ListTimesheetEntriesInRangeRequest.range_started_at:type_name -> google.protobuf.Timestamp
+	12, // 4: timesheets.v1.ListTimesheetEntriesInRangeRequest.range_ended_at:type_name -> google.protobuf.Timestamp
+	6,  // 5: timesheets.v1.ListTimesheetEntriesInRangeResponse.days:type_name -> timesheets.v1.RangedTimesheetDay
+	12, // 6: timesheets.v1.RangedTimesheetDay.day_started_at:type_name -> google.protobuf.Timestamp
+	12, // 7: timesheets.v1.RangedTimesheetDay.day_ended_at:type_name -> google.protobuf.Timestamp
+	1,  // 8: timesheets.v1.RangedTimesheetDay.entries:type_name -> timesheets.v1.TimesheetEntry
+	12, // 9: timesheets.v1.CreateTimesheetEntryRequest.day_started_at:type_name -> google.protobuf.Timestamp
+	12, // 10: timesheets.v1.CreateTimesheetEntryRequest.day_ended_at:type_name -> google.protobuf.Timestamp
+	12, // 11: timesheets.v1.ExportTimesheetRequest.day_started_at:type_name -> google.protobuf.Timestamp
+	12, // 12: timesheets.v1.ExportTimesheetRequest.day_ended_at:type_name -> google.protobuf.Timestamp
+	0,  // 13: timesheets.v1.ExportTimesheetRequest.format:type_name -> timesheets.v1.TimesheetExportFormat
+	2,  // 14: timesheets.v1.TimesheetsService.ListTimesheetEntries:input_type -> timesheets.v1.ListTimesheetEntriesRequest
+	4,  // 15: timesheets.v1.TimesheetsService.ListTimesheetEntriesInRange:input_type -> timesheets.v1.ListTimesheetEntriesInRangeRequest
+	7,  // 16: timesheets.v1.TimesheetsService.CreateTimesheetEntry:input_type -> timesheets.v1.CreateTimesheetEntryRequest
+	8,  // 17: timesheets.v1.TimesheetsService.DeleteTimesheetEntry:input_type -> timesheets.v1.DeleteTimesheetEntryRequest
+	10, // 18: timesheets.v1.TimesheetsService.ExportTimesheet:input_type -> timesheets.v1.ExportTimesheetRequest
+	3,  // 19: timesheets.v1.TimesheetsService.ListTimesheetEntries:output_type -> timesheets.v1.ListTimesheetEntriesResponse
+	5,  // 20: timesheets.v1.TimesheetsService.ListTimesheetEntriesInRange:output_type -> timesheets.v1.ListTimesheetEntriesInRangeResponse
+	1,  // 21: timesheets.v1.TimesheetsService.CreateTimesheetEntry:output_type -> timesheets.v1.TimesheetEntry
+	9,  // 22: timesheets.v1.TimesheetsService.DeleteTimesheetEntry:output_type -> timesheets.v1.DeleteTimesheetEntryResponse
+	11, // 23: timesheets.v1.TimesheetsService.ExportTimesheet:output_type -> timesheets.v1.ExportTimesheetResponse
+	19, // [19:24] is the sub-list for method output_type
+	14, // [14:19] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_timesheets_v1_timesheets_proto_init() }
@@ -692,7 +872,7 @@ func file_timesheets_v1_timesheets_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_timesheets_v1_timesheets_proto_rawDesc), len(file_timesheets_v1_timesheets_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

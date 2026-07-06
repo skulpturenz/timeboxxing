@@ -1,5 +1,11 @@
 package com.timeboxxing.app.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -11,12 +17,16 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -51,6 +61,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
@@ -552,6 +564,95 @@ fun TbTabs(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun TbSpinner(
+    modifier: Modifier = Modifier,
+    size: Dp = 16.dp,
+    color: Color = TbTheme.colors.accent,
+    trackColor: Color = TbTheme.colors.separator,
+) {
+    val transition = rememberInfiniteTransition(label = "spinner")
+    val angle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 850, easing = LinearEasing)),
+        label = "spinner-angle",
+    )
+    Canvas(modifier = modifier.size(size)) {
+        val stroke = this.size.minDimension * 0.16f
+        drawArc(
+            color = trackColor,
+            startAngle = 0f,
+            sweepAngle = 360f,
+            useCenter = false,
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+        drawArc(
+            color = color,
+            startAngle = angle,
+            sweepAngle = 96f,
+            useCenter = false,
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+    }
+}
+
+/**
+ * A progress bar. When [progress] is non-null it is determinate (coerced to 0..1, animated to
+ * smooth phase jumps); when null it shows an indeterminate sweeping segment for unknown-duration
+ * work.
+ */
+@Composable
+fun TbProgressBar(
+    progress: Float?,
+    modifier: Modifier = Modifier,
+    trackColor: Color = TbTheme.colors.groupedSurface,
+    indicatorColor: Color = TbTheme.colors.accent,
+) {
+    val shape = RoundedCornerShape(3.dp)
+    Box(
+        modifier = modifier
+            .height(6.dp)
+            .clip(shape)
+            .background(trackColor),
+    ) {
+        if (progress == null) {
+            val transition = rememberInfiniteTransition(label = "indeterminate")
+            val phase by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(durationMillis = 1100, easing = LinearEasing)),
+                label = "sweep",
+            )
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val segment = maxWidth * 0.4f
+                val start = (maxWidth + segment) * phase - segment
+                Box(
+                    modifier = Modifier
+                        .offset(x = start)
+                        .width(segment)
+                        .fillMaxHeight()
+                        .clip(shape)
+                        .background(indicatorColor),
+                )
+            }
+        } else {
+            val animated by animateFloatAsState(
+                targetValue = progress.coerceIn(0f, 1f),
+                animationSpec = tween(durationMillis = 300),
+                label = "progress",
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(animated)
+                    .clip(shape)
+                    .background(indicatorColor),
+            )
         }
     }
 }

@@ -1,6 +1,9 @@
 package com.timeboxxing.data.grpc
 
 import com.timeboxxing.data.repository.timesheetExportFileName
+import com.timeboxxing.data.time.calendarDateForEpochMillis
+import com.timeboxxing.data.time.usageDayForCalendarDate
+import com.timeboxxing.domain.model.RangedTimesheetDay
 import com.timeboxxing.domain.model.TimeEntry
 import com.timeboxxing.domain.model.TimesheetEntryDraft
 import com.timeboxxing.domain.model.TimesheetExport
@@ -10,6 +13,7 @@ import com.timeboxxing.domain.repository.TimesheetRepository
 import com.timeboxxing.sidecar.timesheets.v1.CreateTimesheetEntryRequest
 import com.timeboxxing.sidecar.timesheets.v1.DeleteTimesheetEntryRequest
 import com.timeboxxing.sidecar.timesheets.v1.ExportTimesheetRequest
+import com.timeboxxing.sidecar.timesheets.v1.ListTimesheetEntriesInRangeRequest
 import com.timeboxxing.sidecar.timesheets.v1.ListTimesheetEntriesRequest
 import com.timeboxxing.sidecar.timesheets.v1.TimesheetEntry as TimesheetEntryProto
 import com.timeboxxing.sidecar.timesheets.v1.TimesheetExportFormat as TimesheetExportFormatProto
@@ -46,6 +50,31 @@ class GrpcTimesheetRepository(
         }
 
         return response.entriesList.map { it.toTimeEntry() }
+    }
+
+    override suspend fun listEntriesInRange(rangeStart: UsageDay, rangeEnd: UsageDay): List<RangedTimesheetDay> {
+        val response = try {
+            stub
+                .withDeadlineAfter(30, TimeUnit.SECONDS)
+                .listTimesheetEntriesInRange(
+                    ListTimesheetEntriesInRangeRequest.newBuilder()
+                        .setRangeStartedAt(timestampFromEpochMillis(rangeStart.startedAtEpochMillis))
+                        .setRangeEndedAt(timestampFromEpochMillis(rangeEnd.startedAtEpochMillis))
+                        .build(),
+                )
+        } catch (error: StatusRuntimeException) {
+            throw IllegalStateException(error.toTimesheetErrorMessage(), error)
+        } catch (error: StatusException) {
+            throw IllegalStateException(error.toTimesheetErrorMessage(), error)
+        }
+
+        return response.daysList.map { day ->
+            val dayStartMillis = day.dayStartedAt.toEpochMillis()
+            RangedTimesheetDay(
+                day = usageDayForCalendarDate(calendarDateForEpochMillis(dayStartMillis)),
+                entries = day.entriesList.map { it.toTimeEntry() },
+            )
+        }
     }
 
     override suspend fun createEntry(day: UsageDay, draft: TimesheetEntryDraft): TimeEntry {
@@ -115,6 +144,9 @@ class GrpcTimesheetRepository(
         channel.awaitTermination(1, TimeUnit.SECONDS)
     }
 }
+
+private fun com.google.protobuf.Timestamp.toEpochMillis(): Long =
+    seconds * 1_000 + nanos / 1_000_000
 
 private fun TimesheetEntryProto.toTimeEntry(): TimeEntry =
     TimeEntry(

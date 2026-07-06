@@ -1,6 +1,8 @@
 package com.timeboxxing.app
 
 import com.timeboxxing.app.presentation.AppUpdater
+import com.timeboxxing.app.presentation.EntriesPdfRenderer
+import com.timeboxxing.app.presentation.EntriesTemplateFileReader
 import com.timeboxxing.app.presentation.TimeboxxingRepositories
 import com.timeboxxing.app.presentation.TimeboxxingRuntime
 import com.timeboxxing.app.presentation.TimeboxxingSidecarStatus
@@ -79,6 +81,9 @@ internal class DesktopTimeboxxingRuntime(
 
     override val diagnosticsLogs = sidecarSessionLog.lines
     override val timesheetExportFileWriter: TimesheetExportFileWriter = DesktopTimesheetExportFileWriter()
+    override val entriesPdfRenderer: EntriesPdfRenderer =
+        DesktopEntriesPdfRenderer(sidecarManager.dataDirectory.resolve("playwright-browsers").toFile())
+    override val entriesTemplateFileReader: EntriesTemplateFileReader = DesktopEntriesTemplateFileReader()
     override val appUpdater: AppUpdater = DesktopAppUpdater(
         currentVersion = DesktopBuildConfig.AppVersion,
         javaEnv = javaEnv,

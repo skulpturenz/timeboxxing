@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlinSerialization)
 }
 
 kotlin {
@@ -9,6 +10,7 @@ kotlin {
         commonMain.dependencies {
             implementation(projects.domain)
             implementation(libs.kotlinx.coroutinesCore)
+            implementation(libs.kotlinx.serializationJson)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

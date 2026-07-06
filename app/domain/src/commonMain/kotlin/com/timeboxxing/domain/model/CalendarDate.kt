@@ -15,6 +15,26 @@ data class CalendarDate(
         compareValuesBy(this, other, CalendarDate::year, CalendarDate::month, CalendarDate::dayOfMonth)
 }
 
+fun CalendarDate.isoLabel(): String =
+    "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${dayOfMonth.toString().padStart(2, '0')}"
+
+fun minCalendarDate(first: CalendarDate, second: CalendarDate): CalendarDate =
+    if (first <= second) first else second
+
+fun maxCalendarDate(first: CalendarDate, second: CalendarDate): CalendarDate =
+    if (first >= second) first else second
+
+/** Inclusive day count between [start] and [end]; assumes [start] <= [end]. */
+fun daysBetweenInclusive(start: CalendarDate, end: CalendarDate): Int {
+    var cursor = start
+    var count = 1
+    while (cursor < end) {
+        cursor = cursor.plusDays(1)
+        count += 1
+    }
+    return count
+}
+
 fun CalendarDate.plusDays(delta: Int): CalendarDate {
     var date = this
     when {

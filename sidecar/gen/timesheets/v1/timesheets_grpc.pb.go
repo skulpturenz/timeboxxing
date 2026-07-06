@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TimesheetsService_ListTimesheetEntries_FullMethodName = "/timesheets.v1.TimesheetsService/ListTimesheetEntries"
-	TimesheetsService_CreateTimesheetEntry_FullMethodName = "/timesheets.v1.TimesheetsService/CreateTimesheetEntry"
-	TimesheetsService_DeleteTimesheetEntry_FullMethodName = "/timesheets.v1.TimesheetsService/DeleteTimesheetEntry"
-	TimesheetsService_ExportTimesheet_FullMethodName      = "/timesheets.v1.TimesheetsService/ExportTimesheet"
+	TimesheetsService_ListTimesheetEntries_FullMethodName        = "/timesheets.v1.TimesheetsService/ListTimesheetEntries"
+	TimesheetsService_ListTimesheetEntriesInRange_FullMethodName = "/timesheets.v1.TimesheetsService/ListTimesheetEntriesInRange"
+	TimesheetsService_CreateTimesheetEntry_FullMethodName        = "/timesheets.v1.TimesheetsService/CreateTimesheetEntry"
+	TimesheetsService_DeleteTimesheetEntry_FullMethodName        = "/timesheets.v1.TimesheetsService/DeleteTimesheetEntry"
+	TimesheetsService_ExportTimesheet_FullMethodName             = "/timesheets.v1.TimesheetsService/ExportTimesheet"
 )
 
 // TimesheetsServiceClient is the client API for TimesheetsService service.
@@ -30,6 +31,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TimesheetsServiceClient interface {
 	ListTimesheetEntries(ctx context.Context, in *ListTimesheetEntriesRequest, opts ...grpc.CallOption) (*ListTimesheetEntriesResponse, error)
+	ListTimesheetEntriesInRange(ctx context.Context, in *ListTimesheetEntriesInRangeRequest, opts ...grpc.CallOption) (*ListTimesheetEntriesInRangeResponse, error)
 	CreateTimesheetEntry(ctx context.Context, in *CreateTimesheetEntryRequest, opts ...grpc.CallOption) (*TimesheetEntry, error)
 	DeleteTimesheetEntry(ctx context.Context, in *DeleteTimesheetEntryRequest, opts ...grpc.CallOption) (*DeleteTimesheetEntryResponse, error)
 	ExportTimesheet(ctx context.Context, in *ExportTimesheetRequest, opts ...grpc.CallOption) (*ExportTimesheetResponse, error)
@@ -47,6 +49,16 @@ func (c *timesheetsServiceClient) ListTimesheetEntries(ctx context.Context, in *
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListTimesheetEntriesResponse)
 	err := c.cc.Invoke(ctx, TimesheetsService_ListTimesheetEntries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *timesheetsServiceClient) ListTimesheetEntriesInRange(ctx context.Context, in *ListTimesheetEntriesInRangeRequest, opts ...grpc.CallOption) (*ListTimesheetEntriesInRangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTimesheetEntriesInRangeResponse)
+	err := c.cc.Invoke(ctx, TimesheetsService_ListTimesheetEntriesInRange_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +100,7 @@ func (c *timesheetsServiceClient) ExportTimesheet(ctx context.Context, in *Expor
 // for forward compatibility.
 type TimesheetsServiceServer interface {
 	ListTimesheetEntries(context.Context, *ListTimesheetEntriesRequest) (*ListTimesheetEntriesResponse, error)
+	ListTimesheetEntriesInRange(context.Context, *ListTimesheetEntriesInRangeRequest) (*ListTimesheetEntriesInRangeResponse, error)
 	CreateTimesheetEntry(context.Context, *CreateTimesheetEntryRequest) (*TimesheetEntry, error)
 	DeleteTimesheetEntry(context.Context, *DeleteTimesheetEntryRequest) (*DeleteTimesheetEntryResponse, error)
 	ExportTimesheet(context.Context, *ExportTimesheetRequest) (*ExportTimesheetResponse, error)
@@ -103,6 +116,9 @@ type UnimplementedTimesheetsServiceServer struct{}
 
 func (UnimplementedTimesheetsServiceServer) ListTimesheetEntries(context.Context, *ListTimesheetEntriesRequest) (*ListTimesheetEntriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListTimesheetEntries not implemented")
+}
+func (UnimplementedTimesheetsServiceServer) ListTimesheetEntriesInRange(context.Context, *ListTimesheetEntriesInRangeRequest) (*ListTimesheetEntriesInRangeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTimesheetEntriesInRange not implemented")
 }
 func (UnimplementedTimesheetsServiceServer) CreateTimesheetEntry(context.Context, *CreateTimesheetEntryRequest) (*TimesheetEntry, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateTimesheetEntry not implemented")
@@ -148,6 +164,24 @@ func _TimesheetsService_ListTimesheetEntries_Handler(srv interface{}, ctx contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TimesheetsServiceServer).ListTimesheetEntries(ctx, req.(*ListTimesheetEntriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TimesheetsService_ListTimesheetEntriesInRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTimesheetEntriesInRangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TimesheetsServiceServer).ListTimesheetEntriesInRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TimesheetsService_ListTimesheetEntriesInRange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TimesheetsServiceServer).ListTimesheetEntriesInRange(ctx, req.(*ListTimesheetEntriesInRangeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -216,6 +250,10 @@ var TimesheetsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListTimesheetEntries",
 			Handler:    _TimesheetsService_ListTimesheetEntries_Handler,
+		},
+		{
+			MethodName: "ListTimesheetEntriesInRange",
+			Handler:    _TimesheetsService_ListTimesheetEntriesInRange_Handler,
 		},
 		{
 			MethodName: "CreateTimesheetEntry",
