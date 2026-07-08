@@ -26,7 +26,7 @@ Database:
    - Solves: SQLite timeouts
    - We want to minimize connection string tweaking. If we can acquire a lock before writing, we are unlikely to have SQLite throw. This also allows us to not have to restrict the number of open connections
 
-- Monitor:
+Monitor:
    - Polls for the current foreground process and enqueues it
    - It only writes
 
