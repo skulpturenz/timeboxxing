@@ -34,7 +34,7 @@ func main() {
 	// Receive API keys handed off by the parent process over stdin, keeping them out of the
 	// environment block. Falls back to environment variables when stdin is not piped (dev runs).
 	handoff := secrets.LoadFromStdin()
-	envs.SetSecretOverrides(handoff.OpenRouterAPIKey, handoff.OllamaAPIKey)
+	envs.SetSecretOverrides(handoff.OpenRouterAPIKey, handoff.OllamaAPIKey, handoff.DatabaseKey)
 
 	if err := app.Run(ctx, logger); err != nil {
 		observability.CaptureException(err)

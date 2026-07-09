@@ -13,6 +13,7 @@ import (
 const (
 	openRouterAPIKeyName = "SIDECAR_OPENROUTER_API_KEY"
 	ollamaAPIKeyName     = "SIDECAR_OLLAMA_API_KEY"
+	databaseKeyName      = "SIDECAR_DATABASE_KEY"
 )
 
 // Startup holds secrets handed to the sidecar by its parent process over stdin. Passing them this
@@ -21,6 +22,7 @@ const (
 type Startup struct {
 	OpenRouterAPIKey string
 	OllamaAPIKey     string
+	DatabaseKey      string
 }
 
 // LoadFromStdin reads the handoff payload when stdin is piped by the parent process. It is a no-op
@@ -48,6 +50,8 @@ func Parse(r io.Reader) Startup {
 			startup.OpenRouterAPIKey = value
 		case ollamaAPIKeyName:
 			startup.OllamaAPIKey = value
+		case databaseKeyName:
+			startup.DatabaseKey = value
 		}
 	}
 	return startup

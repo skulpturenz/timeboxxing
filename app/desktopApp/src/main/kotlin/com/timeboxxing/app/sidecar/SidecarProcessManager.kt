@@ -121,9 +121,12 @@ internal class SidecarProcessManager(
         )
     }
 
+    /** The database file path, without creating the data directory (safe for a header peek). */
+    fun databasePath(): Path = dataDirectory.resolve(TimeboxxingDatabaseFileName)
+
     private fun sidecarDatabasePath() =
         dataDirectory.also { if (!it.exists()) it.createDirectories() }
-            .resolve("timeboxxing.db")
+            .resolve(TimeboxxingDatabaseFileName)
 
 
     private fun findLoopbackPort(): Int =
@@ -151,6 +154,12 @@ sealed interface SidecarStartResult {
 
 enum class SidecarStartFailureReason {
     Other,
+
+    /**
+     * The database on disk is encrypted but its key is not available (e.g. the keychain entry was
+     * lost). The database is left untouched; the user must restore the key or a backup.
+     */
+    DatabaseKeyUnavailable,
 }
 
 class SidecarConnection(
@@ -174,8 +183,9 @@ class SidecarConnection(
 data class SidecarSecrets(
     val openRouterApiKey: String = "",
     val ollamaApiKey: String = "",
+    val databaseKey: String = "",
 ) {
-    fun values(): List<String> = listOf(openRouterApiKey, ollamaApiKey)
+    fun values(): List<String> = listOf(openRouterApiKey, ollamaApiKey, databaseKey)
 }
 
 internal class ProcessLogTail(
@@ -237,6 +247,7 @@ internal fun configureSidecarEnvironment(
     // environment — strip any inherited copies so they can't leak through the child's env block.
     targetEnv.remove(OpenRouterApiKeyEnvVar)
     targetEnv.remove(OllamaApiKeyEnvVar)
+    targetEnv.remove(DatabaseKeyEnvVar)
     targetEnv.remove(SidecarSentryDsnEnvVar)
     targetEnv.remove(SidecarSentryAuthTokenEnvVar)
     targetEnv.remove(SentryAuthTokenEnvVar)
@@ -267,6 +278,7 @@ internal fun resolveSidecarSecrets(
 ): SidecarSecrets = SidecarSecrets(
     openRouterApiKey = secrets.openRouterApiKey.ifBlank { parentEnv[OpenRouterApiKeyEnvVar].orEmpty() },
     ollamaApiKey = secrets.ollamaApiKey.ifBlank { parentEnv[OllamaApiKeyEnvVar].orEmpty() },
+    databaseKey = secrets.databaseKey.ifBlank { parentEnv[DatabaseKeyEnvVar].orEmpty() },
 )
 
 /**
@@ -279,6 +291,9 @@ internal fun buildSecretHandoffPayload(secrets: SidecarSecrets): String = buildS
     }
     if (secrets.ollamaApiKey.isNotBlank()) {
         append(OllamaApiKeyEnvVar).append('=').append(secrets.ollamaApiKey).append('\n')
+    }
+    if (secrets.databaseKey.isNotBlank()) {
+        append(DatabaseKeyEnvVar).append('=').append(secrets.databaseKey).append('\n')
     }
 }
 
@@ -340,6 +355,8 @@ private val sqliteVectorResourcePath: String? = run {
 internal const val SQLiteVectorExtensionPathEnvVar = "SIDECAR_SQLITE_VECTOR_EXTENSION_PATH"
 internal const val OpenRouterApiKeyEnvVar = "SIDECAR_OPENROUTER_API_KEY"
 internal const val OllamaApiKeyEnvVar = "SIDECAR_OLLAMA_API_KEY"
+internal const val DatabaseKeyEnvVar = "SIDECAR_DATABASE_KEY"
+internal const val TimeboxxingDatabaseFileName = "timeboxxing.db"
 internal const val SidecarSentryDsnEnvVar = "SIDECAR_SENTRY_DSN"
 internal const val TimeboxxingSidecarBinaryEnvVar = "TIMEBOXXING_SIDECAR_BINARY"
 private const val SidecarSentryAuthTokenEnvVar = "SIDECAR_SENTRY_AUTH_TOKEN"
@@ -353,7 +370,7 @@ internal const val PlaceholderSidecarSentryDsn = "https://public@example.com/2"
 
 private val openRouterKeyPattern = Regex("""sk-or-v1-[A-Za-z0-9_-]+""")
 private val semanticSecretEnvPattern = Regex(
-    """((?:SIDECAR_OPENROUTER_API_KEY|SIDECAR_OLLAMA_API_KEY|SIDECAR_SENTRY_AUTH_TOKEN|SENTRY_AUTH_TOKEN)\s*=\s*)\S+""",
+    """((?:SIDECAR_OPENROUTER_API_KEY|SIDECAR_OLLAMA_API_KEY|SIDECAR_DATABASE_KEY|SIDECAR_SENTRY_AUTH_TOKEN|SENTRY_AUTH_TOKEN)\s*=\s*)\S+""",
 )
 
 internal fun resolveTimeboxxingDataDirectory(

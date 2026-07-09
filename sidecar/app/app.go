@@ -55,10 +55,12 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	sidecarLogging.RegisterLogger(registry, logger)
 
 	sqliteVectorExtensionPath, _ := envs.SQLiteVectorExtensionPath.Value()
+	databaseKey, _ := envs.ResolvedDatabaseKey()
 	database, err := db.New(ctx, db.Options{
 		Engine:                    envs.DatabaseEngine.Value(),
 		DataSourceName:            envs.DatabaseDSN.Value(),
 		SQLiteVectorExtensionPath: sqliteVectorExtensionPath,
+		EncryptionKey:             databaseKey,
 	})
 	if err != nil {
 		return fmt.Errorf("create database: %w", err)
@@ -101,7 +103,13 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 func buildQueues(ctx context.Context, registry *services.Services[any, any]) error {
 	queueDSN := envs.DatabaseDSN.Value()
 	if envs.DatabaseEngine.Value() == db.EngineSqlite {
-		queueDSN = db.SqliteDataSourceName(queueDSN)
+		// Reuse the exact keyed DSN the writer/reader use so the queue connection is encrypted
+		// identically — sqliteq opens the same file via a hardcoded sql.Open("sqlite3", ...).
+		if database, ok := db.FromServices(registry); ok {
+			queueDSN = database.DataSourceName
+		} else {
+			queueDSN = db.SqliteDataSourceName(queueDSN)
+		}
 	}
 
 	transitionEventQueue, err := queue.New[reporter.TransitionEvent](ctx, queue.QueueOptions{

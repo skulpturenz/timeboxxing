@@ -223,6 +223,52 @@ class SidecarProcessManagerTest {
     }
 
     @Test
+    fun buildSecretHandoffPayloadEmitsDatabaseKey() {
+        val payload = buildSecretHandoffPayload(
+            SidecarSecrets(openRouterApiKey = "or-key", databaseKey = "deadbeef"),
+        )
+
+        assertTrue(payload.contains("$DatabaseKeyEnvVar=deadbeef\n"))
+        assertTrue(payload.contains("$OpenRouterApiKeyEnvVar=or-key\n"))
+    }
+
+    @Test
+    fun childEnvironmentStripsInheritedDatabaseKey() {
+        val targetEnv = mutableMapOf(DatabaseKeyEnvVar to "inherited-db-key")
+
+        configureSidecarEnvironment(
+            targetEnv = targetEnv,
+            grpcListenAddress = "127.0.0.1:12345",
+            databaseDsn = "/tmp/timeboxxing.db",
+            parentEnv = emptyMap(),
+        )
+
+        // The database key is handed over stdin, never via the environment.
+        assertFalse(DatabaseKeyEnvVar in targetEnv)
+    }
+
+    @Test
+    fun resolveSidecarSecretsResolvesDatabaseKeyFromParentEnv() {
+        val resolved = resolveSidecarSecrets(
+            secrets = SidecarSecrets(),
+            parentEnv = mapOf(DatabaseKeyEnvVar to "parent-db-key"),
+        )
+
+        assertEquals("parent-db-key", resolved.databaseKey)
+    }
+
+    @Test
+    fun startupLogRedactionRemovesDatabaseKey() {
+        val redactor = SecretRedactor(emptyList())
+        val message = "opening $DatabaseKeyEnvVar=2dd29ca851e7b56e failed"
+
+        val redacted = redactor.redact(message)
+
+        assertFalse(redacted.contains("2dd29ca851e7b56e"))
+        assertTrue(redacted.contains("[REDACTED]"))
+    }
+
+    @Test
     fun childEnvironmentFallsBackToPlaceholderSentryDsn() {
         val targetEnv = mutableMapOf<String, String>()
 

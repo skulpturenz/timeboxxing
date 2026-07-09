@@ -45,6 +45,10 @@ var (
 	OllamaAPIKey = ferrite.String("SIDECAR_OLLAMA_API_KEY", "the hosted Ollama bearer token used for semantic search and RAG").
 			WithSensitiveContent().
 			Optional()
+
+	DatabaseKey = ferrite.String("SIDECAR_DATABASE_KEY", "the hex-encoded SQLCipher key used to encrypt the sqlite database at rest").
+			WithSensitiveContent().
+			Optional()
 )
 
 func init() {

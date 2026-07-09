@@ -37,6 +37,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.SecureRandom
 
 internal class DesktopTimeboxxingRuntime(
     private val secretStore: SecretStore,
@@ -129,11 +130,19 @@ internal class DesktopTimeboxxingRuntime(
             _repositories.value = startingRepositories()
 
             val secrets = withContext(Dispatchers.IO) {
-                SidecarSecrets(
-                    openRouterApiKey = secretStore.read(SecretKey.OpenRouter),
-                    ollamaApiKey = secretStore.read(SecretKey.Ollama),
-                )
-            }
+                when (val key = resolveDatabaseKey()) {
+                    is DatabaseKeyResult.Available -> SidecarSecrets(
+                        openRouterApiKey = secretStore.read(SecretKey.OpenRouter),
+                        ollamaApiKey = secretStore.read(SecretKey.Ollama),
+                        databaseKey = key.key,
+                    )
+
+                    is DatabaseKeyResult.Unavailable -> null.also {
+                        _repositories.value = failedRepositories(key.message)
+                        _sidecarStatus.value = TimeboxxingSidecarStatus.Failed(key.message)
+                    }
+                }
+            } ?: return
 
             when (val result = sidecarManager.start(usageDays[usageDays.size / 2], secrets)) {
                 is SidecarStartResult.Started -> {
@@ -200,7 +209,54 @@ internal class DesktopTimeboxxingRuntime(
             projectRepository = UnavailableProjectRepository(message),
             timesheetRepository = UnavailableTimesheetRepository(message),
         )
+
+    /**
+     * Resolves the SQLCipher key handed to the sidecar. Uses the key stored in the OS keychain when
+     * present. When none is stored, a fresh 256-bit key is generated and stored ONLY if there is no
+     * existing encrypted database — otherwise a new key could never decrypt the old data, so we
+     * surface a non-destructive [DatabaseKeyResult.Unavailable] instead and leave the file untouched.
+     */
+    private suspend fun resolveDatabaseKey(): DatabaseKeyResult {
+        val existing = runCatching { secretStore.read(SecretKey.DatabaseKey) }.getOrDefault("").trim()
+        if (existing.isNotEmpty()) {
+            return DatabaseKeyResult.Available(existing)
+        }
+        if (databaseIsEncrypted(sidecarManager.databasePath())) {
+            return DatabaseKeyResult.Unavailable(DatabaseKeyUnavailableMessage)
+        }
+        val generated = generateDatabaseKey()
+        secretStore.write(SecretKey.DatabaseKey, generated)
+        return DatabaseKeyResult.Available(generated)
+    }
+
+    private fun generateDatabaseKey(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+    }
+
+    private fun databaseIsEncrypted(path: Path): Boolean {
+        if (!Files.exists(path)) return false
+        val header = ByteArray(SqliteHeaderMagic.size)
+        val read = runCatching {
+            Files.newInputStream(path).use { it.readNBytes(header, 0, header.size) }
+        }.getOrDefault(0)
+        return read == header.size && !header.contentEquals(SqliteHeaderMagic)
+    }
 }
+
+private sealed interface DatabaseKeyResult {
+    data class Available(val key: String) : DatabaseKeyResult
+    data class Unavailable(val message: String) : DatabaseKeyResult
+}
+
+/** The 16-byte magic that begins every unencrypted SQLite file; an encrypted DB starts with salt. */
+private val SqliteHeaderMagic: ByteArray = "SQLite format 3\u0000".encodeToByteArray()
+
+private const val DatabaseKeyUnavailableMessage =
+    "Your local database is encrypted, but its key is missing from the system keychain " +
+        "(for example after a keychain reset or moving to a new machine). The database was not " +
+        "modified. Restore the keychain entry or a previous backup to continue."
 
 private const val StartingSidecarMessage = "Starting usage sidecar..."
 
