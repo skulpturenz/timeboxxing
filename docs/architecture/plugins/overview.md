@@ -53,3 +53,5 @@ For our purposes, I think `hashicorp/go-plugin` is a good choice.
 - Standard interfaces for workers and tools
    - Workers: `Exec` with only the transition event, `ReadQuerier` and `WriteQuerier` (embed?)
    - MCP tools: map? want to leave it relatively open
+
+- Plugins added later overloading the system? If we're polling fast enough to be snappy there's gonna be a lot of events
