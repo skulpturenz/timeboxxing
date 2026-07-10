@@ -1,52 +1,66 @@
 #!/usr/bin/env bash
-# Re-vendor the SQLCipher-capable go-sqlite3 fork from upstream.
+# Regenerate the vendored SQLCipher-capable go-sqlite3 fork onto the latest upstream:
+#   latest mattn/go-sqlite3 (Go driver) + the cipher Go glue (UPSTREAM-CHANGES.patch)
+#   + the latest SQLite3MultipleCiphers amalgamation (via the fork's own upgrade/ tool).
 #
 # Usage:
-#   ./update.sh                       # re-pull the pinned sqlite3mc branch
-#   ./update.sh sqlite3mc-2.2.8       # pull a different branch/tag
+#   ./update.sh                 # regenerate onto the latest mattn release + latest SQLite3MC
+#   ./update.sh v1.14.47        # pin the mattn base tag
 #
-# After running: update the SHA-256s + Origin table in PROVENANCE.md, review the diff in a PR,
-# and run `go test ./...` in ../../ (sidecar). Requires network + Go module cache.
+# After running: re-record the SHA-256s + version table in PROVENANCE.md, review the diff and the
+# regenerated UPSTREAM-CHANGES.patch in a PR, and run `go test -tags assert ./db/...` in ../../.
+# Requires network + git + Go.
 set -euo pipefail
 
-UPSTREAM="github.com/jgiannuzzi/go-sqlite3"
-REF="${1:-sqlite3mc-2.2.7}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+PATCH="$HERE/UPSTREAM-CHANGES.patch"
+MATTN="https://github.com/mattn/go-sqlite3"
 
-echo ">> resolving ${UPSTREAM}@${REF} ..."
-VERSION="$(cd "$(mktemp -d)" && go mod init tmp.update >/dev/null 2>&1 \
-  && go mod download -json "${UPSTREAM}@${REF}" | sed -n 's/.*"Version": "\(.*\)",/\1/p' | head -1)"
-if [[ -z "${VERSION}" ]]; then echo "!! could not resolve ${REF}" >&2; exit 1; fi
-echo ">> resolved ${VERSION}"
+# Resolve the mattn base tag (arg, else latest from the Go proxy).
+REF="${1:-}"
+if [[ -z "$REF" ]]; then
+  REF="$(curl -fsSL "https://proxy.golang.org/github.com/mattn/go-sqlite3/@latest" \
+    | sed -n 's/.*"Version":"\([^"]*\)".*/\1/p')"
+fi
+[[ -n "$REF" ]] || { echo "!! could not resolve latest mattn tag" >&2; exit 1; }
+echo ">> mattn base: $REF"
 
-SRC="$(go env GOMODCACHE)/${UPSTREAM}@${VERSION}"
-if [[ ! -d "${SRC}" ]]; then echo "!! module cache missing ${SRC}" >&2; exit 1; fi
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 
-echo ">> syncing source into ${HERE} (excluding tests/examples) ..."
-# Preserve our own metadata files; replace everything else with upstream.
+echo ">> cloning mattn $REF ..."
+git clone --depth 1 --branch "$REF" "$MATTN" "$TMP/fork" >/dev/null 2>&1
+
+echo ">> applying cipher glue (UPSTREAM-CHANGES.patch) ..."
+git -C "$TMP/fork" apply "$PATCH" || {
+  echo "!! patch did not apply cleanly onto $REF — mattn likely moved code under the glue." >&2
+  echo "!! Rebase UPSTREAM-CHANGES.patch onto $REF by hand, then re-run." >&2
+  exit 1
+}
+
+# The upgrade tool has //go:build !cgo && upgrade && ignore; run it as an explicit file (which
+# bypasses the build constraint) with -mod=mod so its transitive deps resolve.
+echo ">> downloading latest SQLite3MultipleCiphers amalgamation ..."
+( cd "$TMP/fork/upgrade" && CGO_ENABLED=0 go run -mod=mod upgrade.go )
+
+echo ">> re-vendoring into $HERE ..."
 rsync -a --delete \
   --exclude='*_test.go' --exclude='testdata/' --exclude='.github/' --exclude='_example/' \
+  --exclude='upgrade/' --exclude='.git/' \
   --exclude='PROVENANCE.md' --exclude='update.sh' --exclude='UPSTREAM-CHANGES.patch' \
-  "${SRC}/" "${HERE}/"
-chmod -R u+w "${HERE}"
-rm -rf "${HERE}/_example"
+  "$TMP/fork/" "$HERE/"
+chmod -R u+w "$HERE"
+
+echo ">> regenerating UPSTREAM-CHANGES.patch (base $REF, amalgamation excluded) ..."
+git -C "$TMP/fork" add -N sqlite3_cipher_test.go upgrade 2>/dev/null || true
+git -C "$TMP/fork" diff -- . \
+  ':(exclude)sqlite3-binding.c' ':(exclude)sqlite3-binding.h' ':(exclude)sqlite3ext.h' \
+  > "$HERE/UPSTREAM-CHANGES.patch"
 
 echo ">> new SHA-256s (paste into PROVENANCE.md):"
-shasum -a 256 "${HERE}/sqlite3-binding.c" "${HERE}/sqlite3-binding.h" | sed "s#${HERE}/##"
-
-# Regenerate UPSTREAM-CHANGES.patch: the fork's code-only delta vs its mattn merge-base, excluding
-# the amalgamation (whose integrity is anchored by the SHA-256s above). Requires network + git.
-# Only works when REF is a branch name (e.g. sqlite3mc-2.2.7), not a tag/pseudo-version.
-echo ">> regenerating UPSTREAM-CHANGES.patch (fork code delta vs mattn) ..."
-PATCHTMP="$(mktemp -d)"
-git clone --no-checkout --filter=blob:none "https://${UPSTREAM}" "${PATCHTMP}/repo" >/dev/null 2>&1
-git -C "${PATCHTMP}/repo" remote add upstream https://github.com/mattn/go-sqlite3
-git -C "${PATCHTMP}/repo" fetch --no-tags upstream >/dev/null 2>&1
-BASE="$(git -C "${PATCHTMP}/repo" merge-base "origin/${REF}" upstream/master)"
-git -C "${PATCHTMP}/repo" diff "${BASE}" "origin/${REF}" -- . \
-  ':(exclude)sqlite3-binding.c' ':(exclude)sqlite3-binding.h' ':(exclude)sqlite3ext.h' \
-  > "${HERE}/UPSTREAM-CHANGES.patch"
-rm -rf "${PATCHTMP}"
-echo ">> patch regenerated; base (mattn) commit = ${BASE}"
-
-echo ">> done. Update PROVENANCE.md Origin+integrity+delta-base, then: (cd ../../ && go build -tags assert ./... && go test ./db/...)"
+shasum -a 256 "$HERE/sqlite3-binding.c" "$HERE/sqlite3-binding.h" | sed "s#$HERE/#   #"
+echo ">> versions:"
+grep -m1 'define SQLITE_VERSION ' "$HERE/sqlite3-binding.c" | sed 's/^/   /'
+grep -m1 'SQLITE3MC_VERSION_STRING' "$HERE/sqlite3-binding.c" | sed 's/^/   /'
+echo ">> done. Update PROVENANCE.md (base $REF + SHAs + versions), then:"
+echo "   (cd ../../ && go build -tags assert ./... && go test -tags assert ./db/...)"

@@ -1,8 +1,8 @@
 diff --git a/README.md b/README.md
-index 5c4dd54..60fce18 100644
+index 4fd3911..1eb7c3b 100644
 --- a/README.md
 +++ b/README.md
-@@ -43,9 +43,11 @@ This package follows the official [Golang Release Policy](https://golang.org/doc
+@@ -41,9 +41,11 @@ This package follows the official [Golang Release Policy](https://golang.org/doc
    - [macOS](#mac-osx)
    - [Windows](#windows)
    - [Errors](#errors)
@@ -16,7 +16,7 @@ index 5c4dd54..60fce18 100644
      - [Create protected database](#create-protected-database)
      - [Password Encoding](#password-encoding)
        - [Available Encoders](#available-encoders)
-@@ -108,12 +110,21 @@ Boolean values can be one of:
+@@ -106,12 +108,21 @@ Boolean values can be one of:
  | Auto Vacuum | `_auto_vacuum` \| `_vacuum` | <ul><li>`0` \| `none`</li><li>`1` \| `full`</li><li>`2` \| `incremental`</li></ul> | For more information see [PRAGMA auto_vacuum](https://www.sqlite.org/pragma.html#pragma_auto_vacuum) |
  | Busy Timeout | `_busy_timeout` \| `_timeout` | `int` | Specify value for sqlite3_busy_timeout. For more information see [PRAGMA busy_timeout](https://www.sqlite.org/pragma.html#pragma_busy_timeout) |
  | Case Sensitive LIKE | `_case_sensitive_like` \| `_cslike` | `boolean` | For more information see [PRAGMA case_sensitive_like](https://www.sqlite.org/pragma.html#pragma_case_sensitive_like) |
@@ -62,7 +62,7 @@ index 5c4dd54..60fce18 100644
  # Author
  
 diff --git a/sqlite3.go b/sqlite3.go
-index a967cab..b7c376c 100644
+index 656d2dc..24b6fc3 100644
 --- a/sqlite3.go
 +++ b/sqlite3.go
 @@ -21,8 +21,10 @@ package sqlite3
@@ -76,7 +76,7 @@ index a967cab..b7c376c 100644
  #ifndef USE_LIBSQLITE3
  #include "sqlite3-binding.h"
  #else
-@@ -1039,12 +1041,25 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
+@@ -1142,12 +1144,25 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
  //	  Default or disabled the LIKE operation is case-insensitive.
  //	  When enabling this options behaviour of LIKE will become case-sensitive.
  //
@@ -102,7 +102,7 @@ index a967cab..b7c376c 100644
  //	_ignore_check_constraints=Boolean
  //	  This pragma enables or disables the enforcement of CHECK constraints.
  //	  The default setting is off, meaning that CHECK constraints are enforced by default.
-@@ -1053,11 +1068,36 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
+@@ -1156,11 +1171,36 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
  //	  Set journal mode for the databases associated with the current connection.
  //	  https://www.sqlite.org/pragma.html#pragma_journal_mode
  //
@@ -139,7 +139,7 @@ index a967cab..b7c376c 100644
  //	_query_only=Boolean
  //	  The query_only pragma prevents all changes to database files when enabled.
  //
-@@ -1097,11 +1137,20 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+@@ -1200,11 +1240,20 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
  	autoVacuum := -1
  	busyTimeout := 5000
  	caseSensitiveLike := -1
@@ -160,7 +160,7 @@ index a967cab..b7c376c 100644
  	queryOnly := -1
  	recursiveTriggers := -1
  	secureDelete := "DEFAULT"
-@@ -1238,6 +1287,19 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+@@ -1342,6 +1391,19 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
  			}
  		}
  
@@ -180,7 +180,7 @@ index a967cab..b7c376c 100644
  		// Defer Foreign Keys (_defer_foreign_keys | _defer_fk)
  		//
  		// https://www.sqlite.org/pragma.html#pragma_defer_foreign_keys
-@@ -1282,6 +1344,36 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+@@ -1386,6 +1448,36 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
  			}
  		}
  
@@ -217,7 +217,7 @@ index a967cab..b7c376c 100644
  		// Ignore CHECK Constrains (_ignore_check_constraints)
  		//
  		// https://www.sqlite.org/pragma.html#pragma_ignore_check_constraints
-@@ -1323,6 +1415,64 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+@@ -1427,6 +1519,64 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
  			}
  		}
  
@@ -282,7 +282,7 @@ index a967cab..b7c376c 100644
  		// Locking Mode (_locking)
  		//
  		// https://www.sqlite.org/pragma.html#pragma_locking_mode
-@@ -1343,6 +1493,33 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+@@ -1447,6 +1597,33 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
  			}
  		}
  
@@ -316,7 +316,7 @@ index a967cab..b7c376c 100644
  		// Query Only (_query_only)
  		//
  		// https://www.sqlite.org/pragma.html#pragma_query_only
-@@ -1487,6 +1664,78 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+@@ -1605,6 +1782,78 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
  		return nil
  	}
  
@@ -515,15 +515,23 @@ index 0000000..b352b1b
 +}
 diff --git a/upgrade/go.mod b/upgrade/go.mod
 new file mode 100644
-index 0000000..01ceff4
+index 0000000..5a4c809
 --- /dev/null
 +++ b/upgrade/go.mod
-@@ -0,0 +1,5 @@
+@@ -0,0 +1,13 @@
 +module github.com/mattn/go-sqlite3/upgrade
 +
 +go 1.19
 +
 +require github.com/google/go-github/v50 v50.2.0
++
++require (
++	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
++	github.com/cloudflare/circl v1.1.0 // indirect
++	github.com/google/go-querystring v1.1.0 // indirect
++	golang.org/x/crypto v0.7.0 // indirect
++	golang.org/x/oauth2 v0.6.0 // indirect
++)
 diff --git a/upgrade/go.sum b/upgrade/go.sum
 new file mode 100644
 index 0000000..3c71233
