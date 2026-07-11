@@ -27,5 +27,5 @@ func Parse(s string) (Environment, error) {
 		return Local, nil
 	}
 
-	return Development, fmt.Errorf("unrecognized db type: %s", s)
+	return Development, fmt.Errorf("unrecognized env: %s", s)
 }

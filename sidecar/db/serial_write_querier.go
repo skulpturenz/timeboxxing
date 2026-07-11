@@ -54,76 +54,76 @@ func (s *SerialWriteQuerier) WithWriteConn(fn func(*sql.DB) error) error {
 	return fn(s.conn)
 }
 
-func (s *SerialWriteQuerier) CreateProject(ctx context.Context, arg writequeries.CreateProjectParams) (writequeries.Project, error) {
+func (s *SerialWriteQuerier) CreateForegroundProcessMetadata(ctx context.Context, arg writequeries.CreateForegroundProcessMetadataParams) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.CreateProject(ctx, arg)
+	return s.querier.CreateForegroundProcessMetadata(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateSemanticDocumentEmbedding(ctx context.Context, arg writequeries.CreateSemanticDocumentEmbeddingParams) error {
+func (s *SerialWriteQuerier) CreateLedgerItem(ctx context.Context, arg writequeries.CreateLedgerItemParams) (writequeries.LedgerItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.CreateSemanticDocumentEmbedding(ctx, arg)
+	return s.querier.CreateLedgerItem(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateTimesheetEntry(ctx context.Context, arg writequeries.CreateTimesheetEntryParams) (writequeries.TimesheetEntry, error) {
+func (s *SerialWriteQuerier) CreateLedgerItemTimelineEntry(ctx context.Context, arg writequeries.CreateLedgerItemTimelineEntryParams) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.CreateTimesheetEntry(ctx, arg)
+	return s.querier.CreateLedgerItemTimelineEntry(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateTimesheetEntryUsageBlock(ctx context.Context, arg writequeries.CreateTimesheetEntryUsageBlockParams) error {
+func (s *SerialWriteQuerier) CreateProject(ctx context.Context, name string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.CreateTimesheetEntryUsageBlock(ctx, arg)
+	return s.querier.CreateProject(ctx, name)
 }
 
-func (s *SerialWriteQuerier) CreateTransitionEvent(ctx context.Context, arg writequeries.CreateTransitionEventParams) (int64, error) {
+func (s *SerialWriteQuerier) CreateProjectCost(ctx context.Context, arg writequeries.CreateProjectCostParams) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.CreateTransitionEvent(ctx, arg)
+	return s.querier.CreateProjectCost(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateTransitionEventMetadata(ctx context.Context, arg writequeries.CreateTransitionEventMetadataParams) error {
+func (s *SerialWriteQuerier) CreateProjectDetails(ctx context.Context, arg writequeries.CreateProjectDetailsParams) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.CreateTransitionEventMetadata(ctx, arg)
+	return s.querier.CreateProjectDetails(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateTransitionEventNow(ctx context.Context, arg writequeries.CreateTransitionEventNowParams) (int64, error) {
+func (s *SerialWriteQuerier) CreateTimeline(ctx context.Context, arg writequeries.CreateTimelineParams) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.CreateTransitionEventNow(ctx, arg)
+	return s.querier.CreateTimeline(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) DeleteProject(ctx context.Context, id string) error {
+func (s *SerialWriteQuerier) CreateTimelineEmbedding(ctx context.Context, arg writequeries.CreateTimelineEmbeddingParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.CreateTimelineEmbedding(ctx, arg)
+}
+
+func (s *SerialWriteQuerier) DeleteLedgerItem(ctx context.Context, id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.DeleteLedgerItem(ctx, id)
+}
+
+func (s *SerialWriteQuerier) DeleteProject(ctx context.Context, id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.DeleteProject(ctx, id)
 }
 
-func (s *SerialWriteQuerier) DeleteSemanticDocumentEmbedding(ctx context.Context, semanticDocumentID int64) error {
+func (s *SerialWriteQuerier) DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID sql.NullInt64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.DeleteSemanticDocumentEmbedding(ctx, semanticDocumentID)
+	return s.querier.DeleteTimelineEmbedding(ctx, timelineSemanticDocumentsID)
 }
 
-func (s *SerialWriteQuerier) DeleteTimesheetEntry(ctx context.Context, id string) error {
+func (s *SerialWriteQuerier) EnsureLedger(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.DeleteTimesheetEntry(ctx, id)
-}
-
-func (s *SerialWriteQuerier) EnsureTimesheet(ctx context.Context, arg writequeries.EnsureTimesheetParams) (writequeries.Timesheet, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.querier.EnsureTimesheet(ctx, arg)
-}
-
-func (s *SerialWriteQuerier) UpsertAISettings(ctx context.Context, arg writequeries.UpsertAISettingsParams) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.querier.UpsertAISettings(ctx, arg)
+	return s.querier.EnsureLedger(ctx)
 }
 
 func (s *SerialWriteQuerier) UpsertApplication(ctx context.Context, arg writequeries.UpsertApplicationParams) (int64, error) {
@@ -132,8 +132,20 @@ func (s *SerialWriteQuerier) UpsertApplication(ctx context.Context, arg writeque
 	return s.querier.UpsertApplication(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) UpsertSemanticDocument(ctx context.Context, arg writequeries.UpsertSemanticDocumentParams) (int64, error) {
+func (s *SerialWriteQuerier) UpsertApplicationSettings(ctx context.Context, arg writequeries.UpsertApplicationSettingsParams) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.UpsertSemanticDocument(ctx, arg)
+	return s.querier.UpsertApplicationSettings(ctx, arg)
+}
+
+func (s *SerialWriteQuerier) UpsertForegroundProcess(ctx context.Context, arg writequeries.UpsertForegroundProcessParams) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.UpsertForegroundProcess(ctx, arg)
+}
+
+func (s *SerialWriteQuerier) UpsertTimelineSemanticDocument(ctx context.Context, arg writequeries.UpsertTimelineSemanticDocumentParams) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.UpsertTimelineSemanticDocument(ctx, arg)
 }

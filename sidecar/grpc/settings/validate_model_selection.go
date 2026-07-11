@@ -10,31 +10,27 @@ import (
 )
 
 func (s *Server) validateModelSelection(ctx context.Context, provider semantic.Provider, embeddingModelID int64, semanticModelID int64) error {
-	embeddingModels, err := s.readQuerier.ListEmbeddingModels(ctx)
+	models, err := s.readQuerier.ListModels(ctx)
 	if err != nil {
-		return status.Errorf(codes.Internal, "list embedding models: %v", err)
-	}
-	semanticModels, err := s.readQuerier.ListSemanticModels(ctx)
-	if err != nil {
-		return status.Errorf(codes.Internal, "list semantic models: %v", err)
+		return status.Errorf(codes.Internal, "list models: %v", err)
 	}
 
-	embeddingModel, ok := findEmbeddingModel(embeddingModels, embeddingModelID)
-	if !ok {
+	embeddingModel, ok := findModel(models, embeddingModelID)
+	if !ok || !embeddingModel.Embedding {
 		return status.Error(codes.InvalidArgument, "embedding model is invalid")
 	}
-	semanticModel, ok := findSemanticModel(semanticModels, semanticModelID)
-	if !ok {
+	semanticModel, ok := findModel(models, semanticModelID)
+	if !ok || !semanticModel.Semantic {
 		return status.Error(codes.InvalidArgument, "semantic model is invalid")
 	}
 
 	switch provider {
 	case semantic.ProviderOpenRouter:
-		if strings.TrimSpace(embeddingModel.OpenrouterSlug) == "" || strings.TrimSpace(semanticModel.OpenrouterSlug) == "" {
+		if strings.TrimSpace(embeddingModel.OpenrouterSlug.String) == "" || strings.TrimSpace(semanticModel.OpenrouterSlug.String) == "" {
 			return status.Error(codes.InvalidArgument, "selected models are unavailable for OpenRouter")
 		}
 	case semantic.ProviderOllama:
-		if strings.TrimSpace(embeddingModel.OllamaSlug) == "" || strings.TrimSpace(semanticModel.OllamaSlug) == "" {
+		if strings.TrimSpace(embeddingModel.OllamaSlug.String) == "" || strings.TrimSpace(semanticModel.OllamaSlug.String) == "" {
 			return status.Error(codes.InvalidArgument, "selected models are unavailable for Ollama")
 		}
 	default:

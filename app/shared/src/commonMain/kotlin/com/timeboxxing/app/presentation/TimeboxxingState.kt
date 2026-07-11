@@ -333,8 +333,7 @@ sealed interface TimeboxxingAction {
     data class SettingsLoadSucceeded(val options: AiModelOptions, val settings: AiSettings) : TimeboxxingAction
     data class SettingsLoadFailed(val message: String) : TimeboxxingAction
     data class UpdateSettingsProvider(val provider: AiProvider) : TimeboxxingAction
-    data class UpdateOpenRouterBaseUrl(val value: String) : TimeboxxingAction
-    data class UpdateOllamaBaseUrl(val value: String) : TimeboxxingAction
+    data class UpdateModelProviderBaseUrl(val value: String) : TimeboxxingAction
     data class UpdateOpenRouterApiKey(val value: String) : TimeboxxingAction
     data class UpdateOllamaApiKey(val value: String) : TimeboxxingAction
     data class UpdateSettingsEmbeddingModel(val id: Long) : TimeboxxingAction
@@ -871,14 +870,8 @@ fun reduceTimeboxxingState(
             settingsSavedMessage = null,
         )
 
-        is TimeboxxingAction.UpdateOpenRouterBaseUrl -> state.copy(
-            settingsDraft = state.settingsDraft.copy(openRouterBaseUrl = action.value),
-            settingsError = null,
-            settingsSavedMessage = null,
-        )
-
-        is TimeboxxingAction.UpdateOllamaBaseUrl -> state.copy(
-            settingsDraft = state.settingsDraft.copy(ollamaBaseUrl = action.value),
+        is TimeboxxingAction.UpdateModelProviderBaseUrl -> state.copy(
+            settingsDraft = state.settingsDraft.copy(modelProviderBaseUrl = action.value),
             settingsError = null,
             settingsSavedMessage = null,
         )

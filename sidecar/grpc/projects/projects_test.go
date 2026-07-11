@@ -24,8 +24,9 @@ func TestCreateProjectTrimsStoresDefaultsAndLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if project.GetId() != "client-work" {
-		t.Fatalf("expected slug id client-work, got %q", project.GetId())
+	// Project ids are SQLite rowids now (not slug strings); the first project gets id 1.
+	if project.GetId() != 1 {
+		t.Fatalf("expected id 1, got %d", project.GetId())
 	}
 	if project.GetName() != "Client Work" {
 		t.Fatalf("expected trimmed name, got %q", project.GetName())
@@ -45,11 +46,11 @@ func TestCreateProjectTrimsStoresDefaultsAndLists(t *testing.T) {
 		t.Fatalf("expected 1 project, got %d", len(listed.GetProjects()))
 	}
 	if listed.GetProjects()[0].GetId() != project.GetId() {
-		t.Fatalf("expected listed project id %q, got %q", project.GetId(), listed.GetProjects()[0].GetId())
+		t.Fatalf("expected listed project id %d, got %d", project.GetId(), listed.GetProjects()[0].GetId())
 	}
 }
 
-func TestCreateProjectGeneratesUniqueSlugID(t *testing.T) {
+func TestCreateProjectAssignsIncrementingIDs(t *testing.T) {
 	ctx := context.Background()
 	server, cleanup := newTestProjectsServer(t, ctx)
 	defer cleanup()
@@ -63,11 +64,11 @@ func TestCreateProjectGeneratesUniqueSlugID(t *testing.T) {
 		t.Fatalf("create second project: %v", err)
 	}
 
-	if first.GetId() != "client" {
-		t.Fatalf("expected first id client, got %q", first.GetId())
+	if first.GetId() != 1 {
+		t.Fatalf("expected first id 1, got %d", first.GetId())
 	}
-	if second.GetId() != "client-2" {
-		t.Fatalf("expected second id client-2, got %q", second.GetId())
+	if second.GetId() != 2 {
+		t.Fatalf("expected second id 2, got %d", second.GetId())
 	}
 }
 

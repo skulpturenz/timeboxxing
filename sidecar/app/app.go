@@ -271,7 +271,7 @@ func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog
 		return nil, err
 	}
 	embeddingModel := semantic.ProviderModelKey(settings.Provider, embeddingSlug)
-	unavailableIndexStatus := semantic.NewIndexStatusService(database.ReadQuerier, nil, embeddingModel)
+	unavailableIndexStatus := semantic.NewIndexStatusService(database.ReadQuerier, nil, settings.EmbeddingModelID)
 
 	embedder, generator, err := buildAIClients(settings, embeddingSlug, semanticSlug)
 	if err != nil {
@@ -297,11 +297,11 @@ func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog
 		}, err
 	}
 
-	indexer := semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, embedder)
-	backfiller := semantic.NewBackfiller(database.ReadQuerier, backfillEnqueuer, embedder.Model())
+	indexer := semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, embedder, settings.EmbeddingModelID)
+	backfiller := semantic.NewBackfiller(database.ReadQuerier, backfillEnqueuer, settings.EmbeddingModelID)
 	backfillCoordinator := semantic.NewBackfillCoordinator(ctx, backfiller, logger.With("service", "semantic_backfill"))
-	indexStatus := semantic.NewIndexStatusService(database.ReadQuerier, backfillCoordinator, embedder.Model())
-	searcher := semantic.NewSearcher(database.ReadConn, embedder, vectorStore)
+	indexStatus := semantic.NewIndexStatusService(database.ReadQuerier, backfillCoordinator, settings.EmbeddingModelID)
+	searcher := semantic.NewSearcher(database.ReadConn, embedder, settings.EmbeddingModelID, vectorStore)
 
 	return &semantic.Runtime{
 		Answerer:       semantic.NewAnswerer(searcher, generator),
@@ -322,7 +322,7 @@ func buildAIClients(settings semantic.AISettings, embeddingSlug string, semantic
 		}
 		embedder, err := semantic.NewOpenRouterEmbedder(semantic.OpenRouterConfig{
 			APIKey:    apiKey,
-			BaseURL:   settings.OpenRouterBaseURL,
+			BaseURL:   settings.BaseURL(),
 			Model:     embeddingSlug,
 			Dimension: semantic.StoreEmbeddingDimension,
 		})
@@ -331,7 +331,7 @@ func buildAIClients(settings semantic.AISettings, embeddingSlug string, semantic
 		}
 		generator, err := semantic.NewOpenRouterGenerator(semantic.OpenRouterConfig{
 			APIKey:  apiKey,
-			BaseURL: settings.OpenRouterBaseURL,
+			BaseURL: settings.BaseURL(),
 			Model:   semanticSlug,
 		})
 		if err != nil {
@@ -343,7 +343,7 @@ func buildAIClients(settings semantic.AISettings, embeddingSlug string, semantic
 		apiKey, _ := envs.ResolvedOllamaAPIKey()
 		embedder, err := semantic.NewOllamaEmbedder(semantic.OllamaConfig{
 			APIKey:    apiKey,
-			BaseURL:   settings.OllamaBaseURL,
+			BaseURL:   settings.BaseURL(),
 			Model:     embeddingSlug,
 			Dimension: semantic.StoreEmbeddingDimension,
 		})
@@ -352,7 +352,7 @@ func buildAIClients(settings semantic.AISettings, embeddingSlug string, semantic
 		}
 		generator, err := semantic.NewOllamaGenerator(semantic.OllamaConfig{
 			APIKey:  apiKey,
-			BaseURL: settings.OllamaBaseURL,
+			BaseURL: settings.BaseURL(),
 			Model:   semanticSlug,
 		})
 		if err != nil {

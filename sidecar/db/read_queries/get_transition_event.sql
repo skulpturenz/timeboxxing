@@ -1,19 +1,19 @@
 -- name: GetTransitionEvent :one
 SELECT
-  transition_events.id AS transition_event_id,
+  timeline.id AS transition_event_id,
   applications.name AS application_name,
-  applications.platform_identifier AS application_platform_identifier,
   applications.path AS application_path,
-  transition_event_reasons.reason AS reason,
-  transition_events.started_at,
-  transition_events.ended_at,
-  transition_event_metadata.browser,
-  transition_event_metadata.tab,
-  transition_event_metadata.idle,
-  transition_event_metadata.cdp_url,
-  transition_event_metadata.pid
-FROM transition_events
-JOIN transition_event_reasons ON transition_event_reasons.id = transition_events.transition_reason_id
-LEFT JOIN applications ON applications.id = transition_events.application_id
-LEFT JOIN transition_event_metadata ON transition_event_metadata.transition_event_id = transition_events.id
-WHERE transition_events.id = ?;
+  fp0.created_at_utc AS started_at,
+  fp1.created_at_utc AS ended_at,
+  foreground_process_metadata.browser,
+  foreground_process_metadata.tab,
+  foreground_process_metadata.idle,
+  foreground_process_metadata.cdp_url,
+  fp0.application_id,
+  fp0.pid
+FROM timeline
+JOIN foreground_processes fp0 ON fp0.id = timeline.initial_foreground_process_id
+JOIN foreground_processes fp1 ON fp1.id = timeline.end_foreground_process_id
+LEFT JOIN applications ON applications.id = fp0.application_id
+LEFT JOIN foreground_process_metadata ON foreground_process_metadata.foreground_process_id = fp0.id
+WHERE timeline.id = ?;

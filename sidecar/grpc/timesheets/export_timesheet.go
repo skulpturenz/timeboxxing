@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"database/sql"
+
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"google.golang.org/grpc/codes"
@@ -24,8 +26,8 @@ func (s *Server) ExportTimesheet(ctx context.Context, req *timesheetsv1.ExportTi
 		return nil, status.Error(codes.InvalidArgument, "timesheet day window is invalid")
 	}
 	entries, err := s.readQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
-		StartedAt: dayStartedAt,
-		EndedAt:   dayEndedAt,
+		StartedAtUtc:   sql.NullTime{Time: dayStartedAt, Valid: true},
+		StartedAtUtc_2: sql.NullTime{Time: dayEndedAt, Valid: true},
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list export entries: %v", err)
@@ -43,7 +45,7 @@ func (s *Server) ExportTimesheet(ctx context.Context, req *timesheetsv1.ExportTi
 			Content:     content,
 		}, nil
 	case timesheetsv1.TimesheetExportFormat_TIMESHEET_EXPORT_FORMAT_CSV:
-		content, err := exportTimesheetCSV(dayStartedAt, entries)
+		content, err := exportTimesheetCSV(entries)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "export timesheet csv: %v", err)
 		}
@@ -74,14 +76,28 @@ type exportedTimesheetEntry struct {
 	Billable   bool      `json:"billable"`
 }
 
-func exportTimesheetJSON(dayStartedAt time.Time, entries []readqueries.TimesheetEntry) ([]byte, error) {
+func entryStartedAt(row readqueries.ListTimesheetEntriesRow) time.Time {
+	if row.StartedAtUtc.Valid {
+		return row.StartedAtUtc.Time.UTC()
+	}
+	return time.Time{}
+}
+
+func entryDurationMs(row readqueries.ListTimesheetEntriesRow) int64 {
+	if row.StartedAtUtc.Valid && row.EndedAtUtc.Valid {
+		return row.EndedAtUtc.Time.Sub(row.StartedAtUtc.Time).Milliseconds()
+	}
+	return 0
+}
+
+func exportTimesheetJSON(dayStartedAt time.Time, entries []readqueries.ListTimesheetEntriesRow) ([]byte, error) {
 	out := exportedTimesheet{
 		ExportedAt: time.Now().UTC(),
 		Day:        dayStartedAt,
 		Entries:    make([]exportedTimesheetEntry, 0, len(entries)),
 	}
 	for _, entry := range entries {
-		durationMs := durationMillis(entry.DurationMinutes)
+		durationMs := entryDurationMs(entry)
 		out.TotalMs += durationMs
 		if entry.Billable {
 			out.BillableMs += durationMs
@@ -90,8 +106,8 @@ func exportTimesheetJSON(dayStartedAt time.Time, entries []readqueries.Timesheet
 		}
 		out.Entries = append(out.Entries, exportedTimesheetEntry{
 			Title:      entry.Title,
-			Notes:      entry.Notes,
-			StartedAt:  startedAtForEntry(dayStartedAt, entry.StartMinute),
+			Notes:      entry.Notes.String,
+			StartedAt:  entryStartedAt(entry),
 			DurationMs: durationMs,
 			Billable:   entry.Billable,
 		})
@@ -99,7 +115,7 @@ func exportTimesheetJSON(dayStartedAt time.Time, entries []readqueries.Timesheet
 	return json.MarshalIndent(out, "", "  ")
 }
 
-func exportTimesheetCSV(dayStartedAt time.Time, entries []readqueries.TimesheetEntry) ([]byte, error) {
+func exportTimesheetCSV(entries []readqueries.ListTimesheetEntriesRow) ([]byte, error) {
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
 	if err := writer.Write([]string{"Title", "Notes", "Started At", "Duration (ms)", "Billable"}); err != nil {
@@ -108,9 +124,9 @@ func exportTimesheetCSV(dayStartedAt time.Time, entries []readqueries.TimesheetE
 	for _, entry := range entries {
 		if err := writer.Write([]string{
 			entry.Title,
-			entry.Notes,
-			startedAtForEntry(dayStartedAt, entry.StartMinute).Format(time.RFC3339),
-			strconv.FormatInt(durationMillis(entry.DurationMinutes), 10),
+			entry.Notes.String,
+			entryStartedAt(entry).Format(time.RFC3339),
+			strconv.FormatInt(entryDurationMs(entry), 10),
 			strconv.FormatBool(entry.Billable),
 		}); err != nil {
 			return nil, err

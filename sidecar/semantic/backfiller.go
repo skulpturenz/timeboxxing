@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -19,9 +20,9 @@ type TransitionEventEnqueuer interface {
 }
 
 type Backfiller struct {
-	lister         MissingTransitionEventLister
-	enqueuer       TransitionEventEnqueuer
-	embeddingModel string
+	lister           MissingTransitionEventLister
+	enqueuer         TransitionEventEnqueuer
+	embeddingModelID int64
 }
 
 type BackfillResult struct {
@@ -30,8 +31,8 @@ type BackfillResult struct {
 	Failed   int
 }
 
-func NewBackfiller(lister MissingTransitionEventLister, enqueuer TransitionEventEnqueuer, embeddingModel string) *Backfiller {
-	return &Backfiller{lister: lister, enqueuer: enqueuer, embeddingModel: embeddingModel}
+func NewBackfiller(lister MissingTransitionEventLister, enqueuer TransitionEventEnqueuer, embeddingModelID int64) *Backfiller {
+	return &Backfiller{lister: lister, enqueuer: enqueuer, embeddingModelID: embeddingModelID}
 }
 
 func (b *Backfiller) HasMissing(ctx context.Context) (bool, error) {
@@ -40,8 +41,8 @@ func (b *Backfiller) HasMissing(ctx context.Context) (bool, error) {
 	}
 
 	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModel: b.embeddingModel,
-		Limit:          1,
+		EmbeddingModelID: sql.NullInt64{Int64: b.embeddingModelID, Valid: true},
+		Limit:            1,
 	})
 	if err != nil {
 		return false, fmt.Errorf("list missing semantic event documents: %w", err)
@@ -61,8 +62,8 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 	}
 
 	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModel: b.embeddingModel,
-		Limit:          limit,
+		EmbeddingModelID: sql.NullInt64{Int64: b.embeddingModelID, Valid: true},
+		Limit:            limit,
 	})
 	if err != nil {
 		return BackfillResult{}, fmt.Errorf("list missing semantic event documents: %w", err)

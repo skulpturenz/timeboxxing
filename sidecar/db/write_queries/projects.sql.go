@@ -7,65 +7,49 @@ package writequeries
 
 import (
 	"context"
-	"time"
+	"database/sql"
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (
-  id,
-  name,
-  color_argb,
-  client,
-  hourly_rate_cents,
-  created_at,
-  updated_at
-)
-VALUES (?, ?, ?, '', 0, ?, ?)
-ON CONFLICT (id) DO NOTHING
-RETURNING
-  id,
-  name,
-  color_argb,
-  client,
-  hourly_rate_cents,
-  created_at,
-  updated_at
+INSERT INTO projects (name)
+VALUES (?)
+RETURNING id
 `
 
-type CreateProjectParams struct {
-	ID        string
-	Name      string
-	ColorArgb int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+func (q *Queries) CreateProject(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createProject, name)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
-func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
-	row := q.db.QueryRowContext(ctx, createProject,
-		arg.ID,
-		arg.Name,
-		arg.ColorArgb,
-		arg.CreatedAt,
-		arg.UpdatedAt,
+const createProjectDetails = `-- name: CreateProjectDetails :exec
+INSERT INTO project_details (projects_id, project_colors_id, costing_type_id, rate)
+VALUES (?, ?, ?, ?)
+`
+
+type CreateProjectDetailsParams struct {
+	ProjectsID      sql.NullInt64
+	ProjectColorsID sql.NullInt64
+	CostingTypeID   sql.NullInt64
+	Rate            sql.NullInt64
+}
+
+func (q *Queries) CreateProjectDetails(ctx context.Context, arg CreateProjectDetailsParams) error {
+	_, err := q.db.ExecContext(ctx, createProjectDetails,
+		arg.ProjectsID,
+		arg.ProjectColorsID,
+		arg.CostingTypeID,
+		arg.Rate,
 	)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.ColorArgb,
-		&i.Client,
-		&i.HourlyRateCents,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+	return err
 }
 
 const deleteProject = `-- name: DeleteProject :exec
 DELETE FROM projects WHERE id = ?
 `
 
-func (q *Queries) DeleteProject(ctx context.Context, id string) error {
+func (q *Queries) DeleteProject(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteProject, id)
 	return err
 }

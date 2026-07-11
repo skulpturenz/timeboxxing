@@ -20,8 +20,7 @@ service SettingsService {
 message ListModelOptionsRequest {}
 
 message ListModelOptionsResponse {
-  repeated ModelOption embedding_models = 1;
-  repeated ModelOption semantic_models = 2;
+  repeated ModelOption models = 1;
 }
 
 message ModelOption {
@@ -29,6 +28,8 @@ message ModelOption {
   string openrouter_slug = 2;
   string ollama_slug = 3;
   string label = 4;
+  bool semantic = 5;
+  bool embedding = 6;
 }
 
 message GetAiSettingsRequest {
@@ -38,8 +39,7 @@ message GetAiSettingsRequest {
 
 message SaveAiSettingsRequest {
   AiProvider provider = 1;
-  string openrouter_base_url = 2;
-  string ollama_base_url = 3;
+  string model_provider_base_url = 2;
   int64 embedding_model_id = 4;
   int64 semantic_model_id = 5;
   bool openrouter_secret_exists = 6;
@@ -48,8 +48,7 @@ message SaveAiSettingsRequest {
 
 message AiSettings {
   AiProvider provider = 1;
-  string openrouter_base_url = 2;
-  string ollama_base_url = 3;
+  string model_provider_base_url = 2;
   int64 embedding_model_id = 4;
   int64 semantic_model_id = 5;
   bool openrouter_secret_exists = 6;
@@ -69,13 +68,13 @@ message PruneDatabaseRangeRequest {
 
 message PruneDatabaseRangeResponse {
   int64 size_bytes = 1;
-  int64 timesheet_entries_deleted = 2;
-  int64 usage_links_deleted = 3;
-  int64 timesheets_deleted = 4;
-  int64 transition_events_deleted = 5;
-  int64 transition_metadata_deleted = 6;
-  int64 semantic_documents_deleted = 7;
-  int64 embeddings_deleted = 8;
+  int64 ledger_items_deleted = 2;
+  int64 ledger_item_timeline_entries_deleted = 3;
+  int64 timeline_deleted = 4;
+  int64 foreground_processes_deleted = 5;
+  int64 foreground_process_metadata_deleted = 6;
+  int64 timeline_semantic_documents_deleted = 7;
+  int64 timeline_embeddings_deleted = 8;
   int64 applications_deleted = 9;
 }
 

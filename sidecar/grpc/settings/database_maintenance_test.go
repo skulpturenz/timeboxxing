@@ -61,24 +61,20 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 	dayStart := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	dayEnd := dayStart.Add(24 * time.Hour)
 	outStart := dayStart.Add(48 * time.Hour)
-	outEnd := outStart.Add(24 * time.Hour)
 
 	inEventID := createTestTransitionEvent(t, ctx, q, "In Range App", dayStart.Add(9*time.Hour), dayStart.Add(10*time.Hour))
 	outEventID := createTestTransitionEvent(t, ctx, q, "Out Range App", outStart.Add(9*time.Hour), outStart.Add(10*time.Hour))
 	if _, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{Name: "Already Orphaned App"}); err != nil {
 		t.Fatalf("upsert orphan application: %v", err)
 	}
-	createTestSemanticDocument(t, ctx, q, "event:in", sql.NullInt64{Int64: inEventID, Valid: true}, dayStart.Add(9*time.Hour), dayStart.Add(10*time.Hour))
-	createTestSemanticDocument(t, ctx, q, "summary:in", sql.NullInt64{}, dayStart.Add(11*time.Hour), dayStart.Add(12*time.Hour))
-	createTestSemanticDocument(t, ctx, q, "event:out", sql.NullInt64{Int64: outEventID, Valid: true}, outStart.Add(9*time.Hour), outStart.Add(10*time.Hour))
+	// Semantic documents cascade-delete only through their timeline; "summary:in" (no timeline) and
+	// "event:out" (out-of-range timeline) survive a prune of the in-range window.
+	createTestSemanticDocument(t, ctx, q, "event:in", sql.NullInt64{Int64: inEventID, Valid: true})
+	createTestSemanticDocument(t, ctx, q, "summary:in", sql.NullInt64{})
+	createTestSemanticDocument(t, ctx, q, "event:out", sql.NullInt64{Int64: outEventID, Valid: true})
 
-	createTestTimesheetEntry(t, ctx, q, "sheet-in", "entry-in", dayStart, dayEnd, []string{
-		fmt.Sprintf("sidecar-%d", inEventID),
-	})
-	createTestTimesheetEntry(t, ctx, q, "sheet-out", "entry-out", outStart, outEnd, []string{
-		fmt.Sprintf("sidecar-%d", inEventID),
-		fmt.Sprintf("sidecar-%d", outEventID),
-	})
+	createTestLedgerItem(t, ctx, q, "entry-in", dayStart.Add(time.Hour), []int64{inEventID})
+	createTestLedgerItem(t, ctx, q, "entry-out", outStart.Add(time.Hour), []int64{inEventID, outEventID})
 
 	response, err := server.PruneDatabaseRange(ctx, &settingsv1.PruneDatabaseRangeRequest{
 		StartedAt: timestamppb.New(dayStart),
@@ -88,26 +84,29 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 		t.Fatalf("prune: %v", err)
 	}
 
-	assertPruneCount(t, "timesheet entries", response.GetTimesheetEntriesDeleted(), 1)
-	assertPruneCount(t, "usage links", response.GetUsageLinksDeleted(), 2)
-	assertPruneCount(t, "timesheets", response.GetTimesheetsDeleted(), 1)
-	assertPruneCount(t, "transition events", response.GetTransitionEventsDeleted(), 1)
-	assertPruneCount(t, "transition metadata", response.GetTransitionMetadataDeleted(), 1)
-	assertPruneCount(t, "semantic documents", response.GetSemanticDocumentsDeleted(), 2)
-	assertPruneCount(t, "embeddings", response.GetEmbeddingsDeleted(), 2)
+	// The in-range window prunes the two foreground processes of the in-range event; the timeline,
+	// its semantic document and embedding, its metadata, the in-range ledger item, and the now-orphan
+	// application cascade away. The out-of-range event/documents and the pre-existing orphan app remain.
+	assertPruneCount(t, "ledger items", response.GetLedgerItemsDeleted(), 1)
+	assertPruneCount(t, "ledger item timeline entries", response.GetLedgerItemTimelineEntriesDeleted(), 2)
+	assertPruneCount(t, "timeline", response.GetTimelineDeleted(), 1)
+	assertPruneCount(t, "foreground processes", response.GetForegroundProcessesDeleted(), 2)
+	assertPruneCount(t, "foreground process metadata", response.GetForegroundProcessMetadataDeleted(), 1)
+	assertPruneCount(t, "timeline semantic documents", response.GetTimelineSemanticDocumentsDeleted(), 1)
+	assertPruneCount(t, "timeline embeddings", response.GetTimelineEmbeddingsDeleted(), 1)
 	assertPruneCount(t, "applications", response.GetApplicationsDeleted(), 1)
 	if response.GetSizeBytes() <= 0 {
 		t.Fatalf("expected size bytes in prune response, got %d", response.GetSizeBytes())
 	}
 
-	assertTableCount(t, ctx, database.ReadConn, "transition_events", 1)
-	assertTableCount(t, ctx, database.ReadConn, "transition_event_metadata", 1)
-	assertTableCount(t, ctx, database.ReadConn, "semantic_documents", 1)
-	assertTableCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 1)
-	assertTableCount(t, ctx, database.ReadConn, "timesheet_entries", 1)
-	assertTableCount(t, ctx, database.ReadConn, "timesheets", 1)
+	assertTableCount(t, ctx, database.ReadConn, "foreground_processes", 2)
+	assertTableCount(t, ctx, database.ReadConn, "foreground_process_metadata", 1)
+	assertTableCount(t, ctx, database.ReadConn, "timeline", 1)
+	assertTableCount(t, ctx, database.ReadConn, "timeline_semantic_documents", 2)
+	assertTableCount(t, ctx, database.ReadConn, "timeline_embeddings", 2)
+	assertTableCount(t, ctx, database.ReadConn, "ledger_items", 1)
 	assertTableCount(t, ctx, database.ReadConn, "applications", 2)
-	assertTableCount(t, ctx, database.ReadConn, "timesheet_entry_usage_blocks", 1)
+	assertTableCount(t, ctx, database.ReadConn, "ledger_item_timeline_entries", 1)
 }
 
 func TestVacuumDatabaseCompactsSqliteFootprint(t *testing.T) {
@@ -199,6 +198,9 @@ func newTestSettingsServer(t *testing.T, ctx context.Context) (*Server, *db.Data
 	}
 }
 
+// createTestTransitionEvent inserts an event into the event store (two foreground_processes boundary
+// rows tied together by a timeline row) and returns the timeline id, which plays the role of the old
+// transition-event id.
 func createTestTransitionEvent(t *testing.T, ctx context.Context, q writequeries.Querier, appName string, startedAt time.Time, endedAt time.Time) int64 {
 	t.Helper()
 
@@ -208,35 +210,49 @@ func createTestTransitionEvent(t *testing.T, ctx context.Context, q writequeries
 	if err != nil {
 		t.Fatalf("upsert application: %v", err)
 	}
-	eventID, err := q.CreateTransitionEvent(ctx, writequeries.CreateTransitionEventParams{
-		ApplicationID: sql.NullInt64{Int64: appID, Valid: true},
-		Reason:        "focus_change",
-		StartedAt:     startedAt,
-		EndedAt:       endedAt,
+	application := sql.NullInt64{Int64: appID, Valid: true}
+
+	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
+		ApplicationID: application,
+		Pid:           4242,
+		CreatedAtUtc:  startedAt.UTC(),
 	})
 	if err != nil {
-		t.Fatalf("create transition event: %v", err)
+		t.Fatalf("upsert initial foreground process: %v", err)
 	}
-	if err := q.CreateTransitionEventMetadata(ctx, writequeries.CreateTransitionEventMetadataParams{
-		TransitionEventID: eventID,
-		Browser:           false,
-		Idle:              false,
+	if err := q.CreateForegroundProcessMetadata(ctx, writequeries.CreateForegroundProcessMetadataParams{
+		ForegroundProcessID: initialFP,
+		Browser:             false,
+		Idle:                false,
 	}); err != nil {
-		t.Fatalf("create transition metadata: %v", err)
+		t.Fatalf("create foreground process metadata: %v", err)
 	}
-	return eventID
+	endFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
+		ApplicationID: application,
+		Pid:           4242,
+		CreatedAtUtc:  endedAt.UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upsert end foreground process: %v", err)
+	}
+	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
+		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
+		EndForegroundProcessID:     sql.NullInt64{Int64: endFP, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create timeline: %v", err)
+	}
+	return timelineID
 }
 
-func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequeries.Querier, key string, eventID sql.NullInt64, startedAt time.Time, endedAt time.Time) {
+func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequeries.Querier, key string, timelineID sql.NullInt64) {
 	t.Helper()
 
-	documentID, err := q.UpsertSemanticDocument(ctx, writequeries.UpsertSemanticDocumentParams{
-		DocumentKey:       key,
-		DocumentType:      "event",
-		TransitionEventID: eventID,
-		StartedAt:         sql.NullTime{Time: startedAt, Valid: true},
-		EndedAt:           sql.NullTime{Time: endedAt, Valid: true},
-		Content:           key,
+	documentID, err := q.UpsertTimelineSemanticDocument(ctx, writequeries.UpsertTimelineSemanticDocumentParams{
+		DocumentKey: key,
+		TimelineID:  timelineID,
+		Type:        sql.NullInt64{Int64: 1, Valid: true},
+		Content:     key,
 	})
 	if err != nil {
 		t.Fatalf("upsert semantic document: %v", err)
@@ -249,50 +265,42 @@ func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequerie
 	if err != nil {
 		t.Fatalf("encode embedding: %v", err)
 	}
-	if err := q.CreateSemanticDocumentEmbedding(ctx, writequeries.CreateSemanticDocumentEmbeddingParams{
-		SemanticDocumentID: documentID,
-		EmbeddingModel:     "test-model",
-		EmbeddingDimension: semantic.StoreEmbeddingDimension,
-		EmbeddedAt:         sql.NullTime{Time: startedAt, Valid: true},
-		Embedding:          encoded,
+	if err := q.CreateTimelineEmbedding(ctx, writequeries.CreateTimelineEmbeddingParams{
+		TimelineID:                  timelineID,
+		TimelineSemanticDocumentsID: sql.NullInt64{Int64: documentID, Valid: true},
+		EmbeddingModelID:            sql.NullInt64{Int64: 1, Valid: true},
+		Dimension:                   semantic.StoreEmbeddingDimension,
+		Embedding:                   encoded,
 	}); err != nil {
 		t.Fatalf("create semantic embedding: %v", err)
 	}
 }
 
-func createTestTimesheetEntry(t *testing.T, ctx context.Context, q writequeries.Querier, sheetID string, entryID string, startedAt time.Time, endedAt time.Time, usageIDs []string) {
+// createTestLedgerItem inserts a ledger item (started at startedAt) and links it to the given timeline
+// ids via ledger_item_timeline_entries (the successor to the old usage blocks).
+func createTestLedgerItem(t *testing.T, ctx context.Context, q writequeries.Querier, title string, startedAt time.Time, timelineIDs []int64) {
 	t.Helper()
 
-	now := time.Now().UTC()
-	if _, err := q.EnsureTimesheet(ctx, writequeries.EnsureTimesheetParams{
-		ID:        sheetID,
-		StartedAt: startedAt,
-		EndedAt:   endedAt,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}); err != nil {
-		t.Fatalf("create timesheet: %v", err)
+	// The ledger is not seeded; it is created lazily before the first ledger item.
+	if err := q.EnsureLedger(ctx); err != nil {
+		t.Fatalf("ensure ledger: %v", err)
 	}
-	if _, err := q.CreateTimesheetEntry(ctx, writequeries.CreateTimesheetEntryParams{
-		ID:              entryID,
-		TimesheetID:     sheetID,
-		Title:           entryID,
-		Notes:           "",
-		StartMinute:     60,
-		DurationMinutes: 30,
-		Billable:        true,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}); err != nil {
-		t.Fatalf("create timesheet entry: %v", err)
+	item, err := q.CreateLedgerItem(ctx, writequeries.CreateLedgerItemParams{
+		Billable:     true,
+		Title:        title,
+		Notes:        sql.NullString{},
+		StartedAtUtc: sql.NullTime{Time: startedAt.UTC(), Valid: true},
+		EndedAtUtc:   sql.NullTime{Time: startedAt.Add(30 * time.Minute).UTC(), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create ledger item: %v", err)
 	}
-	for index, usageID := range usageIDs {
-		if err := q.CreateTimesheetEntryUsageBlock(ctx, writequeries.CreateTimesheetEntryUsageBlockParams{
-			TimesheetEntryID: entryID,
-			UsageID:          usageID,
-			SortOrder:        int64(index),
+	for _, timelineID := range timelineIDs {
+		if err := q.CreateLedgerItemTimelineEntry(ctx, writequeries.CreateLedgerItemTimelineEntryParams{
+			LedgerItemsID: sql.NullInt64{Int64: item.ID, Valid: true},
+			TimelineID:    sql.NullInt64{Int64: timelineID, Valid: true},
 		}); err != nil {
-			t.Fatalf("create usage block: %v", err)
+			t.Fatalf("create ledger item timeline entry: %v", err)
 		}
 	}
 }

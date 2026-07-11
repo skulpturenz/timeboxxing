@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
@@ -26,13 +27,13 @@ type IndexStatus struct {
 }
 
 type IndexStatusService struct {
-	querier        readqueries.Querier
-	backfilling    *BackfillCoordinator
-	embeddingModel string
+	querier          readqueries.Querier
+	backfilling      *BackfillCoordinator
+	embeddingModelID int64
 }
 
-func NewIndexStatusService(querier readqueries.Querier, backfilling *BackfillCoordinator, embeddingModel string) *IndexStatusService {
-	return &IndexStatusService{querier: querier, backfilling: backfilling, embeddingModel: embeddingModel}
+func NewIndexStatusService(querier readqueries.Querier, backfilling *BackfillCoordinator, embeddingModelID int64) *IndexStatusService {
+	return &IndexStatusService{querier: querier, backfilling: backfilling, embeddingModelID: embeddingModelID}
 }
 
 func (s *IndexStatusService) Status(ctx context.Context) (IndexStatus, error) {
@@ -43,7 +44,7 @@ func (s *IndexStatusService) Status(ctx context.Context) (IndexStatus, error) {
 		}, nil
 	}
 
-	counts, err := s.querier.GetSemanticIndexCounts(ctx, s.embeddingModel)
+	counts, err := s.querier.GetSemanticIndexCounts(ctx, sql.NullInt64{Int64: s.embeddingModelID, Valid: true})
 	if err != nil {
 		return IndexStatus{}, fmt.Errorf("get semantic index counts: %w", err)
 	}

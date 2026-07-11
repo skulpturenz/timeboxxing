@@ -42,49 +42,34 @@ func TestGetTransitionEventsFiltersByTime(t *testing.T) {
 	if events[0].ApplicationName != "Google Chrome" || events[0].Tab != "Docs" || !events[0].Browser {
 		t.Fatalf("unexpected mapped transition event: %#v", events[0])
 	}
-	if events[0].ApplicationIdentifier == "" || events[0].ApplicationPath == "" {
-		t.Fatalf("expected application identity to be mapped, got %#v", events[0])
+	// platform_identifier was dropped from the schema; only the application path is surfaced now.
+	if events[0].ApplicationPath == "" {
+		t.Fatalf("expected application path to be mapped, got %#v", events[0])
 	}
 	if events[0].PID != 4242 {
 		t.Fatalf("expected pid 4242, got %d", events[0].PID)
 	}
 }
 
-func TestRecordTransitionEventCanUseDatabaseTimestampDefaults(t *testing.T) {
+func TestRecordTransitionEventRequiresTimestamps(t *testing.T) {
 	ctx := context.Background()
 	service, _ := newTestService(t, ctx)
-	before := time.Now().UTC().Add(-time.Second)
 
-	id, err := service.RecordTransitionEvent(ctx, RecordTransitionEventParams{
+	// The event store no longer fills timestamp defaults; started_at and ended_at are required and
+	// map to the foreground_processes boundary rows.
+	if _, err := service.RecordTransitionEvent(ctx, RecordTransitionEventParams{
 		ApplicationName: "VSCode",
 		Reason:          "focus_change",
-	})
-	if err != nil {
-		t.Fatalf("record transition event: %v", err)
+	}); err == nil {
+		t.Fatal("expected error when started_at and ended_at are missing")
 	}
-	after := time.Now().UTC().Add(time.Second)
 
 	events, err := service.GetTransitionEvents(ctx, GetTransitionEventsParams{})
 	if err != nil {
 		t.Fatalf("get transition events: %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("expected one transition event, got %d", len(events))
-	}
-	if events[0].ID != id {
-		t.Fatalf("expected transition event id %d, got %d", id, events[0].ID)
-	}
-	if events[0].StartedAt.IsZero() || events[0].EndedAt.IsZero() {
-		t.Fatalf("expected timestamp defaults, got %#v", events[0])
-	}
-	if events[0].StartedAt.Location() != time.UTC || events[0].EndedAt.Location() != time.UTC {
-		t.Fatalf("expected UTC timestamps, got %s and %s", events[0].StartedAt.Location(), events[0].EndedAt.Location())
-	}
-	if events[0].StartedAt.Before(before) || events[0].StartedAt.After(after) {
-		t.Fatalf("started_at %s outside expected range %s..%s", events[0].StartedAt, before, after)
-	}
-	if events[0].EndedAt.Before(before) || events[0].EndedAt.After(after) {
-		t.Fatalf("ended_at %s outside expected range %s..%s", events[0].EndedAt, before, after)
+	if len(events) != 0 {
+		t.Fatalf("expected no persisted transition events, got %d", len(events))
 	}
 }
 

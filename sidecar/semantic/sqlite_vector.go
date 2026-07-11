@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	sqliteVectorEmbeddingTable  = "semantic_document_embeddings"
+	sqliteVectorEmbeddingTable  = "timeline_embeddings"
 	sqliteVectorEmbeddingColumn = "embedding"
 	sqliteVectorOptions         = "dimension=4096,type=FLOAT32,distance=COSINE"
 	sqliteVectorQuantizeOptions = "qtype=TURBO,qbits=4"
@@ -100,11 +100,10 @@ func (s *SQLiteVectorStore) initializeLocked(ctx context.Context) error {
 func (s *SQLiteVectorStore) embeddingSignatureLocked(ctx context.Context) (string, int64, error) {
 	var rowCount int64
 	var latestRowID int64
-	var latest string
 	if err := s.conn.QueryRowContext(ctx, `
-SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(MAX(CAST(embedded_at AS TEXT)), '')
-FROM semantic_document_embeddings`).Scan(&rowCount, &latestRowID, &latest); err != nil {
+SELECT COUNT(*), COALESCE(MAX(id), 0)
+FROM timeline_embeddings`).Scan(&rowCount, &latestRowID); err != nil {
 		return "", 0, fmt.Errorf("read semantic embedding signature: %w", err)
 	}
-	return fmt.Sprintf("%d:%d:%s", rowCount, latestRowID, latest), rowCount, nil
+	return fmt.Sprintf("%d:%d", rowCount, latestRowID), rowCount, nil
 }

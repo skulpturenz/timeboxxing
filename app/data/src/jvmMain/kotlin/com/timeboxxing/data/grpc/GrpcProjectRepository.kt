@@ -59,7 +59,7 @@ class GrpcProjectRepository(
         try {
             stub
                 .withDeadlineAfter(10, TimeUnit.SECONDS)
-                .deleteProject(DeleteProjectRequest.newBuilder().setId(projectId).build())
+                .deleteProject(DeleteProjectRequest.newBuilder().setId(projectId.toLongOrNull() ?: 0L).build())
         } catch (error: StatusRuntimeException) {
             throw IllegalStateException(error.toProjectErrorMessage(), error)
         } catch (error: StatusException) {
@@ -75,7 +75,7 @@ class GrpcProjectRepository(
 
 private fun ProjectProto.toProject(): Project =
     Project(
-        id = id,
+        id = id.toString(),
         name = name,
         client = client,
         colorArgb = colorArgb,

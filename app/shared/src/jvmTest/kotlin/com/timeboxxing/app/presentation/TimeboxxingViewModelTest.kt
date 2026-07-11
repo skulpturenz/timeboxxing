@@ -257,8 +257,8 @@ class TimeboxxingViewModelTest {
             pruneResult = DatabasePruneResult(
                 status = DatabaseMaintenanceStatus(sizeBytes = 2048),
                 counts = DatabasePruneCounts(
-                    timesheetEntriesDeleted = 1,
-                    transitionEventsDeleted = 1,
+                    ledgerItemsDeleted = 1,
+                    timelineDeleted = 1,
                 ),
             ),
             vacuumResult = DatabaseVacuumResult(
@@ -321,7 +321,7 @@ class TimeboxxingViewModelTest {
             status = DatabaseMaintenanceStatus(sizeBytes = 4096),
             pruneResult = DatabasePruneResult(
                 status = DatabaseMaintenanceStatus(sizeBytes = 2048),
-                counts = DatabasePruneCounts(timesheetEntriesDeleted = 1),
+                counts = DatabasePruneCounts(ledgerItemsDeleted = 1),
             ),
             vacuumError = IllegalStateException("disk is full"),
         )

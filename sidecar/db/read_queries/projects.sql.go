@@ -7,38 +7,55 @@ package readqueries
 
 import (
 	"context"
+	"database/sql"
 )
+
+const getProjectColorIDByColor = `-- name: GetProjectColorIDByColor :one
+SELECT id
+FROM project_colors
+WHERE color = ?
+`
+
+func (q *Queries) GetProjectColorIDByColor(ctx context.Context, color int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getProjectColorIDByColor, color)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
 
 const listProjects = `-- name: ListProjects :many
 SELECT
-  id,
-  name,
-  color_argb,
-  client,
-  hourly_rate_cents,
-  created_at,
-  updated_at
+  projects.id,
+  projects.name,
+  project_colors.color AS color_argb,
+  COALESCE(project_details.rate, 0) AS hourly_rate_cents
 FROM projects
-ORDER BY created_at, name COLLATE NOCASE, id
+LEFT JOIN project_details ON project_details.projects_id = projects.id
+LEFT JOIN project_colors ON project_colors.id = project_details.project_colors_id
+ORDER BY projects.name COLLATE NOCASE, projects.id
 `
 
-func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
+type ListProjectsRow struct {
+	ID              int64
+	Name            string
+	ColorArgb       sql.NullInt64
+	HourlyRateCents int64
+}
+
+func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjects)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Project
+	var items []ListProjectsRow
 	for rows.Next() {
-		var i Project
+		var i ListProjectsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.ColorArgb,
-			&i.Client,
 			&i.HourlyRateCents,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

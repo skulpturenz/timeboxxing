@@ -6,36 +6,14 @@ package writequeries
 
 import (
 	"database/sql"
-	"time"
 )
 
-type Project struct {
-	ID              string
-	Name            string
-	ColorArgb       int64
-	Client          string
-	HourlyRateCents int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}
-
-type Timesheet struct {
-	ID        string
-	StartedAt time.Time
-	EndedAt   time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-type TimesheetEntry struct {
-	ID              string
-	TimesheetID     string
-	ProjectID       sql.NullString
-	Title           string
-	Notes           string
-	StartMinute     int64
-	DurationMinutes int64
-	Billable        bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+type LedgerItem struct {
+	ID           int64
+	LedgerID     sql.NullInt64
+	Billable     bool
+	Title        string
+	Notes        sql.NullString
+	StartedAtUtc sql.NullTime
+	EndedAtUtc   sql.NullTime
 }

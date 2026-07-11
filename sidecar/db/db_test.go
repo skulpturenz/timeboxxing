@@ -86,11 +86,10 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 	}
 	defer database.Close()
 
-	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 3)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_embedding_models", 1)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_semantic_models", 1)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_settings", 1)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_transition_event_reasons", 1)
+	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 20)
+	assertMigrationTableVersion(t, ctx, database, "seed_migrations_models", 1)
+	assertMigrationTableVersion(t, ctx, database, "seed_migrations_model_providers", 1)
+	assertMigrationTableVersion(t, ctx, database, "seed_migrations_application_settings", 1)
 }
 
 func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
@@ -103,13 +102,7 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	}
 	defer database.Close()
 
-	if _, err := database.WriteQuerier.CreateProject(ctx, writequeries.CreateProjectParams{
-		ID:        "client-work",
-		Name:      "Client Work",
-		ColorArgb: 0xFF00FFEE,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}); err != nil {
+	if _, err := database.WriteQuerier.CreateProject(ctx, "Client Work"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	projects, err := database.ReadQuerier.ListProjects(ctx)
@@ -119,8 +112,12 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	if len(projects) != 1 {
 		t.Fatalf("expected 1 project, got %d", len(projects))
 	}
-	if projects[0].Client != "" {
-		t.Fatalf("expected empty client, got %q", projects[0].Client)
+	if projects[0].Name != "Client Work" {
+		t.Fatalf("expected project name Client Work, got %q", projects[0].Name)
+	}
+	// Colour/rate live in project_details now; a project created without details has neither.
+	if projects[0].ColorArgb.Valid {
+		t.Fatalf("expected no colour, got %d", projects[0].ColorArgb.Int64)
 	}
 	if projects[0].HourlyRateCents != 0 {
 		t.Fatalf("expected zero hourly rate, got %d", projects[0].HourlyRateCents)
@@ -137,42 +134,33 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	}
 	defer database.Close()
 
-	now := time.Now().UTC()
-	timesheet, err := database.WriteQuerier.EnsureTimesheet(ctx, writequeries.EnsureTimesheetParams{
-		ID:        "timesheet-test",
-		StartedAt: now,
-		EndedAt:   now.Add(24 * time.Hour),
-		CreatedAt: now,
-		UpdatedAt: now,
+	dayStart := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	startedAt := dayStart.Add(9 * time.Hour)
+	// The ledger is not seeded; it is created lazily before the first ledger item.
+	if err := database.WriteQuerier.EnsureLedger(ctx); err != nil {
+		t.Fatalf("ensure ledger: %v", err)
+	}
+	entry, err := database.WriteQuerier.CreateLedgerItem(ctx, writequeries.CreateLedgerItemParams{
+		Billable:     true,
+		Title:        "Design review",
+		Notes:        sql.NullString{},
+		StartedAtUtc: sql.NullTime{Time: startedAt, Valid: true},
+		EndedAtUtc:   sql.NullTime{Time: startedAt.Add(30 * time.Minute), Valid: true},
 	})
 	if err != nil {
-		t.Fatalf("create timesheet: %v", err)
+		t.Fatalf("create ledger item: %v", err)
 	}
-	entry, err := database.WriteQuerier.CreateTimesheetEntry(ctx, writequeries.CreateTimesheetEntryParams{
-		ID:              "entry-test",
-		TimesheetID:     timesheet.ID,
-		Title:           "Design review",
-		Notes:           "",
-		StartMinute:     9 * 60,
-		DurationMinutes: 30,
-		Billable:        true,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	})
-	if err != nil {
-		t.Fatalf("create timesheet entry: %v", err)
-	}
-	if err := database.WriteQuerier.CreateTimesheetEntryUsageBlock(ctx, writequeries.CreateTimesheetEntryUsageBlockParams{
-		TimesheetEntryID: entry.ID,
-		UsageID:          "sidecar-123",
-		SortOrder:        0,
+	// A ledger item links to timeline entries (usage blocks) via ledger_item_timeline_entries.
+	if err := database.WriteQuerier.CreateLedgerItemTimelineEntry(ctx, writequeries.CreateLedgerItemTimelineEntryParams{
+		LedgerItemsID: sql.NullInt64{Int64: entry.ID, Valid: true},
+		TimelineID:    sql.NullInt64{},
 	}); err != nil {
-		t.Fatalf("create usage block: %v", err)
+		t.Fatalf("create ledger item timeline entry: %v", err)
 	}
 
 	entries, err := database.ReadQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
-		StartedAt: timesheet.StartedAt,
-		EndedAt:   timesheet.EndedAt,
+		StartedAtUtc:   sql.NullTime{Time: dayStart, Valid: true},
+		StartedAtUtc_2: sql.NullTime{Time: dayStart.Add(24 * time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("list timesheet entries: %v", err)

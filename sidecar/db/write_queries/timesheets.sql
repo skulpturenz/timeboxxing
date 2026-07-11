@@ -1,54 +1,27 @@
--- name: EnsureTimesheet :one
-INSERT INTO timesheets (
-  id,
-  started_at,
-  ended_at,
-  created_at,
-  updated_at
-)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (started_at, ended_at) DO UPDATE SET updated_at = timesheets.updated_at
+-- name: EnsureLedger :exec
+INSERT INTO ledger (id)
+VALUES (1)
+ON CONFLICT(id) DO NOTHING;
+
+-- name: CreateLedgerItem :one
+INSERT INTO ledger_items (ledger_id, billable, title, notes, started_at_utc, ended_at_utc)
+VALUES (1, ?, ?, ?, ?, ?)
 RETURNING
   id,
-  started_at,
-  ended_at,
-  created_at,
-  updated_at;
-
--- name: CreateTimesheetEntry :one
-INSERT INTO timesheet_entries (
-  id,
-  timesheet_id,
-  project_id,
+  ledger_id,
+  billable,
   title,
   notes,
-  start_minute,
-  duration_minutes,
-  billable,
-  created_at,
-  updated_at
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING
-  id,
-  timesheet_id,
-  project_id,
-  title,
-  notes,
-  start_minute,
-  duration_minutes,
-  billable,
-  created_at,
-  updated_at;
+  started_at_utc,
+  ended_at_utc;
 
--- name: CreateTimesheetEntryUsageBlock :exec
-INSERT INTO timesheet_entry_usage_blocks (
-  timesheet_entry_id,
-  usage_id,
-  sort_order
-)
-VALUES (?, ?, ?);
+-- name: CreateProjectCost :exec
+INSERT INTO project_costs (ledger_items_id, projects_id, costing_type_id, rate)
+VALUES (?, ?, ?, ?);
 
--- name: DeleteTimesheetEntry :exec
-DELETE FROM timesheet_entries
-WHERE id = ?;
+-- name: CreateLedgerItemTimelineEntry :exec
+INSERT INTO ledger_item_timeline_entries (ledger_items_id, timeline_id)
+VALUES (?, ?);
+
+-- name: DeleteLedgerItem :exec
+DELETE FROM ledger_items WHERE id = ?;

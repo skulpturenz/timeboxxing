@@ -73,8 +73,8 @@ func (TimesheetExportFormat) EnumDescriptor() ([]byte, []int) {
 
 type TimesheetEntry struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId       string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Id              int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProjectId       int64                  `protobuf:"varint,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	Title           string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	Notes           string                 `protobuf:"bytes,4,opt,name=notes,proto3" json:"notes,omitempty"`
 	StartMinute     int32                  `protobuf:"varint,5,opt,name=start_minute,json=startMinute,proto3" json:"start_minute,omitempty"`
@@ -115,18 +115,18 @@ func (*TimesheetEntry) Descriptor() ([]byte, []int) {
 	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *TimesheetEntry) GetId() string {
+func (x *TimesheetEntry) GetId() int64 {
 	if x != nil {
 		return x.Id
 	}
-	return ""
+	return 0
 }
 
-func (x *TimesheetEntry) GetProjectId() string {
+func (x *TimesheetEntry) GetProjectId() int64 {
 	if x != nil {
 		return x.ProjectId
 	}
-	return ""
+	return 0
 }
 
 func (x *TimesheetEntry) GetTitle() string {
@@ -429,7 +429,7 @@ type CreateTimesheetEntryRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	DayStartedAt    *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=day_started_at,json=dayStartedAt,proto3" json:"day_started_at,omitempty"`
 	DayEndedAt      *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=day_ended_at,json=dayEndedAt,proto3" json:"day_ended_at,omitempty"`
-	ProjectId       string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProjectId       int64                  `protobuf:"varint,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	Title           string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
 	Notes           string                 `protobuf:"bytes,5,opt,name=notes,proto3" json:"notes,omitempty"`
 	StartMinute     int32                  `protobuf:"varint,6,opt,name=start_minute,json=startMinute,proto3" json:"start_minute,omitempty"`
@@ -484,11 +484,11 @@ func (x *CreateTimesheetEntryRequest) GetDayEndedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *CreateTimesheetEntryRequest) GetProjectId() string {
+func (x *CreateTimesheetEntryRequest) GetProjectId() int64 {
 	if x != nil {
 		return x.ProjectId
 	}
-	return ""
+	return 0
 }
 
 func (x *CreateTimesheetEntryRequest) GetTitle() string {
@@ -535,7 +535,7 @@ func (x *CreateTimesheetEntryRequest) GetSourceUsageIds() []string {
 
 type DeleteTimesheetEntryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -570,11 +570,11 @@ func (*DeleteTimesheetEntryRequest) Descriptor() ([]byte, []int) {
 	return file_timesheets_v1_timesheets_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *DeleteTimesheetEntryRequest) GetId() string {
+func (x *DeleteTimesheetEntryRequest) GetId() int64 {
 	if x != nil {
 		return x.Id
 	}
-	return ""
+	return 0
 }
 
 type DeleteTimesheetEntryResponse struct {
@@ -739,9 +739,9 @@ const file_timesheets_v1_timesheets_proto_rawDesc = "" +
 	"\n" +
 	"\x1etimesheets/v1/timesheets.proto\x12\rtimesheets.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xff\x01\n" +
 	"\x0eTimesheetEntry\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x14\n" +
+	"project_id\x18\x02 \x01(\x03R\tprojectId\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12\x14\n" +
 	"\x05notes\x18\x04 \x01(\tR\x05notes\x12!\n" +
 	"\fstart_minute\x18\x05 \x01(\x05R\vstartMinute\x12)\n" +
@@ -769,7 +769,7 @@ const file_timesheets_v1_timesheets_proto_rawDesc = "" +
 	"\fday_ended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"dayEndedAt\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x03 \x01(\tR\tprojectId\x12\x14\n" +
+	"project_id\x18\x03 \x01(\x03R\tprojectId\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12\x14\n" +
 	"\x05notes\x18\x05 \x01(\tR\x05notes\x12!\n" +
 	"\fstart_minute\x18\x06 \x01(\x05R\vstartMinute\x12)\n" +
@@ -777,7 +777,7 @@ const file_timesheets_v1_timesheets_proto_rawDesc = "" +
 	"\bbillable\x18\b \x01(\bR\bbillable\x12(\n" +
 	"\x10source_usage_ids\x18\t \x03(\tR\x0esourceUsageIds\"-\n" +
 	"\x1bDeleteTimesheetEntryRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x1e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"\x1e\n" +
 	"\x1cDeleteTimesheetEntryResponse\"\xd6\x01\n" +
 	"\x16ExportTimesheetRequest\x12@\n" +
 	"\x0eday_started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\fdayStartedAt\x12<\n" +

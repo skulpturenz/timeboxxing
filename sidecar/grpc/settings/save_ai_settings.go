@@ -2,11 +2,12 @@ package settings
 
 import (
 	"context"
+	"database/sql"
 	"strings"
-	"time"
 
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
+	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -21,34 +22,37 @@ func (s *Server) SaveAiSettings(ctx context.Context, req *settingsv1.SaveAiSetti
 		return nil, err
 	}
 
-	openRouterBaseURL := strings.TrimSpace(req.GetOpenrouterBaseUrl())
-	if openRouterBaseURL == "" {
-		openRouterBaseURL = defaultOpenRouterBaseURL
-	}
-	ollamaBaseURL := strings.TrimSpace(req.GetOllamaBaseUrl())
-	if ollamaBaseURL == "" {
-		ollamaBaseURL = defaultOllamaBaseURL
+	baseURL := strings.TrimSpace(req.GetModelProviderBaseUrl())
+	if baseURL == "" {
+		baseURL = defaultBaseURLForProvider(provider)
 	}
 
 	if err := s.validateModelSelection(ctx, provider, req.GetEmbeddingModelId(), req.GetSemanticModelId()); err != nil {
 		return nil, err
 	}
 
-	err = s.writeQuerier.UpsertAISettings(ctx, writequeries.UpsertAISettingsParams{
-		Provider:          string(provider),
-		OpenrouterBaseUrl: openRouterBaseURL,
-		OllamaBaseUrl:     ollamaBaseURL,
-		EmbeddingModelID:  req.GetEmbeddingModelId(),
-		SemanticModelID:   req.GetSemanticModelId(),
-		UpdatedAt:         time.Now().UTC(),
+	// ReleaseChannel is left NULL; the upsert preserves the existing value via COALESCE.
+	err = s.writeQuerier.UpsertApplicationSettings(ctx, writequeries.UpsertApplicationSettingsParams{
+		ModelProviderID:      providerToModelProviderID(provider),
+		ModelProviderBaseUrl: sql.NullString{String: baseURL, Valid: true},
+		EmbeddingModelID:     req.GetEmbeddingModelId(),
+		SemanticModelID:      req.GetSemanticModelId(),
+		ReleaseChannel:       sql.NullInt64{},
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "save AI settings: %v", err)
 	}
 
-	row, err := s.readQuerier.GetAISettings(ctx)
+	row, err := s.readQuerier.GetApplicationSettings(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reload AI settings: %v", err)
 	}
 	return aiSettingsToProto(row, req.GetOpenrouterSecretExists(), req.GetOllamaSecretExists()), nil
+}
+
+func defaultBaseURLForProvider(provider semantic.Provider) string {
+	if provider == semantic.ProviderOllama {
+		return defaultOllamaBaseURL
+	}
+	return defaultOpenRouterBaseURL
 }
