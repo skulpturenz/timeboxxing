@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	sqlitevector "github.com/skulpturenz/timeboxxing/sidecar/db/sqlite-vector"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
@@ -147,7 +148,11 @@ func newSemanticTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 func newSemanticVectorTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 	t.Helper()
 	extensionPath := os.Getenv("SIDECAR_SQLITE_VECTOR_EXTENSION_PATH")
-	if db.ResolveSQLiteVectorExtensionPath(extensionPath) == "" {
+	options := sqlitevector.Options{}
+	if strings.TrimSpace(extensionPath) != "" {
+		options.Path = &extensionPath
+	}
+	if _, _, err := options.Load(); err != nil {
 		t.Skip("sqlite-vector extension is not bundled for this platform and SIDECAR_SQLITE_VECTOR_EXTENSION_PATH is not set")
 	}
 	return newSemanticTestDatabaseWithSQLiteVector(t, ctx, extensionPath)
@@ -155,10 +160,13 @@ func newSemanticVectorTestDatabase(t *testing.T, ctx context.Context) *db.Databa
 
 func newSemanticTestDatabaseWithSQLiteVector(t *testing.T, ctx context.Context, extensionPath string) *db.Database {
 	t.Helper()
+	var extensionPathOption *string
+	if strings.TrimSpace(extensionPath) != "" {
+		extensionPathOption = &extensionPath
+	}
 	database, err := db.New(ctx, db.Options{
-		Engine:                    db.EngineSqlite,
-		DSN:                       filepath.Join(t.TempDir(), "test.db"),
-		SQLiteVectorExtensionPath: extensionPath,
+		DSN:                       db.NewDSN(filepath.Join(t.TempDir(), "test.db")),
+		SQLiteVectorExtensionPath: extensionPathOption,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)

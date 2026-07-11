@@ -11,6 +11,7 @@ import (
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 	"google.golang.org/grpc/codes"
@@ -309,10 +310,11 @@ func TestListTimesheetEntriesInRangeRejectsInvalidWindow(t *testing.T) {
 func newTestTimesheetsServer(t *testing.T, ctx context.Context) (*Server, *db.Database, func()) {
 	t.Helper()
 
-	database, err := db.New(ctx, db.Options{
-		Engine: db.EngineSqlite,
-		DSN:    filepath.Join(t.TempDir(), "test.db"),
-	})
+	dsn := db.NewDSN(filepath.Join(t.TempDir(), "test.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := db.New(ctx, db.Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}

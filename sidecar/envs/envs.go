@@ -2,7 +2,6 @@ package envs
 
 import (
 	"github.com/dogmatiq/ferrite"
-	enumsdbengine "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_db_engine"
 	enumsenv "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_env"
 )
 
@@ -12,7 +11,7 @@ const PlaceholderSidecarSentryDSN = "https://public@example.com/2"
 var (
 	GO_ENV = ferrite.
 		Enum("GO_ENV", "Golang environment").
-		WithMembers(enumsenv.Production.String(), enumsenv.Development.String(), enumsenv.Test.String()).
+		WithMembers(enumsenv.Production.String(), enumsenv.Development.String(), enumsenv.Test.String(), enumsenv.Local.String()).
 		WithDefault(enumsenv.Development.String()).
 		Required()
 	SENTRY_DSN = ferrite.String("SIDECAR_SENTRY_DSN", "the Sentry DSN used for sidecar error, trace, and log telemetry").
@@ -21,11 +20,6 @@ var (
 	GRPC_LISTEN_ADDRESS = ferrite.NetworkAddress("SIDECAR_GRPC_LISTEN_ADDRESS", "the host and port that the gRPC server listens on").
 				WithDefault("0.0.0.0:50051").
 				Required()
-	DB_ENGINE = ferrite.
-			Enum("SIDECAR_DATABASE_ENGINE", "the database engine used by the sidecar").
-			WithMembers(enumsdbengine.Sqlite.String()).
-			WithDefault(enumsdbengine.Sqlite.String()).
-			Required()
 	DB_DSN = ferrite.String("SIDECAR_DATABASE_DSN", "the database data source name").
 		WithDefault("test.db").
 		Required()

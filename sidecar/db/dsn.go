@@ -15,7 +15,7 @@ type DSN struct {
 	enableForeignKeys bool
 	enableEncryption  bool
 	encryptionKey     *string
-	busyTimeout       *time.Time
+	busyTimeout       *time.Duration
 }
 
 func NewDSN(path string) DSN {
@@ -27,9 +27,13 @@ func (dsn *DSN) SetJournalMode(mode enumsjournalmode.JournalMode) {
 	dsn.journalMode = mode
 }
 
-func (dsn *DSN) SetBusyTimeout(timeout time.Time) {
+func (dsn *DSN) SetBusyTimeout(timeout time.Duration) {
 	busyTimeout := timeout
 	dsn.busyTimeout = &busyTimeout
+}
+
+func (dsn DSN) GetPath() string {
+	return dsn.path
 }
 
 func (dsn *DSN) EnableFK() {
@@ -64,11 +68,11 @@ func (dsn *DSN) String() string {
 
 	if dsn.enableEncryption {
 		params.Set("_cipher", "sqlcipher")
-		params.Set("_key", fmt.Sprintf("x'%v'", dsn.encryptionKey))
+		params.Set("_key", fmt.Sprintf("x'%v'", *dsn.encryptionKey))
 	}
 
 	if dsn.busyTimeout != nil {
-		params.Set("_busy_timeout", fmt.Sprintf("%v", dsn.busyTimeout.UnixMilli()))
+		params.Set("_busy_timeout", fmt.Sprintf("%v", dsn.busyTimeout.Milliseconds()))
 	}
 
 	return fmt.Sprintf("%v?%v", dsn.path, params.Encode())

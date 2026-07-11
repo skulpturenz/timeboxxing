@@ -16,10 +16,6 @@ import (
 //go:embed sqlite-vector/*/vector.*
 var sqliteVectorExtensionFiles embed.FS
 
-const (
-	driverName = "timeboxxing_sqlite"
-)
-
 type Options struct {
 	DSN                       DSN
 	SQLiteVectorExtensionPath *string
@@ -33,17 +29,16 @@ type Database struct {
 	// ReadConn is the raw read connection, used by the semantic searcher / vector store for
 	// sqlite-vector extension SQL that sqlc can't generate. Reads need no lock (WAL allows concurrent
 	// readers alongside the single writer).
-	ReadConn                  *sql.DB
-	DSN                       DSN
-	SQLiteVectorExtensionPath *string
+	ReadConn *sql.DB
+	DSN      DSN
 }
 
 func Register(registry *services.Services[any, any], database *Database) {
-	services.Set(registry, reflect.TypeFor[Database](), database)
+	services.Set(registry, reflect.TypeFor[*Database](), database)
 }
 
 func FromServices(registry *services.Services[any, any]) (*Database, bool) {
-	service, ok := services.Get[*Database](registry, reflect.TypeFor[Database]())
+	service, ok := services.Get[*Database](registry, reflect.TypeFor[*Database]())
 	if !ok {
 		return nil, false
 	}

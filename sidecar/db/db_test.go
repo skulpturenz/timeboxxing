@@ -6,34 +6,35 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	sqlitevector "github.com/skulpturenz/timeboxxing/sidecar/db/sqlite-vector"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
-	enumsdbengine "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_db_engine"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 )
 
 func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 	ctx := context.Background()
 	configuredPath := os.Getenv("SIDECAR_SQLITE_VECTOR_EXTENSION_PATH")
-	resolvedPath := ResolveSQLiteVectorExtensionPath(configuredPath)
-	if resolvedPath == "" {
+	if !sqliteVectorExtensionAvailable(configuredPath) {
 		t.Skip("sqlite-vector extension is not bundled for this platform and SIDECAR_SQLITE_VECTOR_EXTENSION_PATH is not set")
 	}
+	var configuredPathOption *string
+	if strings.TrimSpace(configuredPath) != "" {
+		configuredPathOption = &configuredPath
+	}
 	database, err := New(ctx, Options{
-		Engine:                    enumsdbengine.Sqlite,
-		DSN:                       filepath.Join(t.TempDir(), "test.db"),
-		SQLiteVectorExtensionPath: configuredPath,
+		DSN:                       NewDSN(filepath.Join(t.TempDir(), "test.db")),
+		SQLiteVectorExtensionPath: configuredPathOption,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
 	defer database.Close()
-	if database.SQLiteVectorExtensionPath != resolvedPath {
-		t.Fatalf("expected sqlite-vector path %q, got %q", resolvedPath, database.SQLiteVectorExtensionPath)
-	}
 
 	var version string
 	if err := database.WriteQuerier.conn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
@@ -46,14 +47,12 @@ func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 
 func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 	ctx := context.Background()
-	extensionPath := extractBundledSQLiteVectorExtension()
-	if extensionPath == "" {
+	if !sqliteVectorExtensionAvailable("") {
 		t.Skip("sqlite-vector extension is not embedded for this platform")
 	}
+	// No configured path — the bundled extension is loaded automatically.
 	database, err := New(ctx, Options{
-		Engine:                    enumsdbengine.Sqlite,
-		DSN:                       filepath.Join(t.TempDir(), "test.db"),
-		SQLiteVectorExtensionPath: extensionPath,
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -71,12 +70,9 @@ func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 
 func TestSqliteMigrationsRunOnce(t *testing.T) {
 	ctx := context.Background()
-	dsn := filepath.Join(t.TempDir(), "test.db")
+	dsn := NewDSN(filepath.Join(t.TempDir(), "test.db"))
 
-	database, err := New(ctx, Options{
-		Engine: enumsdbengine.Sqlite,
-		DSN:    dsn,
-	})
+	database, err := New(ctx, Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -84,10 +80,7 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 		t.Fatalf("close database: %v", err)
 	}
 
-	database, err = New(ctx, Options{
-		Engine: enumsdbengine.Sqlite,
-		DSN:    dsn,
-	})
+	database, err = New(ctx, Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("reopen database: %v", err)
 	}
@@ -103,8 +96,7 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine: enumsdbengine.Sqlite,
-		DSN:    filepath.Join(t.TempDir(), "test.db"),
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -138,8 +130,7 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine: enumsdbengine.Sqlite,
-		DSN:    filepath.Join(t.TempDir(), "test.db"),
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -193,10 +184,11 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 
 func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 	ctx := context.Background()
-	database, err := New(ctx, Options{
-		Engine: enumsdbengine.Sqlite,
-		DSN:    filepath.Join(t.TempDir(), "test.db"),
-	})
+	dsn := NewDSN(filepath.Join(t.TempDir(), "test.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := New(ctx, Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -229,8 +221,7 @@ func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 func TestSqliteSerializesConcurrentWrites(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine: enumsdbengine.Sqlite,
-		DSN:    filepath.Join(t.TempDir(), "test.db"),
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -273,6 +264,18 @@ func TestSqliteSerializesConcurrentWrites(t *testing.T) {
 	for err := range errs {
 		t.Fatalf("concurrent write failed: %v", err)
 	}
+}
+
+// sqliteVectorExtensionAvailable reports whether the sqlite-vector extension can be loaded — from the
+// configured path when set, otherwise from the bundle embedded in the binary. Tests skip when it is
+// unavailable for the current platform.
+func sqliteVectorExtensionAvailable(configuredPath string) bool {
+	options := sqlitevector.Options{}
+	if strings.TrimSpace(configuredPath) != "" {
+		options.Path = &configuredPath
+	}
+	_, _, err := options.Load()
+	return err == nil
 }
 
 func assertMigrationTableVersion(t *testing.T, ctx context.Context, database *Database, table string, expectedVersion int64) {

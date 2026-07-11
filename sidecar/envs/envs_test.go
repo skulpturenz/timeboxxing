@@ -7,11 +7,11 @@ import (
 	enumsenv "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_env"
 )
 
-func TestRuntimeEnvironmentDefaultsToProduction(t *testing.T) {
+func TestRuntimeEnvironmentDefaultsToDevelopment(t *testing.T) {
 	unsetEnv(t, "GO_ENV")
 
-	if got := GO_ENV.Value(); got != enumsenv.Production.String() {
-		t.Fatalf("expected production default, got %q", got)
+	if got := GO_ENV.Value(); got != enumsenv.Development.String() {
+		t.Fatalf("expected development default, got %q", got)
 	}
 }
 

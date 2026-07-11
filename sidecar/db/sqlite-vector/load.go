@@ -48,7 +48,7 @@ func (options Options) Load() (loadedPath *string, entrypoint string, error erro
 
 func extract(resourcePath string) (*string, error) {
 	data, err := sqliteVectorExtensionFiles.
-		ReadFile(filepath.ToSlash(filepath.Join("sqlite-vector", resourcePath)))
+		ReadFile(filepath.ToSlash(resourcePath))
 	if err != nil {
 		return nil, fmt.Errorf("unable to load sqlite-vector")
 	}
@@ -70,7 +70,7 @@ func extract(resourcePath string) (*string, error) {
 
 	targetPath := filepath.Join(targetDir, filepath.Base(resourcePath))
 	if existing, err := os.ReadFile(targetPath); err == nil && bytes.Equal(existing, data) {
-		return &targetPath, fmt.Errorf("unable to load sqlite-vector")
+		return &targetPath, nil
 	}
 	if err := os.WriteFile(targetPath, data, fileMode); err != nil {
 		return nil, fmt.Errorf("unable to load sqlite-vector")

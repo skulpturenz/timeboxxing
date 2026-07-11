@@ -9,6 +9,8 @@ import (
 	sqlitevector "github.com/skulpturenz/timeboxxing/sidecar/db/sqlite-vector"
 )
 
+const driverName = "timeboxxing_sqlite"
+
 func newSqlite(ctx context.Context, dsn DSN, sqliteVectorExtensionPath *string) (*Database, error) {
 	sqliteVectorOptions := sqlitevector.Options{
 		Path: sqliteVectorExtensionPath,

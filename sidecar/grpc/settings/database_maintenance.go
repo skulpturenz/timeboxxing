@@ -19,7 +19,7 @@ func (s *Server) GetDatabaseMaintenanceStatus(context.Context, *settingsv1.GetDa
 		return nil, status.Error(codes.FailedPrecondition, "database is unavailable")
 	}
 
-	size, err := sqliteFootprintSize(s.database.DSN)
+	size, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get database size: %v", err)
 	}
@@ -78,7 +78,7 @@ func (s *Server) PruneDatabaseRange(ctx context.Context, req *settingsv1.PruneDa
 		return nil, err
 	}
 
-	size, err := sqliteFootprintSize(s.database.DSN)
+	size, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reload database size: %v", err)
 	}
@@ -104,7 +104,7 @@ func (s *Server) VacuumDatabase(ctx context.Context, _ *settingsv1.VacuumDatabas
 	s.maintenanceMu.Lock()
 	defer s.maintenanceMu.Unlock()
 
-	sizeBefore, err := sqliteFootprintSize(s.database.DSN)
+	sizeBefore, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get database size before vacuum: %v", err)
 	}
@@ -117,7 +117,7 @@ func (s *Server) VacuumDatabase(ctx context.Context, _ *settingsv1.VacuumDatabas
 		return nil, status.Errorf(codes.Internal, "vacuum database: %v", err)
 	}
 
-	sizeAfter, err := sqliteFootprintSize(s.database.DSN)
+	sizeAfter, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get database size after vacuum: %v", err)
 	}
