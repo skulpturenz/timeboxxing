@@ -3,7 +3,6 @@ package sqlitevector
 import (
 	"bytes"
 	"crypto/sha256"
-	"database/sql"
 	"embed"
 	"encoding/hex"
 	"fmt"
@@ -11,8 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/mattn/go-sqlite3"
 )
 
 //go:embed */vector.*
@@ -23,41 +20,30 @@ const (
 )
 
 type Options struct {
-	driverName string
-	path       *string
+	Path *string
 }
 
-func (options Options) Register() error {
+func (options Options) Load() (loadedPath *string, entrypoint string, error error) {
 	finalPath := ""
-	if options.path != nil && strings.TrimSpace(*options.path) != "" {
-		finalPath = *options.path
+	if options.Path != nil && strings.TrimSpace(*options.Path) != "" {
+		finalPath = *options.Path
 	} else {
 		resourcePath, ok := getFileName(runtime.GOOS, runtime.GOARCH)
 		if !ok {
-			return fmt.Errorf("unable to load sqlite-vector")
+			return nil, sqliteVectorEntryPoint, fmt.Errorf("unable to load sqlite-vector")
 		}
 
 		// the extension is embedded in the binary
 		// need to extract to a temp dir to load it
 		extractedPath, err := extract(*resourcePath)
 		if err != nil {
-			return fmt.Errorf("unable to load sqlite-vector")
+			return nil, sqliteVectorEntryPoint, fmt.Errorf("unable to load sqlite-vector")
 		}
 
 		finalPath = *extractedPath
 	}
 
-	sql.Register(options.driverName, &sqlite3.SQLiteDriver{
-		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-			if err := conn.LoadExtension(finalPath, sqliteVectorEntryPoint); err != nil {
-				return fmt.Errorf("load sqlite-vector extension %q: %w", finalPath, err)
-			}
-
-			return nil
-		},
-	})
-
-	return nil
+	return &finalPath, sqliteVectorEntryPoint, nil
 }
 
 func extract(resourcePath string) (*string, error) {
