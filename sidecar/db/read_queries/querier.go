@@ -6,21 +6,22 @@ package readqueries
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
-	GetAISettings(ctx context.Context) (GetAISettingsRow, error)
+	GetApplicationSettings(ctx context.Context) (GetApplicationSettingsRow, error)
+	GetProjectColorIDByColor(ctx context.Context, color int64) (int64, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
-	GetSemanticIndexCounts(ctx context.Context, embeddingModel string) (GetSemanticIndexCountsRow, error)
+	GetSemanticIndexCounts(ctx context.Context, embeddingModelID sql.NullInt64) (GetSemanticIndexCountsRow, error)
 	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
 	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
-	ListEmbeddingModels(ctx context.Context) ([]EmbeddingModel, error)
 	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
-	ListProjects(ctx context.Context) ([]Project, error)
-	ListSemanticModels(ctx context.Context) ([]SemanticModel, error)
-	ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]TimesheetEntry, error)
+	ListModels(ctx context.Context) ([]Model, error)
+	ListProjects(ctx context.Context) ([]ListProjectsRow, error)
+	ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]ListTimesheetEntriesRow, error)
 	ListTimesheetEntriesInRange(ctx context.Context, arg ListTimesheetEntriesInRangeParams) ([]ListTimesheetEntriesInRangeRow, error)
-	ListTimesheetEntryUsageBlocks(ctx context.Context, timesheetEntryID string) ([]string, error)
+	ListTimesheetEntryUsageBlocks(ctx context.Context, ledgerItemsID sql.NullInt64) ([]sql.NullInt64, error)
 	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
 }
 

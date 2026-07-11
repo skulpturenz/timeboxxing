@@ -8,149 +8,103 @@ package writequeries
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
-const createTimesheetEntry = `-- name: CreateTimesheetEntry :one
-INSERT INTO timesheet_entries (
-  id,
-  timesheet_id,
-  project_id,
-  title,
-  notes,
-  start_minute,
-  duration_minutes,
-  billable,
-  created_at,
-  updated_at
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+const createLedgerItem = `-- name: CreateLedgerItem :one
+INSERT INTO ledger_items (ledger_id, billable, title, notes, started_at_utc, ended_at_utc)
+VALUES (1, ?, ?, ?, ?, ?)
 RETURNING
   id,
-  timesheet_id,
-  project_id,
+  ledger_id,
+  billable,
   title,
   notes,
-  start_minute,
-  duration_minutes,
-  billable,
-  created_at,
-  updated_at
+  started_at_utc,
+  ended_at_utc
 `
 
-type CreateTimesheetEntryParams struct {
-	ID              string
-	TimesheetID     string
-	ProjectID       sql.NullString
-	Title           string
-	Notes           string
-	StartMinute     int64
-	DurationMinutes int64
-	Billable        bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+type CreateLedgerItemParams struct {
+	Billable     bool
+	Title        string
+	Notes        sql.NullString
+	StartedAtUtc sql.NullTime
+	EndedAtUtc   sql.NullTime
 }
 
-func (q *Queries) CreateTimesheetEntry(ctx context.Context, arg CreateTimesheetEntryParams) (TimesheetEntry, error) {
-	row := q.db.QueryRowContext(ctx, createTimesheetEntry,
-		arg.ID,
-		arg.TimesheetID,
-		arg.ProjectID,
+func (q *Queries) CreateLedgerItem(ctx context.Context, arg CreateLedgerItemParams) (LedgerItem, error) {
+	row := q.db.QueryRowContext(ctx, createLedgerItem,
+		arg.Billable,
 		arg.Title,
 		arg.Notes,
-		arg.StartMinute,
-		arg.DurationMinutes,
-		arg.Billable,
-		arg.CreatedAt,
-		arg.UpdatedAt,
+		arg.StartedAtUtc,
+		arg.EndedAtUtc,
 	)
-	var i TimesheetEntry
+	var i LedgerItem
 	err := row.Scan(
 		&i.ID,
-		&i.TimesheetID,
-		&i.ProjectID,
+		&i.LedgerID,
+		&i.Billable,
 		&i.Title,
 		&i.Notes,
-		&i.StartMinute,
-		&i.DurationMinutes,
-		&i.Billable,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.StartedAtUtc,
+		&i.EndedAtUtc,
 	)
 	return i, err
 }
 
-const createTimesheetEntryUsageBlock = `-- name: CreateTimesheetEntryUsageBlock :exec
-INSERT INTO timesheet_entry_usage_blocks (
-  timesheet_entry_id,
-  usage_id,
-  sort_order
-)
-VALUES (?, ?, ?)
+const createLedgerItemTimelineEntry = `-- name: CreateLedgerItemTimelineEntry :exec
+INSERT INTO ledger_item_timeline_entries (ledger_items_id, timeline_id)
+VALUES (?, ?)
 `
 
-type CreateTimesheetEntryUsageBlockParams struct {
-	TimesheetEntryID string
-	UsageID          string
-	SortOrder        int64
+type CreateLedgerItemTimelineEntryParams struct {
+	LedgerItemsID sql.NullInt64
+	TimelineID    sql.NullInt64
 }
 
-func (q *Queries) CreateTimesheetEntryUsageBlock(ctx context.Context, arg CreateTimesheetEntryUsageBlockParams) error {
-	_, err := q.db.ExecContext(ctx, createTimesheetEntryUsageBlock, arg.TimesheetEntryID, arg.UsageID, arg.SortOrder)
+func (q *Queries) CreateLedgerItemTimelineEntry(ctx context.Context, arg CreateLedgerItemTimelineEntryParams) error {
+	_, err := q.db.ExecContext(ctx, createLedgerItemTimelineEntry, arg.LedgerItemsID, arg.TimelineID)
 	return err
 }
 
-const deleteTimesheetEntry = `-- name: DeleteTimesheetEntry :exec
-DELETE FROM timesheet_entries
-WHERE id = ?
+const createProjectCost = `-- name: CreateProjectCost :exec
+INSERT INTO project_costs (ledger_items_id, projects_id, costing_type_id, rate)
+VALUES (?, ?, ?, ?)
 `
 
-func (q *Queries) DeleteTimesheetEntry(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, deleteTimesheetEntry, id)
+type CreateProjectCostParams struct {
+	LedgerItemsID sql.NullInt64
+	ProjectsID    sql.NullInt64
+	CostingTypeID sql.NullInt64
+	Rate          sql.NullInt64
+}
+
+func (q *Queries) CreateProjectCost(ctx context.Context, arg CreateProjectCostParams) error {
+	_, err := q.db.ExecContext(ctx, createProjectCost,
+		arg.LedgerItemsID,
+		arg.ProjectsID,
+		arg.CostingTypeID,
+		arg.Rate,
+	)
 	return err
 }
 
-const ensureTimesheet = `-- name: EnsureTimesheet :one
-INSERT INTO timesheets (
-  id,
-  started_at,
-  ended_at,
-  created_at,
-  updated_at
-)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (started_at, ended_at) DO UPDATE SET updated_at = timesheets.updated_at
-RETURNING
-  id,
-  started_at,
-  ended_at,
-  created_at,
-  updated_at
+const deleteLedgerItem = `-- name: DeleteLedgerItem :exec
+DELETE FROM ledger_items WHERE id = ?
 `
 
-type EnsureTimesheetParams struct {
-	ID        string
-	StartedAt time.Time
-	EndedAt   time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
+func (q *Queries) DeleteLedgerItem(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteLedgerItem, id)
+	return err
 }
 
-func (q *Queries) EnsureTimesheet(ctx context.Context, arg EnsureTimesheetParams) (Timesheet, error) {
-	row := q.db.QueryRowContext(ctx, ensureTimesheet,
-		arg.ID,
-		arg.StartedAt,
-		arg.EndedAt,
-		arg.CreatedAt,
-		arg.UpdatedAt,
-	)
-	var i Timesheet
-	err := row.Scan(
-		&i.ID,
-		&i.StartedAt,
-		&i.EndedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+const ensureLedger = `-- name: EnsureLedger :exec
+INSERT INTO ledger (id)
+VALUES (1)
+ON CONFLICT(id) DO NOTHING
+`
+
+func (q *Queries) EnsureLedger(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, ensureLedger)
+	return err
 }

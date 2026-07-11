@@ -8,52 +8,55 @@ package readqueries
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
 const listTimesheetEntries = `-- name: ListTimesheetEntries :many
 SELECT
-  timesheet_entries.id,
-  timesheet_entries.timesheet_id,
-  timesheet_entries.project_id,
-  timesheet_entries.title,
-  timesheet_entries.notes,
-  timesheet_entries.start_minute,
-  timesheet_entries.duration_minutes,
-  timesheet_entries.billable,
-  timesheet_entries.created_at,
-  timesheet_entries.updated_at
-FROM timesheet_entries
-JOIN timesheets ON timesheets.id = timesheet_entries.timesheet_id
-WHERE timesheets.started_at = ? AND timesheets.ended_at = ?
-ORDER BY timesheet_entries.start_minute, timesheet_entries.created_at, timesheet_entries.id
+  ledger_items.id,
+  project_costs.projects_id AS project_id,
+  ledger_items.title,
+  ledger_items.notes,
+  ledger_items.billable,
+  ledger_items.started_at_utc,
+  ledger_items.ended_at_utc
+FROM ledger_items
+LEFT JOIN project_costs ON project_costs.ledger_items_id = ledger_items.id
+WHERE ledger_items.started_at_utc >= ? AND ledger_items.started_at_utc < ?
+ORDER BY ledger_items.started_at_utc, ledger_items.id
 `
 
 type ListTimesheetEntriesParams struct {
-	StartedAt time.Time
-	EndedAt   time.Time
+	StartedAtUtc   sql.NullTime
+	StartedAtUtc_2 sql.NullTime
 }
 
-func (q *Queries) ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]TimesheetEntry, error) {
-	rows, err := q.db.QueryContext(ctx, listTimesheetEntries, arg.StartedAt, arg.EndedAt)
+type ListTimesheetEntriesRow struct {
+	ID           int64
+	ProjectID    sql.NullInt64
+	Title        string
+	Notes        sql.NullString
+	Billable     bool
+	StartedAtUtc sql.NullTime
+	EndedAtUtc   sql.NullTime
+}
+
+func (q *Queries) ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]ListTimesheetEntriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTimesheetEntries, arg.StartedAtUtc, arg.StartedAtUtc_2)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []TimesheetEntry
+	var items []ListTimesheetEntriesRow
 	for rows.Next() {
-		var i TimesheetEntry
+		var i ListTimesheetEntriesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TimesheetID,
 			&i.ProjectID,
 			&i.Title,
 			&i.Notes,
-			&i.StartMinute,
-			&i.DurationMinutes,
 			&i.Billable,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.StartedAtUtc,
+			&i.EndedAtUtc,
 		); err != nil {
 			return nil, err
 		}
@@ -70,46 +73,36 @@ func (q *Queries) ListTimesheetEntries(ctx context.Context, arg ListTimesheetEnt
 
 const listTimesheetEntriesInRange = `-- name: ListTimesheetEntriesInRange :many
 SELECT
-  timesheets.started_at,
-  timesheets.ended_at,
-  timesheet_entries.id,
-  timesheet_entries.timesheet_id,
-  timesheet_entries.project_id,
-  timesheet_entries.title,
-  timesheet_entries.notes,
-  timesheet_entries.start_minute,
-  timesheet_entries.duration_minutes,
-  timesheet_entries.billable,
-  timesheet_entries.created_at,
-  timesheet_entries.updated_at
-FROM timesheet_entries
-JOIN timesheets ON timesheets.id = timesheet_entries.timesheet_id
-WHERE timesheets.started_at >= ? AND timesheets.started_at < ?
-ORDER BY timesheets.started_at, timesheet_entries.start_minute, timesheet_entries.created_at, timesheet_entries.id
+  ledger_items.id,
+  project_costs.projects_id AS project_id,
+  ledger_items.title,
+  ledger_items.notes,
+  ledger_items.billable,
+  ledger_items.started_at_utc,
+  ledger_items.ended_at_utc
+FROM ledger_items
+LEFT JOIN project_costs ON project_costs.ledger_items_id = ledger_items.id
+WHERE ledger_items.started_at_utc >= ? AND ledger_items.started_at_utc < ?
+ORDER BY ledger_items.started_at_utc, ledger_items.id
 `
 
 type ListTimesheetEntriesInRangeParams struct {
-	StartedAt   time.Time
-	StartedAt_2 time.Time
+	StartedAtUtc   sql.NullTime
+	StartedAtUtc_2 sql.NullTime
 }
 
 type ListTimesheetEntriesInRangeRow struct {
-	StartedAt       time.Time
-	EndedAt         time.Time
-	ID              string
-	TimesheetID     string
-	ProjectID       sql.NullString
-	Title           string
-	Notes           string
-	StartMinute     int64
-	DurationMinutes int64
-	Billable        bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID           int64
+	ProjectID    sql.NullInt64
+	Title        string
+	Notes        sql.NullString
+	Billable     bool
+	StartedAtUtc sql.NullTime
+	EndedAtUtc   sql.NullTime
 }
 
 func (q *Queries) ListTimesheetEntriesInRange(ctx context.Context, arg ListTimesheetEntriesInRangeParams) ([]ListTimesheetEntriesInRangeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listTimesheetEntriesInRange, arg.StartedAt, arg.StartedAt_2)
+	rows, err := q.db.QueryContext(ctx, listTimesheetEntriesInRange, arg.StartedAtUtc, arg.StartedAtUtc_2)
 	if err != nil {
 		return nil, err
 	}
@@ -118,18 +111,13 @@ func (q *Queries) ListTimesheetEntriesInRange(ctx context.Context, arg ListTimes
 	for rows.Next() {
 		var i ListTimesheetEntriesInRangeRow
 		if err := rows.Scan(
-			&i.StartedAt,
-			&i.EndedAt,
 			&i.ID,
-			&i.TimesheetID,
 			&i.ProjectID,
 			&i.Title,
 			&i.Notes,
-			&i.StartMinute,
-			&i.DurationMinutes,
 			&i.Billable,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.StartedAtUtc,
+			&i.EndedAtUtc,
 		); err != nil {
 			return nil, err
 		}
@@ -145,25 +133,25 @@ func (q *Queries) ListTimesheetEntriesInRange(ctx context.Context, arg ListTimes
 }
 
 const listTimesheetEntryUsageBlocks = `-- name: ListTimesheetEntryUsageBlocks :many
-SELECT usage_id
-FROM timesheet_entry_usage_blocks
-WHERE timesheet_entry_id = ?
-ORDER BY sort_order, usage_id
+SELECT timeline_id
+FROM ledger_item_timeline_entries
+WHERE ledger_items_id = ?
+ORDER BY timeline_id
 `
 
-func (q *Queries) ListTimesheetEntryUsageBlocks(ctx context.Context, timesheetEntryID string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listTimesheetEntryUsageBlocks, timesheetEntryID)
+func (q *Queries) ListTimesheetEntryUsageBlocks(ctx context.Context, ledgerItemsID sql.NullInt64) ([]sql.NullInt64, error) {
+	rows, err := q.db.QueryContext(ctx, listTimesheetEntryUsageBlocks, ledgerItemsID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []sql.NullInt64
 	for rows.Next() {
-		var usage_id string
-		if err := rows.Scan(&usage_id); err != nil {
+		var timeline_id sql.NullInt64
+		if err := rows.Scan(&timeline_id); err != nil {
 			return nil, err
 		}
-		items = append(items, usage_id)
+		items = append(items, timeline_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

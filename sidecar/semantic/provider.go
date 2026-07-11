@@ -22,8 +22,7 @@ func ProviderModelKey(provider Provider, model string) string {
 
 type AISettings struct {
 	Provider            Provider
-	OpenRouterBaseURL   string
-	OllamaBaseURL       string
+	BaseURLValue        string
 	EmbeddingModelID    int64
 	SemanticModelID     int64
 	EmbeddingOpenRouter string
@@ -38,7 +37,7 @@ func LoadAISettings(ctx context.Context, querier readqueries.Querier) (AISetting
 	if querier == nil {
 		return AISettings{}, fmt.Errorf("settings querier is required")
 	}
-	row, err := querier.GetAISettings(ctx)
+	row, err := querier.GetApplicationSettings(ctx)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return AISettings{}, fmt.Errorf("AI settings are not configured")
@@ -46,18 +45,29 @@ func LoadAISettings(ctx context.Context, querier readqueries.Querier) (AISetting
 		return AISettings{}, fmt.Errorf("get AI settings: %w", err)
 	}
 	return AISettings{
-		Provider:            Provider(row.Provider),
-		OpenRouterBaseURL:   row.OpenrouterBaseUrl,
-		OllamaBaseURL:       row.OllamaBaseUrl,
+		Provider:            providerFromLabel(row.ModelProviderLabel),
+		BaseURLValue:        row.ModelProviderBaseUrl.String,
 		EmbeddingModelID:    row.EmbeddingModelID,
 		SemanticModelID:     row.SemanticModelID,
-		EmbeddingOpenRouter: row.EmbeddingOpenrouterSlug,
-		EmbeddingOllama:     row.EmbeddingOllamaSlug,
-		SemanticOpenRouter:  row.SemanticOpenrouterSlug,
-		SemanticOllama:      row.SemanticOllamaSlug,
+		EmbeddingOpenRouter: row.EmbeddingOpenrouterSlug.String,
+		EmbeddingOllama:     row.EmbeddingOllamaSlug.String,
+		SemanticOpenRouter:  row.SemanticOpenrouterSlug.String,
+		SemanticOllama:      row.SemanticOllamaSlug.String,
 		EmbeddingModelLabel: row.EmbeddingLabel,
 		SemanticModelLabel:  row.SemanticLabel,
 	}, nil
+}
+
+// providerFromLabel maps a model_providers.label to a Provider.
+func providerFromLabel(label string) Provider {
+	switch strings.ToLower(strings.TrimSpace(label)) {
+	case string(ProviderOpenRouter):
+		return ProviderOpenRouter
+	case string(ProviderOllama):
+		return ProviderOllama
+	default:
+		return Provider(strings.ToLower(strings.TrimSpace(label)))
+	}
 }
 
 func (s AISettings) EmbeddingSlug() (string, error) {
@@ -83,14 +93,7 @@ func (s AISettings) SemanticSlug() (string, error) {
 }
 
 func (s AISettings) BaseURL() string {
-	switch s.Provider {
-	case ProviderOpenRouter:
-		return s.OpenRouterBaseURL
-	case ProviderOllama:
-		return s.OllamaBaseURL
-	default:
-		return ""
-	}
+	return s.BaseURLValue
 }
 
 func requireProviderSlug(value string, label string) (string, error) {

@@ -9,11 +9,12 @@ import (
 )
 
 type Searcher struct {
-	conn        *sql.DB
-	vectorStore *SQLiteVectorStore
-	embedder    Embedder
-	clock       func() time.Time
-	location    *time.Location
+	conn             *sql.DB
+	vectorStore      *SQLiteVectorStore
+	embedder         Embedder
+	embeddingModelID int64
+	clock            func() time.Time
+	location         *time.Location
 }
 
 type SearchResult struct {
@@ -27,17 +28,18 @@ type SearchResult struct {
 	Distance          float64
 }
 
-func NewSearcher(conn *sql.DB, embedder Embedder, vectorStore ...*SQLiteVectorStore) *Searcher {
+func NewSearcher(conn *sql.DB, embedder Embedder, embeddingModelID int64, vectorStore ...*SQLiteVectorStore) *Searcher {
 	store := NewSQLiteVectorStore(conn)
 	if len(vectorStore) > 0 && vectorStore[0] != nil {
 		store = vectorStore[0]
 	}
 	return &Searcher{
-		conn:        conn,
-		vectorStore: store,
-		embedder:    embedder,
-		clock:       time.Now,
-		location:    time.Local,
+		conn:             conn,
+		vectorStore:      store,
+		embedder:         embedder,
+		embeddingModelID: embeddingModelID,
+		clock:            time.Now,
+		location:         time.Local,
 	}
 }
 
@@ -65,7 +67,7 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 	if s.vectorStore == nil {
 		return nil, fmt.Errorf("sqlite-vector store is required")
 	}
-	hasEmbeddings, err := s.hasEmbeddings(ctx, s.embedder.Model())
+	hasEmbeddings, err := s.hasEmbeddings(ctx, s.embeddingModelID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +79,7 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 	}
 
 	candidateCount := candidateSourceCount(k)
-	rows, err := s.conn.QueryContext(ctx, searchSemanticDocumentsSQL, encoded, s.embedder.Model(), candidateCount)
+	rows, err := s.conn.QueryContext(ctx, searchSemanticDocumentsSQL, encoded, s.embeddingModelID, candidateCount)
 	if err != nil {
 		return nil, fmt.Errorf("search semantic documents: %w", err)
 	}
@@ -88,10 +90,8 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 		var row struct {
 			ID                int64
 			DocumentKey       string
-			DocumentType      string
+			DocumentType      sql.NullString
 			TransitionEventID sql.NullInt64
-			StartedAt         sql.NullTime
-			EndedAt           sql.NullTime
 			Content           string
 			Distance          sql.NullFloat64
 		}
@@ -100,8 +100,6 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 			&row.DocumentKey,
 			&row.DocumentType,
 			&row.TransitionEventID,
-			&row.StartedAt,
-			&row.EndedAt,
 			&row.Content,
 			&row.Distance,
 		); err != nil {
@@ -111,21 +109,11 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 		if row.TransitionEventID.Valid {
 			transitionEventID = row.TransitionEventID.Int64
 		}
-		startedAt := time.Time{}
-		if row.StartedAt.Valid {
-			startedAt = row.StartedAt.Time.UTC()
-		}
-		endedAt := time.Time{}
-		if row.EndedAt.Valid {
-			endedAt = row.EndedAt.Time.UTC()
-		}
 		results = append(results, SearchResult{
 			DocumentID:        row.ID,
 			DocumentKey:       row.DocumentKey,
-			DocumentType:      row.DocumentType,
+			DocumentType:      row.DocumentType.String,
 			TransitionEventID: transitionEventID,
-			StartedAt:         startedAt,
-			EndedAt:           endedAt,
 			Content:           row.Content,
 			Distance:          row.Distance.Float64,
 		})
@@ -139,20 +127,20 @@ func (s *Searcher) Search(ctx context.Context, query string, k int64) ([]SearchR
 
 const searchSemanticDocumentsSQL = `
 SELECT
-  semantic_documents.id,
-  semantic_documents.document_key,
-  semantic_documents.document_type,
-  semantic_documents.transition_event_id,
-  semantic_documents.started_at,
-  semantic_documents.ended_at,
-  semantic_documents.content,
+  timeline_semantic_documents.id,
+  timeline_semantic_documents.document_key,
+  semantic_document_types.code AS document_type,
+  timeline_semantic_documents.timeline_id,
+  timeline_semantic_documents.content,
   vector_matches.distance
-FROM vector_quantize_scan('semantic_document_embeddings', 'embedding', ?) AS vector_matches
-JOIN semantic_document_embeddings
-  ON semantic_document_embeddings.rowid = vector_matches.rowid
-JOIN semantic_documents
-  ON semantic_documents.id = semantic_document_embeddings.semantic_document_id
-WHERE semantic_document_embeddings.embedding_model = ?
+FROM vector_quantize_scan('timeline_embeddings', 'embedding', ?) AS vector_matches
+JOIN timeline_embeddings
+  ON timeline_embeddings.rowid = vector_matches.rowid
+JOIN timeline_semantic_documents
+  ON timeline_semantic_documents.id = timeline_embeddings.timeline_semantic_documents_id
+LEFT JOIN semantic_document_types
+  ON semantic_document_types.id = timeline_semantic_documents.type
+WHERE timeline_embeddings.embedding_model_id = ?
 ORDER BY vector_matches.distance
 LIMIT ?`
 
@@ -177,12 +165,12 @@ func candidateSourceCount(k int64) int64 {
 	return count
 }
 
-func (s *Searcher) hasEmbeddings(ctx context.Context, embeddingModel string) (bool, error) {
+func (s *Searcher) hasEmbeddings(ctx context.Context, embeddingModelID int64) (bool, error) {
 	var count int64
 	if err := s.conn.QueryRowContext(ctx, `
 SELECT COUNT(*)
-FROM semantic_document_embeddings
-WHERE embedding_model = ?`, embeddingModel).Scan(&count); err != nil {
+FROM timeline_embeddings
+WHERE embedding_model_id = ?`, embeddingModelID).Scan(&count); err != nil {
 		return false, fmt.Errorf("count semantic embeddings: %w", err)
 	}
 	return count > 0, nil

@@ -1,6 +1,8 @@
 package projects
 
 import (
+	"context"
+
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
@@ -8,11 +10,17 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
+// writeTxRunner runs a function inside a serialized write transaction. *db.Database satisfies it.
+type writeTxRunner interface {
+	WriteTx(ctx context.Context, fn func(*writequeries.Queries) error) error
+}
+
 type Server struct {
 	projectsv1.UnimplementedProjectsServiceServer
 
 	readQuerier  readqueries.Querier
 	writeQuerier writequeries.Querier
+	writeTx      writeTxRunner
 }
 
 type serverKey struct{}
@@ -35,6 +43,7 @@ func NewServer(registry *services.Services[any, any]) *Server {
 	if database != nil {
 		server.readQuerier = database.ReadQuerier
 		server.writeQuerier = database.WriteQuerier
+		server.writeTx = database.WriteQuerier
 	}
 	RegisterServer(registry, server)
 	return server

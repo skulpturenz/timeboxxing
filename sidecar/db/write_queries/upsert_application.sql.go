@@ -11,23 +11,23 @@ import (
 )
 
 const upsertApplication = `-- name: UpsertApplication :one
-INSERT INTO applications (name, platform_identifier, path)
+INSERT INTO applications (name, operating_system_id, path)
 VALUES (?1, ?2, ?3)
 ON CONFLICT(name) DO UPDATE SET
   name = excluded.name,
-  platform_identifier = COALESCE(excluded.platform_identifier, applications.platform_identifier),
+  operating_system_id = COALESCE(excluded.operating_system_id, applications.operating_system_id),
   path = COALESCE(excluded.path, applications.path)
 RETURNING id
 `
 
 type UpsertApplicationParams struct {
-	Name               string
-	PlatformIdentifier sql.NullString
-	Path               sql.NullString
+	Name              string
+	OperatingSystemID sql.NullInt64
+	Path              sql.NullString
 }
 
 func (q *Queries) UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, upsertApplication, arg.Name, arg.PlatformIdentifier, arg.Path)
+	row := q.db.QueryRowContext(ctx, upsertApplication, arg.Name, arg.OperatingSystemID, arg.Path)
 	var id int64
 	err := row.Scan(&id)
 	return id, err

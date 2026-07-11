@@ -1,13 +1,13 @@
 -- name: ListMissingSemanticEventDocumentIDs :many
-SELECT transition_events.id
-FROM transition_events
-LEFT JOIN semantic_documents
-  ON semantic_documents.transition_event_id = transition_events.id
-  AND semantic_documents.document_type = 'event'
-LEFT JOIN semantic_document_embeddings
-  ON semantic_document_embeddings.semantic_document_id = semantic_documents.id
-  AND semantic_document_embeddings.embedding_model = ?
-WHERE semantic_documents.id IS NULL
-   OR semantic_document_embeddings.id IS NULL
-ORDER BY transition_events.started_at DESC, transition_events.id DESC
+SELECT timeline.id
+FROM timeline
+LEFT JOIN timeline_semantic_documents
+  ON timeline_semantic_documents.timeline_id = timeline.id
+  AND timeline_semantic_documents.type = 1
+LEFT JOIN timeline_embeddings
+  ON timeline_embeddings.timeline_semantic_documents_id = timeline_semantic_documents.id
+  AND timeline_embeddings.embedding_model_id = ?
+WHERE timeline_semantic_documents.id IS NULL
+   OR timeline_embeddings.id IS NULL
+ORDER BY timeline.id DESC
 LIMIT ?;

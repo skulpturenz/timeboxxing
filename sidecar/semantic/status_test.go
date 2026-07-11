@@ -11,7 +11,7 @@ import (
 func TestIndexStatusServiceStates(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	service := NewIndexStatusService(database.ReadQuerier, nil, fakeEmbedder{}.Model())
+	service := NewIndexStatusService(database.ReadQuerier, nil, 1)
 
 	status, err := service.Status(ctx)
 	if err != nil {
@@ -30,7 +30,7 @@ func TestIndexStatusServiceStates(t *testing.T) {
 		t.Fatalf("expected indexing status with one pending event, got %+v", status)
 	}
 
-	if _, err := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{}).IndexTransitionEvent(ctx, eventID); err != nil {
+	if _, err := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{}, 1).IndexTransitionEvent(ctx, eventID); err != nil {
 		t.Fatalf("index event: %v", err)
 	}
 	status, err = service.Status(ctx)
@@ -51,7 +51,7 @@ func TestIndexStatusServiceExposesBackfillFailure(t *testing.T) {
 		NewBackfiller(
 			staticMissingTransitionEventLister{ids: []int64{1}},
 			&recordingBackfillEnqueuer{failID: 1},
-			fakeEmbedder{}.Model(),
+			1,
 		),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
@@ -66,7 +66,7 @@ func TestIndexStatusServiceExposesBackfillFailure(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	status, err := NewIndexStatusService(database.ReadQuerier, coordinator, fakeEmbedder{}.Model()).Status(ctx)
+	status, err := NewIndexStatusService(database.ReadQuerier, coordinator, 1).Status(ctx)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}

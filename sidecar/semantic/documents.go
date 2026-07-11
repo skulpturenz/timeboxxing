@@ -12,6 +12,7 @@ import (
 	"time"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	enumssemanticdocumenttype "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_semantic_document_type"
 )
 
 const (
@@ -21,6 +22,30 @@ const (
 	DocumentTypeTimeBlock    = "time_block_summary"
 	semanticDocumentDateForm = "2006-01-02"
 )
+
+// documentTypeID resolves a document-type code to its semantic_document_types id.
+func documentTypeID(code string) sql.NullInt64 {
+	documentType, err := enumssemanticdocumenttype.Parse(code)
+	if err != nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(documentType), Valid: true}
+}
+
+// deriveEventReason reconstructs the transition reason for a single event from its idle flag and the
+// previous timeline entry (reason is no longer stored on the event store).
+func deriveEventReason(idle sql.NullBool, applicationID, prevApplicationID sql.NullInt64, prevIdle sql.NullBool) string {
+	if idle.Valid && idle.Bool {
+		return "idle"
+	}
+	if prevIdle.Valid && prevIdle.Bool {
+		return "return_from_idle"
+	}
+	if applicationID.Valid && prevApplicationID.Valid && applicationID.Int64 == prevApplicationID.Int64 {
+		return "tab_change"
+	}
+	return "focus_change"
+}
 
 type DocumentSpec struct {
 	Key               string
@@ -70,7 +95,7 @@ func eventDocumentSpec(src readqueries.GetSemanticEventDocumentSourceRow, loc *t
 	source := transitionDocumentSource{
 		TransitionEventID: src.TransitionEventID,
 		ApplicationName:   src.ApplicationName,
-		Reason:            src.Reason,
+		Reason:            deriveEventReason(src.Idle, src.ApplicationID, src.PrevApplicationID, src.PrevIdle),
 		StartedAt:         src.StartedAt,
 		EndedAt:           src.EndedAt,
 		Browser:           src.Browser,
@@ -99,13 +124,13 @@ func summaryDocumentSpecs(rows []readqueries.ListTransitionEventDocumentSourcesF
 		sources = append(sources, transitionDocumentSource{
 			TransitionEventID: row.TransitionEventID,
 			ApplicationName:   row.ApplicationName,
-			Reason:            row.Reason,
-			StartedAt:         row.StartedAt,
-			EndedAt:           row.EndedAt,
-			Browser:           row.Browser,
-			Tab:               row.Tab,
-			Idle:              row.Idle,
-			CdpURL:            row.CdpUrl,
+			// Reason is unused by the summary renderers (only per-event documents surface it).
+			StartedAt: row.StartedAt,
+			EndedAt:   row.EndedAt,
+			Browser:   row.Browser,
+			Tab:       row.Tab,
+			Idle:      row.Idle,
+			CdpURL:    row.CdpUrl,
 		})
 	}
 

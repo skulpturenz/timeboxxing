@@ -16,14 +16,15 @@ type writeTxRunner interface {
 }
 
 type Indexer struct {
-	writeTx     writeTxRunner
-	readQuerier readqueries.Querier
-	embedder    Embedder
-	location    *time.Location
+	writeTx          writeTxRunner
+	readQuerier      readqueries.Querier
+	embedder         Embedder
+	embeddingModelID int64
+	location         *time.Location
 }
 
-func NewIndexer(writeTx writeTxRunner, readQuerier readqueries.Querier, embedder Embedder) *Indexer {
-	return &Indexer{writeTx: writeTx, readQuerier: readQuerier, embedder: embedder, location: time.Local}
+func NewIndexer(writeTx writeTxRunner, readQuerier readqueries.Querier, embedder Embedder, embeddingModelID int64) *Indexer {
+	return &Indexer{writeTx: writeTx, readQuerier: readQuerier, embedder: embedder, embeddingModelID: embeddingModelID, location: time.Local}
 }
 
 func (i *Indexer) IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error) {
@@ -92,28 +93,26 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 
 	var documentID int64
 	if err := i.writeTx.WriteTx(ctx, func(q *writequeries.Queries) error {
-		documentID, err = q.UpsertSemanticDocument(ctx, writequeries.UpsertSemanticDocumentParams{
-			DocumentKey:       spec.Key,
-			DocumentType:      spec.Type,
-			TransitionEventID: spec.TransitionEventID,
-			StartedAt:         utcNullTime(spec.StartedAt),
-			EndedAt:           utcNullTime(spec.EndedAt),
-			Content:           content,
+		documentID, err = q.UpsertTimelineSemanticDocument(ctx, writequeries.UpsertTimelineSemanticDocumentParams{
+			DocumentKey: spec.Key,
+			TimelineID:  spec.TransitionEventID,
+			Type:        documentTypeID(spec.Type),
+			Content:     content,
 		})
 		if err != nil {
 			return fmt.Errorf("upsert semantic document %q: %w", spec.Key, err)
 		}
 
-		if err := q.DeleteSemanticDocumentEmbedding(ctx, documentID); err != nil {
+		if err := q.DeleteTimelineEmbedding(ctx, sql.NullInt64{Int64: documentID, Valid: true}); err != nil {
 			return fmt.Errorf("delete semantic document embedding %q: %w", spec.Key, err)
 		}
 
-		if err := q.CreateSemanticDocumentEmbedding(ctx, writequeries.CreateSemanticDocumentEmbeddingParams{
-			SemanticDocumentID: documentID,
-			EmbeddingModel:     i.embedder.Model(),
-			EmbeddingDimension: int64(i.embedder.Dimension()),
-			EmbeddedAt:         sql.NullTime{Time: time.Now().UTC(), Valid: true},
-			Embedding:          encoded,
+		if err := q.CreateTimelineEmbedding(ctx, writequeries.CreateTimelineEmbeddingParams{
+			TimelineID:                  spec.TransitionEventID,
+			TimelineSemanticDocumentsID: sql.NullInt64{Int64: documentID, Valid: true},
+			EmbeddingModelID:            sql.NullInt64{Int64: i.embeddingModelID, Valid: true},
+			Dimension:                   int64(i.embedder.Dimension()),
+			Embedding:                   encoded,
 		}); err != nil {
 			return fmt.Errorf("create semantic document embedding %q: %w", spec.Key, err)
 		}
@@ -123,11 +122,4 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 	}
 
 	return documentID, nil
-}
-
-func utcNullTime(value sql.NullTime) sql.NullTime {
-	if !value.Valid {
-		return value
-	}
-	return sql.NullTime{Time: value.Time.UTC(), Valid: true}
 }

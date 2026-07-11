@@ -51,8 +51,8 @@ class GrpcSettingsRepository(
         }
 
         return AiModelOptions(
-            embeddingModels = response.embeddingModelsList.map { it.toAiModelOption() },
-            semanticModels = response.semanticModelsList.map { it.toAiModelOption() },
+            embeddingModels = response.modelsList.filter { it.embedding }.map { it.toAiModelOption() },
+            semanticModels = response.modelsList.filter { it.semantic }.map { it.toAiModelOption() },
         )
     }
 
@@ -77,8 +77,7 @@ class GrpcSettingsRepository(
                 .saveAiSettings(
                     SaveAiSettingsRequest.newBuilder()
                         .setProvider(settings.provider.toProto())
-                        .setOpenrouterBaseUrl(settings.openRouterBaseUrl)
-                        .setOllamaBaseUrl(settings.ollamaBaseUrl)
+                        .setModelProviderBaseUrl(settings.modelProviderBaseUrl)
                         .setEmbeddingModelId(settings.embeddingModelId)
                         .setSemanticModelId(settings.semanticModelId)
                         .setOpenrouterSecretExists(settings.openRouterSecretExists || settings.openRouterApiKey.isNotBlank())
@@ -161,8 +160,7 @@ private fun ModelOption.toAiModelOption(): AiModelOption =
 private fun AiSettingsProto.toAiSettings(): AiSettings =
     AiSettings(
         provider = provider.toAiProvider(),
-        openRouterBaseUrl = openrouterBaseUrl,
-        ollamaBaseUrl = ollamaBaseUrl,
+        modelProviderBaseUrl = modelProviderBaseUrl,
         embeddingModelId = embeddingModelId,
         semanticModelId = semanticModelId,
         openRouterSecretExists = openrouterSecretExists,
@@ -176,13 +174,13 @@ internal fun PruneDatabaseRangeResponse.toDatabasePruneResult(): DatabasePruneRe
     DatabasePruneResult(
         status = DatabaseMaintenanceStatus(sizeBytes = sizeBytes),
         counts = DatabasePruneCounts(
-            timesheetEntriesDeleted = timesheetEntriesDeleted,
-            usageLinksDeleted = usageLinksDeleted,
-            timesheetsDeleted = timesheetsDeleted,
-            transitionEventsDeleted = transitionEventsDeleted,
-            transitionMetadataDeleted = transitionMetadataDeleted,
-            semanticDocumentsDeleted = semanticDocumentsDeleted,
-            embeddingsDeleted = embeddingsDeleted,
+            ledgerItemsDeleted = ledgerItemsDeleted,
+            ledgerItemTimelineEntriesDeleted = ledgerItemTimelineEntriesDeleted,
+            timelineDeleted = timelineDeleted,
+            foregroundProcessesDeleted = foregroundProcessesDeleted,
+            foregroundProcessMetadataDeleted = foregroundProcessMetadataDeleted,
+            timelineSemanticDocumentsDeleted = timelineSemanticDocumentsDeleted,
+            timelineEmbeddingsDeleted = timelineEmbeddingsDeleted,
             applicationsDeleted = applicationsDeleted,
         ),
     )

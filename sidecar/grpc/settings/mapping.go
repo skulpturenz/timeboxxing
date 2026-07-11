@@ -1,11 +1,20 @@
 package settings
 
 import (
+	"database/sql"
+	"strings"
+
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+// Model-provider ids, matching the model_providers seed (db/seeds/model_providers).
+const (
+	modelProviderOpenRouterID = 1
+	modelProviderOllamaID     = 2
 )
 
 func providerFromProto(provider settingsv1.AiProvider) (semantic.Provider, error) {
@@ -19,48 +28,47 @@ func providerFromProto(provider settingsv1.AiProvider) (semantic.Provider, error
 	}
 }
 
-func providerToProto(provider string) settingsv1.AiProvider {
-	switch semantic.Provider(provider) {
+func providerToModelProviderID(provider semantic.Provider) sql.NullInt64 {
+	switch provider {
 	case semantic.ProviderOpenRouter:
-		return settingsv1.AiProvider_OPENROUTER
+		return sql.NullInt64{Int64: modelProviderOpenRouterID, Valid: true}
 	case semantic.ProviderOllama:
+		return sql.NullInt64{Int64: modelProviderOllamaID, Valid: true}
+	default:
+		return sql.NullInt64{}
+	}
+}
+
+func providerToProtoFromLabel(label string) settingsv1.AiProvider {
+	switch strings.ToLower(strings.TrimSpace(label)) {
+	case string(semantic.ProviderOpenRouter):
+		return settingsv1.AiProvider_OPENROUTER
+	case string(semantic.ProviderOllama):
 		return settingsv1.AiProvider_OLLAMA
 	default:
 		return settingsv1.AiProvider_AI_PROVIDER_UNSPECIFIED
 	}
 }
 
-func embeddingModelsToProto(models []readqueries.EmbeddingModel) []*settingsv1.ModelOption {
+func modelsToProto(models []readqueries.Model) []*settingsv1.ModelOption {
 	out := make([]*settingsv1.ModelOption, 0, len(models))
 	for _, model := range models {
 		out = append(out, &settingsv1.ModelOption{
 			Id:             model.ID,
-			OpenrouterSlug: model.OpenrouterSlug,
-			OllamaSlug:     model.OllamaSlug,
+			OpenrouterSlug: model.OpenrouterSlug.String,
+			OllamaSlug:     model.OllamaSlug.String,
 			Label:          model.Label,
+			Semantic:       model.Semantic,
+			Embedding:      model.Embedding,
 		})
 	}
 	return out
 }
 
-func semanticModelsToProto(models []readqueries.SemanticModel) []*settingsv1.ModelOption {
-	out := make([]*settingsv1.ModelOption, 0, len(models))
-	for _, model := range models {
-		out = append(out, &settingsv1.ModelOption{
-			Id:             model.ID,
-			OpenrouterSlug: model.OpenrouterSlug,
-			OllamaSlug:     model.OllamaSlug,
-			Label:          model.Label,
-		})
-	}
-	return out
-}
-
-func aiSettingsToProto(row readqueries.GetAISettingsRow, openRouterSecretExists bool, ollamaSecretExists bool) *settingsv1.AiSettings {
+func aiSettingsToProto(row readqueries.GetApplicationSettingsRow, openRouterSecretExists bool, ollamaSecretExists bool) *settingsv1.AiSettings {
 	return &settingsv1.AiSettings{
-		Provider:               providerToProto(row.Provider),
-		OpenrouterBaseUrl:      row.OpenrouterBaseUrl,
-		OllamaBaseUrl:          row.OllamaBaseUrl,
+		Provider:               providerToProtoFromLabel(row.ModelProviderLabel),
+		ModelProviderBaseUrl:   row.ModelProviderBaseUrl.String,
 		EmbeddingModelId:       row.EmbeddingModelID,
 		SemanticModelId:        row.SemanticModelID,
 		OpenrouterSecretExists: openRouterSecretExists,
@@ -68,20 +76,11 @@ func aiSettingsToProto(row readqueries.GetAISettingsRow, openRouterSecretExists 
 	}
 }
 
-func findEmbeddingModel(models []readqueries.EmbeddingModel, id int64) (readqueries.EmbeddingModel, bool) {
+func findModel(models []readqueries.Model, id int64) (readqueries.Model, bool) {
 	for _, model := range models {
 		if model.ID == id {
 			return model, true
 		}
 	}
-	return readqueries.EmbeddingModel{}, false
-}
-
-func findSemanticModel(models []readqueries.SemanticModel, id int64) (readqueries.SemanticModel, bool) {
-	for _, model := range models {
-		if model.ID == id {
-			return model, true
-		}
-	}
-	return readqueries.SemanticModel{}, false
+	return readqueries.Model{}, false
 }

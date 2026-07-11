@@ -26,8 +26,10 @@ func (s *Service) GetTransitionEvents(ctx context.Context, params GetTransitionE
 	}
 
 	events := make([]Event, 0, len(rows))
-	for _, row := range rows {
-		events = append(events, eventFromGetTransitionEventsRow(row))
+	for i, row := range rows {
+		event := eventFromGetTransitionEventsRow(row)
+		event.Reason = reasonForTransitionRow(rows, i)
+		events = append(events, event)
 	}
 
 	return events, nil

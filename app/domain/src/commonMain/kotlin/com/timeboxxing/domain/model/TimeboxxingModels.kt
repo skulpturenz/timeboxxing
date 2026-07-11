@@ -309,8 +309,7 @@ data class AiModelOptions(
 
 data class AiSettings(
     val provider: AiProvider = AiProvider.OpenRouter,
-    val openRouterBaseUrl: String = "https://openrouter.ai/api/v1",
-    val ollamaBaseUrl: String = "http://127.0.0.1:11434",
+    val modelProviderBaseUrl: String = "https://openrouter.ai/api/v1",
     val embeddingModelId: Long = 1,
     val semanticModelId: Long = 1,
     val openRouterApiKey: String = "",
@@ -329,23 +328,23 @@ data class DatabasePruneRange(
 )
 
 data class DatabasePruneCounts(
-    val timesheetEntriesDeleted: Long = 0,
-    val usageLinksDeleted: Long = 0,
-    val timesheetsDeleted: Long = 0,
-    val transitionEventsDeleted: Long = 0,
-    val transitionMetadataDeleted: Long = 0,
-    val semanticDocumentsDeleted: Long = 0,
-    val embeddingsDeleted: Long = 0,
+    val ledgerItemsDeleted: Long = 0,
+    val ledgerItemTimelineEntriesDeleted: Long = 0,
+    val timelineDeleted: Long = 0,
+    val foregroundProcessesDeleted: Long = 0,
+    val foregroundProcessMetadataDeleted: Long = 0,
+    val timelineSemanticDocumentsDeleted: Long = 0,
+    val timelineEmbeddingsDeleted: Long = 0,
     val applicationsDeleted: Long = 0,
 ) {
     val totalDeletedRows: Long
-        get() = timesheetEntriesDeleted +
-            usageLinksDeleted +
-            timesheetsDeleted +
-            transitionEventsDeleted +
-            transitionMetadataDeleted +
-            semanticDocumentsDeleted +
-            embeddingsDeleted +
+        get() = ledgerItemsDeleted +
+            ledgerItemTimelineEntriesDeleted +
+            timelineDeleted +
+            foregroundProcessesDeleted +
+            foregroundProcessMetadataDeleted +
+            timelineSemanticDocumentsDeleted +
+            timelineEmbeddingsDeleted +
             applicationsDeleted
 }
 

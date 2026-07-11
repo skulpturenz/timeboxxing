@@ -87,7 +87,7 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
 	_ = componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
-		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}),
+		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}, 1),
 	})
 
 	runtime := NewRuntime(registry)
@@ -110,9 +110,9 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 		t.Fatalf("add transition event job: %v", err)
 	}
 
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "transition_events", 1)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_documents", 7)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline", 1)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_semantic_documents", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_embeddings", 7)
 }
 
 func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
@@ -153,7 +153,7 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
 	transitions := componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
-		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}),
+		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}, 1),
 	})
 
 	runtime := NewRuntime(registry)
@@ -180,8 +180,8 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 		t.Fatalf("enqueue backfill transition event: %v", err)
 	}
 
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_documents", 7)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_semantic_documents", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_embeddings", 7)
 }
 
 func countWorkerRows(t *testing.T, ctx context.Context, conn *sql.DB, table string) int {

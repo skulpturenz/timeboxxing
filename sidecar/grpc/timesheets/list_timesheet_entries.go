@@ -2,6 +2,7 @@ package timesheets
 
 import (
 	"context"
+	"database/sql"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
@@ -19,13 +20,13 @@ func (s *Server) ListTimesheetEntries(ctx context.Context, req *timesheetsv1.Lis
 	}
 
 	rows, err := s.readQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
-		StartedAt: dayStartedAt,
-		EndedAt:   dayEndedAt,
+		StartedAtUtc:   sql.NullTime{Time: dayStartedAt, Valid: true},
+		StartedAtUtc_2: sql.NullTime{Time: dayEndedAt, Valid: true},
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list timesheet entries: %v", err)
 	}
-	entries, err := entriesToProto(ctx, s, rows)
+	entries, err := entriesToProto(ctx, s, dayStartedAt, rows)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list timesheet entry usage: %v", err)
 	}

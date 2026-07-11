@@ -106,14 +106,15 @@ fun SettingsPane(
                     onProviderChange = { onAction(TimeboxxingAction.UpdateSettingsProvider(it)) },
                 )
 
+                TbTextField(
+                    value = draft.modelProviderBaseUrl,
+                    onValueChange = { onAction(TimeboxxingAction.UpdateModelProviderBaseUrl(it)) },
+                    label = "Model provider base URL",
+                    singleLine = true,
+                )
+
                 when (draft.provider) {
                     AiProvider.OpenRouter -> {
-                        TbTextField(
-                            value = draft.openRouterBaseUrl,
-                            onValueChange = { onAction(TimeboxxingAction.UpdateOpenRouterBaseUrl(it)) },
-                            label = "OpenRouter base URL",
-                            singleLine = true,
-                        )
                         TbTextField(
                             value = draft.openRouterApiKey,
                             onValueChange = { onAction(TimeboxxingAction.UpdateOpenRouterApiKey(it)) },
@@ -124,12 +125,6 @@ fun SettingsPane(
                     }
 
                     AiProvider.Ollama -> {
-                        TbTextField(
-                            value = draft.ollamaBaseUrl,
-                            onValueChange = { onAction(TimeboxxingAction.UpdateOllamaBaseUrl(it)) },
-                            label = "Ollama base URL",
-                            singleLine = true,
-                        )
                         TbTextField(
                             value = draft.ollamaApiKey,
                             onValueChange = { onAction(TimeboxxingAction.UpdateOllamaApiKey(it)) },

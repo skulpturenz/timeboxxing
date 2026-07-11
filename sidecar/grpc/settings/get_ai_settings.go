@@ -13,7 +13,7 @@ func (s *Server) GetAiSettings(ctx context.Context, req *settingsv1.GetAiSetting
 		return nil, status.Error(codes.FailedPrecondition, "settings store is unavailable")
 	}
 
-	row, err := s.readQuerier.GetAISettings(ctx)
+	row, err := s.readQuerier.GetApplicationSettings(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get AI settings: %v", err)
 	}

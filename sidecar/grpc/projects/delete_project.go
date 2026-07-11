@@ -2,7 +2,6 @@ package projects
 
 import (
 	"context"
-	"strings"
 
 	projectsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1"
 	"google.golang.org/grpc/codes"
@@ -14,8 +13,8 @@ func (s *Server) DeleteProject(ctx context.Context, req *projectsv1.DeleteProjec
 		return nil, status.Error(codes.FailedPrecondition, "project store is unavailable")
 	}
 
-	id := strings.TrimSpace(req.GetId())
-	if id == "" {
+	id := req.GetId()
+	if id <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "project id is required")
 	}
 	if err := s.writeQuerier.DeleteProject(ctx, id); err != nil {

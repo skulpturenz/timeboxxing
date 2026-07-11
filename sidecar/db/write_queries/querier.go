@@ -6,23 +6,26 @@ package writequeries
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
-	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
-	CreateSemanticDocumentEmbedding(ctx context.Context, arg CreateSemanticDocumentEmbeddingParams) error
-	CreateTimesheetEntry(ctx context.Context, arg CreateTimesheetEntryParams) (TimesheetEntry, error)
-	CreateTimesheetEntryUsageBlock(ctx context.Context, arg CreateTimesheetEntryUsageBlockParams) error
-	CreateTransitionEvent(ctx context.Context, arg CreateTransitionEventParams) (int64, error)
-	CreateTransitionEventMetadata(ctx context.Context, arg CreateTransitionEventMetadataParams) error
-	CreateTransitionEventNow(ctx context.Context, arg CreateTransitionEventNowParams) (int64, error)
-	DeleteProject(ctx context.Context, id string) error
-	DeleteSemanticDocumentEmbedding(ctx context.Context, semanticDocumentID int64) error
-	DeleteTimesheetEntry(ctx context.Context, id string) error
-	EnsureTimesheet(ctx context.Context, arg EnsureTimesheetParams) (Timesheet, error)
-	UpsertAISettings(ctx context.Context, arg UpsertAISettingsParams) error
+	CreateForegroundProcessMetadata(ctx context.Context, arg CreateForegroundProcessMetadataParams) error
+	CreateLedgerItem(ctx context.Context, arg CreateLedgerItemParams) (LedgerItem, error)
+	CreateLedgerItemTimelineEntry(ctx context.Context, arg CreateLedgerItemTimelineEntryParams) error
+	CreateProject(ctx context.Context, name string) (int64, error)
+	CreateProjectCost(ctx context.Context, arg CreateProjectCostParams) error
+	CreateProjectDetails(ctx context.Context, arg CreateProjectDetailsParams) error
+	CreateTimeline(ctx context.Context, arg CreateTimelineParams) (int64, error)
+	CreateTimelineEmbedding(ctx context.Context, arg CreateTimelineEmbeddingParams) error
+	DeleteLedgerItem(ctx context.Context, id int64) error
+	DeleteProject(ctx context.Context, id int64) error
+	DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID sql.NullInt64) error
+	EnsureLedger(ctx context.Context) error
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
-	UpsertSemanticDocument(ctx context.Context, arg UpsertSemanticDocumentParams) (int64, error)
+	UpsertApplicationSettings(ctx context.Context, arg UpsertApplicationSettingsParams) error
+	UpsertForegroundProcess(ctx context.Context, arg UpsertForegroundProcessParams) (int64, error)
+	UpsertTimelineSemanticDocument(ctx context.Context, arg UpsertTimelineSemanticDocumentParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)
