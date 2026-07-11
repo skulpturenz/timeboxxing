@@ -12,6 +12,7 @@ import (
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsdbengine "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_db_engine"
 )
 
 func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
@@ -22,7 +23,7 @@ func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 		t.Skip("sqlite-vector extension is not bundled for this platform and SIDECAR_SQLITE_VECTOR_EXTENSION_PATH is not set")
 	}
 	database, err := New(ctx, Options{
-		Engine:                    EngineSqlite,
+		Engine:                    enumsdbengine.Sqlite,
 		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
 		SQLiteVectorExtensionPath: configuredPath,
 	})
@@ -50,7 +51,7 @@ func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 		t.Skip("sqlite-vector extension is not embedded for this platform")
 	}
 	database, err := New(ctx, Options{
-		Engine:                    EngineSqlite,
+		Engine:                    enumsdbengine.Sqlite,
 		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
 		SQLiteVectorExtensionPath: extensionPath,
 	})
@@ -73,7 +74,7 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "test.db")
 
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
+		Engine:         enumsdbengine.Sqlite,
 		DataSourceName: dsn,
 	})
 	if err != nil {
@@ -84,7 +85,7 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 	}
 
 	database, err = New(ctx, Options{
-		Engine:         EngineSqlite,
+		Engine:         enumsdbengine.Sqlite,
 		DataSourceName: dsn,
 	})
 	if err != nil {
@@ -102,7 +103,7 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
+		Engine:         enumsdbengine.Sqlite,
 		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
@@ -137,7 +138,7 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
+		Engine:         enumsdbengine.Sqlite,
 		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
@@ -193,7 +194,7 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
+		Engine:         enumsdbengine.Sqlite,
 		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
@@ -228,7 +229,7 @@ func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 func TestSqliteSerializesConcurrentWrites(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
+		Engine:         enumsdbengine.Sqlite,
 		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {

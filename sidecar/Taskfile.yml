@@ -32,7 +32,7 @@ tasks:
   create-migration:
     desc: Create a new migration
     cmds:
-      - go tool migrate create -ext sql -dir db/sqlite/schema -seq {{.CLI_ARGS}}
+      - go tool migrate create -ext sql -dir db/schema -seq {{.CLI_ARGS}}
 
   create-seeder:
     desc: Create a new seed script for a table
@@ -41,13 +41,18 @@ tasks:
         - TABLE
         - NAME
     cmds:
-      - mkdir -p db/sqlite/seeds/{{.TABLE}}
-      - go tool migrate create -ext sql -dir db/sqlite/seeds/{{.TABLE}} -seq {{.NAME}}
+      - mkdir -p db/seeds/{{.TABLE}}
+      - go tool migrate create -ext sql -dir db/seeds/{{.TABLE}} -seq {{.NAME}}
 
   create-query:
     desc: Create a new query
     cmds:
-      - touch db/sqlite/queries/{{.CLI_ARGS}}.sql
+      - touch db/read_queries/{{.CLI_ARGS}}.sql
+
+  create-mutation:
+    desc: Create a new mutation
+    cmds:
+      - touch db/write_queries/{{.CLI_ARGS}}.sql
 
   generate-models:
     desc: Generate DB models

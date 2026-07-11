@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -27,25 +28,22 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/mattn/go-sqlite3"
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	enumsdbengine "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_db_engine"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
-//go:embed */schema/*.sql */seeds/*/*.sql
+//go:embed schema/*.sql seeds/*/*.sql
 var migrationFiles embed.FS
 
 //go:embed sqlite-vector/*/vector.*
 var sqliteVectorExtensionFiles embed.FS
 
-type Engine string
-
 const (
-	EngineSqlite Engine = "sqlite"
-
 	sqliteVectorEntryPoint = "sqlite3_vector_init"
 )
 
 type Options struct {
-	Engine                    Engine
+	Engine                    enumsdbengine.DbEngine
 	DataSourceName            string
 	SQLiteVectorExtensionPath string
 	// EncryptionKey, when non-empty, is the hex-encoded 32-byte (64 hex char) SQLCipher key used
@@ -71,14 +69,12 @@ type Database struct {
 	SQLiteVectorExtensionPath string
 }
 
-type databaseKey struct{}
-
 func Register(registry *services.Services[any, any], database *Database) {
-	services.Set(registry, databaseKey{}, database)
+	services.Set(registry, reflect.TypeFor[Database](), database)
 }
 
 func FromServices(registry *services.Services[any, any]) (*Database, bool) {
-	service, ok := services.Get[*Database](registry, databaseKey{})
+	service, ok := services.Get[*Database](registry, reflect.TypeFor[Database]())
 	if !ok {
 		return nil, false
 	}
@@ -87,7 +83,7 @@ func FromServices(registry *services.Services[any, any]) (*Database, bool) {
 
 func New(ctx context.Context, opts Options) (*Database, error) {
 	switch opts.Engine {
-	case EngineSqlite:
+	case enumsdbengine.Sqlite:
 		return newSqlite(ctx, opts.DataSourceName, opts.SQLiteVectorExtensionPath, opts.EncryptionKey)
 	default:
 		return nil, fmt.Errorf("unsupported database engine %q", opts.Engine)
@@ -151,7 +147,7 @@ func newSqlite(ctx context.Context, dataSourceName string, sqliteVectorExtension
 		return nil, err
 	}
 
-	if err := runMigrations(ctx, writerConn, EngineSqlite); err != nil {
+	if err := runMigrations(ctx, writerConn, enumsdbengine.Sqlite); err != nil {
 		writerConn.Close()
 		return nil, err
 	}
@@ -361,12 +357,12 @@ func sqliteDriverName(sqliteVectorExtensionPath string) string {
 	return driverName
 }
 
-func runMigrations(ctx context.Context, conn *sql.DB, engine Engine) error {
+func runMigrations(ctx context.Context, conn *sql.DB, engine enumsdbengine.DbEngine) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	if err := runMigrationDir(conn, path.Join(string(engine), "schema"), migratesqlite.DefaultMigrationsTable); err != nil {
+	if err := runMigrationDir(conn, path.Join(engine.String(), "schema"), migratesqlite.DefaultMigrationsTable); err != nil {
 		return fmt.Errorf("run %s schema migrations: %w", engine, err)
 	}
 
@@ -410,8 +406,8 @@ func runMigrationDir(conn *sql.DB, dir string, migrationsTable string) error {
 	return nil
 }
 
-func listSeedDirs(engine Engine) ([]string, error) {
-	dir := path.Join(string(engine), "seeds")
+func listSeedDirs(engine enumsdbengine.DbEngine) ([]string, error) {
+	dir := path.Join(engine.String(), "seeds")
 	entries, err := migrationFiles.ReadDir(dir)
 	if err != nil {
 		return nil, err

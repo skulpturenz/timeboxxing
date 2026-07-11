@@ -10,6 +10,7 @@ import (
 	"time"
 
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsdbengine "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_db_engine"
 )
 
 const (
@@ -78,7 +79,7 @@ func TestEncryptedDatabaseOnDiskAndKeyRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "enc.db")
 
-	d, err := New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath, EncryptionKey: testKey})
+	d, err := New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath, EncryptionKey: testKey})
 	if err != nil {
 		t.Fatalf("create encrypted database: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestEncryptedDatabaseOnDiskAndKeyRoundTrip(t *testing.T) {
 	}
 
 	// Reopen with the correct key -> data intact.
-	d2, err := New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath, EncryptionKey: testKey})
+	d2, err := New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath, EncryptionKey: testKey})
 	if err != nil {
 		t.Fatalf("reopen with key: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestWrongKeyFailsSafely(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "enc.db")
 
-	d, err := New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath, EncryptionKey: testKey})
+	d, err := New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath, EncryptionKey: testKey})
 	if err != nil {
 		t.Fatalf("create encrypted database: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestWrongKeyFailsSafely(t *testing.T) {
 	before := fileHeader(t, dbPath)
 
 	// Wrong key must return ErrDatabaseKeyMismatch and NOT modify the file.
-	_, err = New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath, EncryptionKey: testWrongKey})
+	_, err = New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath, EncryptionKey: testWrongKey})
 	if !errors.Is(err, ErrDatabaseKeyMismatch) {
 		t.Fatalf("expected ErrDatabaseKeyMismatch, got %v", err)
 	}
@@ -137,7 +138,7 @@ func TestWrongKeyFailsSafely(t *testing.T) {
 	}
 
 	// Missing key (empty) on an encrypted DB must also fail without destroying it.
-	_, err = New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath})
+	_, err = New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath})
 	if err == nil {
 		t.Fatalf("expected error opening encrypted DB with no key")
 	}
@@ -151,7 +152,7 @@ func TestPlaintextDatabaseMigratesToEncrypted(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "legacy.db")
 
 	// 1) Build a legacy PLAINTEXT database (no key) with recognizable data.
-	legacy, err := New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath})
+	legacy, err := New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath})
 	if err != nil {
 		t.Fatalf("create plaintext database: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestPlaintextDatabaseMigratesToEncrypted(t *testing.T) {
 	}
 
 	// 2) Open WITH a key -> triggers the one-time migration.
-	migrated, err := New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath, EncryptionKey: testKey})
+	migrated, err := New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath, EncryptionKey: testKey})
 	if err != nil {
 		t.Fatalf("open triggers migration: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestPlaintextDatabaseMigratesToEncrypted(t *testing.T) {
 	}
 
 	// 3) Idempotent: a second keyed open performs no migration and still reads the data.
-	again, err := New(ctx, Options{Engine: EngineSqlite, DataSourceName: dbPath, EncryptionKey: testKey})
+	again, err := New(ctx, Options{Engine: enumsdbengine.Sqlite, DataSourceName: dbPath, EncryptionKey: testKey})
 	if err != nil {
 		t.Fatalf("reopen migrated database: %v", err)
 	}

@@ -57,8 +57,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	sqliteVectorExtensionPath, _ := envs.SQLiteVectorExtensionPath.Value()
 	databaseKey, _ := envs.ResolvedDatabaseKey()
 	database, err := db.New(ctx, db.Options{
-		Engine:                    envs.DatabaseEngine.Value(),
-		DataSourceName:            envs.DatabaseDSN.Value(),
+		Engine:                    envs.DB_ENGINE.Value(),
+		DataSourceName:            envs.DB_DSN.Value(),
 		SQLiteVectorExtensionPath: sqliteVectorExtensionPath,
 		EncryptionKey:             databaseKey,
 	})
@@ -101,8 +101,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 }
 
 func buildQueues(ctx context.Context, registry *services.Services[any, any]) error {
-	queueDSN := envs.DatabaseDSN.Value()
-	if envs.DatabaseEngine.Value() == db.EngineSqlite {
+	queueDSN := envs.DB_DSN.Value()
+	if envs.DB_ENGINE.Value() == db.EngineSqlite {
 		// Reuse the exact keyed DSN the writer/reader use so the queue connection is encrypted
 		// identically — sqliteq opens the same file via a hardcoded sql.Open("sqlite3", ...).
 		if database, ok := db.FromServices(registry); ok {
@@ -206,7 +206,7 @@ func serveGRPC(ctx context.Context, registry *services.Services[any, any], logge
 		return nil
 	}
 
-	listenAddress := envs.GrpcListenAddress.Value().String()
+	listenAddress := envs.GRPC_LISTEN_ADDRESS.Value().String()
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		return fmt.Errorf("listen on address %s: %w", listenAddress, err)

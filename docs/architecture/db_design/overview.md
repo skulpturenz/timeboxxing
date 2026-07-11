@@ -15,6 +15,8 @@
    - Hourly: set rate on the project, deliverable: set rate on project costs. If both, deliverable takes precendence
    - A project is built up of one to many ledger items. Sum it up to get total cost
 
+DBML:
+
 ```
 // Event store
 Table foreground_processes {

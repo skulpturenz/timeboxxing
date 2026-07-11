@@ -3,29 +3,31 @@ package envs
 import (
 	"os"
 	"testing"
+
+	enumsenv "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_env"
 )
 
 func TestRuntimeEnvironmentDefaultsToProduction(t *testing.T) {
 	unsetEnv(t, "GO_ENV")
 
-	if got := RuntimeEnvironment.Value(); got != GoEnvProduction {
+	if got := GO_ENV.Value(); got != enumsenv.Production.String() {
 		t.Fatalf("expected production default, got %q", got)
 	}
 }
 
 func TestRuntimeEnvironmentAcceptsSupportedValues(t *testing.T) {
-	cases := map[string]GoEnv{
-		"production":  GoEnvProduction,
-		"development": GoEnvDevelopment,
-		"test":        GoEnvTest,
-		"local":       GoEnvLocal,
+	cases := map[string]enumsenv.Environment{
+		"production":  enumsenv.Production,
+		"development": enumsenv.Development,
+		"test":        enumsenv.Test,
+		"local":       enumsenv.Local,
 	}
 
 	for value, expected := range cases {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv("GO_ENV", value)
 
-			if got := RuntimeEnvironment.Value(); got != expected {
+			if got, err := enumsenv.Parse(GO_ENV.Value()); err != nil || got != expected {
 				t.Fatalf("expected %q, got %q", expected, got)
 			}
 		})
@@ -36,14 +38,14 @@ func TestRuntimeEnvironmentRejectsUnsupportedValues(t *testing.T) {
 	t.Setenv("GO_ENV", "staging")
 
 	assertPanics(t, func() {
-		_ = RuntimeEnvironment.Value()
+		_ = GO_ENV.Value()
 	})
 }
 
 func TestSentryDSNDefaultsToPlaceholder(t *testing.T) {
 	unsetEnv(t, "SIDECAR_SENTRY_DSN")
 
-	if got := SentryDSN.Value(); got != PlaceholderSidecarSentryDSN {
+	if got := SENTRY_DSN.Value(); got != PlaceholderSidecarSentryDSN {
 		t.Fatalf("expected placeholder DSN %q, got %q", PlaceholderSidecarSentryDSN, got)
 	}
 }
@@ -51,7 +53,7 @@ func TestSentryDSNDefaultsToPlaceholder(t *testing.T) {
 func TestSentryDSNUsesOverride(t *testing.T) {
 	t.Setenv("SIDECAR_SENTRY_DSN", "https://public@example.com/42")
 
-	if got := SentryDSN.Value(); got != "https://public@example.com/42" {
+	if got := SENTRY_DSN.Value(); got != "https://public@example.com/42" {
 		t.Fatalf("expected DSN override, got %q", got)
 	}
 }
