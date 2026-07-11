@@ -15,21 +15,7 @@ import (
 //go:embed schema/*.sql seeds/*/*.sql
 var migrationFiles embed.FS
 
-func runAllMigrations(ctx context.Context, conn *sql.DB) error {
-	err := runSchemaMigrations(conn)
-	if err != nil {
-		return err
-	}
-
-	err = runSeedMigrations(conn)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func runSchemaMigrations(conn *sql.DB) error {
+func runSchemaMigrations(ctx context.Context, conn *sql.DB) error {
 	if err := runMigrationsFromDir(conn, "schema", migratesqlite.DefaultMigrationsTable); err != nil {
 		return fmt.Errorf("run %s schema migrations", err)
 	}
@@ -37,7 +23,7 @@ func runSchemaMigrations(conn *sql.DB) error {
 	return nil
 }
 
-func runSeedMigrations(conn *sql.DB) error {
+func runSeedMigrations(ctx context.Context, conn *sql.DB) error {
 	getSeedDirs := func() ([]string, error) {
 		dir := "seeds"
 		entries, err := migrationFiles.ReadDir(dir)

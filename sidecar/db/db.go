@@ -90,7 +90,12 @@ func newSqlite(ctx context.Context, dsn DSN, sqliteVectorExtensionPath string) (
 		return nil, err
 	}
 
-	if err := runAllMigrations(ctx, writerConn); err != nil {
+	if err := runSchemaMigrations(ctx, writerConn); err != nil {
+		writerConn.Close()
+		return nil, err
+	}
+
+	if err := runSeedMigrations(ctx, writerConn); err != nil {
 		writerConn.Close()
 		return nil, err
 	}
