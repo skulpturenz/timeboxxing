@@ -85,9 +85,10 @@ func newSqlite(ctx context.Context, dsn DSN, sqliteVectorExtensionPath string) (
 		return nil, fmt.Errorf("ping sqlite writer database: %w", err)
 	}
 
-	if err := ensureDatabaseReadable(ctx, writerConn); err != nil {
-		writerConn.Close()
-		return nil, err
+	// if the encryption key is wrong, we only know about it when we try to query
+	var count int
+	if err := writerConn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master").Scan(&count); err != nil {
+		return nil, fmt.Errorf("read sqlite database: %w", err)
 	}
 
 	if err := runSchemaMigrations(ctx, writerConn); err != nil {
@@ -117,13 +118,4 @@ func newSqlite(ctx context.Context, dsn DSN, sqliteVectorExtensionPath string) (
 		ReadConn:     readerConn,
 		DSN:          dsn,
 	}, nil
-}
-
-func ensureDatabaseReadable(ctx context.Context, conn *sql.DB) error {
-	var count int
-	if err := conn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master").Scan(&count); err != nil {
-		return fmt.Errorf("read sqlite database: %w", err)
-	}
-
-	return nil
 }
