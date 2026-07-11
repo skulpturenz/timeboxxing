@@ -26,7 +26,7 @@ import (
 	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/mattn/go-sqlite3"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
@@ -59,9 +59,13 @@ type Options struct {
 var ErrDatabaseKeyMismatch = errors.New("database is encrypted but the provided key does not match")
 
 type Database struct {
-	WriteQuerier              queries.Querier
-	ReadQuerier               queries.Querier
-	WriteConn                 *sql.DB
+	// WriteQuerier owns the write connection and the write lock (see SerialWriteQuerier); every write
+	// — single statements, WriteTx transactions, and WithWriteConn maintenance — serializes through it.
+	WriteQuerier *SerialWriteQuerier
+	ReadQuerier  readqueries.Querier
+	// ReadConn is the raw read connection, used by the semantic searcher / vector store for
+	// sqlite-vector extension SQL that sqlc can't generate. Reads need no lock (WAL allows concurrent
+	// readers alongside the single writer).
 	ReadConn                  *sql.DB
 	DataSourceName            string
 	SQLiteVectorExtensionPath string
@@ -96,8 +100,8 @@ func (d *Database) Close() error {
 	}
 
 	var errs []error
-	if d.WriteConn != nil {
-		errs = append(errs, d.WriteConn.Close())
+	if d.WriteQuerier != nil && d.WriteQuerier.conn != nil {
+		errs = append(errs, d.WriteQuerier.conn.Close())
 	}
 	if d.ReadConn != nil {
 		errs = append(errs, d.ReadConn.Close())
@@ -128,7 +132,8 @@ func newSqlite(ctx context.Context, dataSourceName string, sqliteVectorExtension
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite writer database: %w", err)
 	}
-	writerConn.SetMaxOpenConns(1)
+	// No connection-count restriction is needed: writeMu (via SerialWriteQuerier / WriteTx /
+	// WithWriteLock) already guarantees a single writer at a time.
 	writerConn.SetMaxIdleConns(1)
 
 	if err := writerConn.PingContext(ctx); err != nil {
@@ -172,9 +177,8 @@ func newSqlite(ctx context.Context, dataSourceName string, sqliteVectorExtension
 	}
 
 	return &Database{
-		WriteQuerier:              queries.New(writerConn),
-		ReadQuerier:               queries.New(readerConn),
-		WriteConn:                 writerConn,
+		ReadQuerier:               readqueries.New(readerConn),
+		WriteQuerier:              newSerialWriteQuerier(writerConn),
 		ReadConn:                  readerConn,
 		DataSourceName:            dataSourceName,
 		SQLiteVectorExtensionPath: strings.TrimSpace(sqliteVectorExtensionPath),

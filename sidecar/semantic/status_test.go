@@ -21,7 +21,7 @@ func TestIndexStatusServiceStates(t *testing.T) {
 		t.Fatalf("expected empty status, got %+v", status)
 	}
 
-	eventID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
+	eventID := createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
 	status, err = service.Status(ctx)
 	if err != nil {
 		t.Fatalf("indexing status: %v", err)
@@ -30,7 +30,7 @@ func TestIndexStatusServiceStates(t *testing.T) {
 		t.Fatalf("expected indexing status with one pending event, got %+v", status)
 	}
 
-	if _, err := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{}).IndexTransitionEvent(ctx, eventID); err != nil {
+	if _, err := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{}).IndexTransitionEvent(ctx, eventID); err != nil {
 		t.Fatalf("index event: %v", err)
 	}
 	status, err = service.Status(ctx)
@@ -45,7 +45,7 @@ func TestIndexStatusServiceStates(t *testing.T) {
 func TestIndexStatusServiceExposesBackfillFailure(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
+	createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
 	coordinator := NewBackfillCoordinator(
 		ctx,
 		NewBackfiller(

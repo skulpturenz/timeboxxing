@@ -290,7 +290,7 @@ func newSemanticRuntime(ctx context.Context, database *db.Database, logger *slog
 		}, err
 	}
 
-	indexer := semantic.NewIndexer(database.WriteConn, database.ReadQuerier, embedder)
+	indexer := semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, embedder)
 	backfiller := semantic.NewBackfiller(database.ReadQuerier, backfillEnqueuer, embedder.Model())
 	backfillCoordinator := semantic.NewBackfillCoordinator(ctx, backfiller, logger.With("service", "semantic_backfill"))
 	indexStatus := semantic.NewIndexStatusService(database.ReadQuerier, backfillCoordinator, embedder.Model())

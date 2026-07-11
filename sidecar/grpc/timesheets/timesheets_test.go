@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 	"google.golang.org/grpc/codes"
@@ -72,7 +72,7 @@ func TestCreateEntryCreatesDailyTimesheetAndListsUsageBlocks(t *testing.T) {
 		t.Fatalf("create second entry: %v", err)
 	}
 	var timesheetCount int
-	if err := database.WriteConn.QueryRowContext(ctx, "SELECT COUNT(*) FROM timesheets").Scan(&timesheetCount); err != nil {
+	if err := database.ReadConn.QueryRowContext(ctx, "SELECT COUNT(*) FROM timesheets").Scan(&timesheetCount); err != nil {
 		t.Fatalf("count timesheets: %v", err)
 	}
 	if timesheetCount != 1 {
@@ -331,7 +331,7 @@ func createTestProject(t *testing.T, ctx context.Context, database *db.Database)
 	t.Helper()
 
 	now := time.Now().UTC()
-	project, err := database.WriteQuerier.CreateProject(ctx, queries.CreateProjectParams{
+	project, err := database.WriteQuerier.CreateProject(ctx, writequeries.CreateProjectParams{
 		ID:        "client-work",
 		Name:      "Client Work",
 		ColorArgb: 0xFF00FFEE,

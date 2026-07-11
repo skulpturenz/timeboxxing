@@ -2,7 +2,8 @@ package projects
 
 import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	projectsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
@@ -10,7 +11,8 @@ import (
 type Server struct {
 	projectsv1.UnimplementedProjectsServiceServer
 
-	querier queries.Querier
+	readQuerier  readqueries.Querier
+	writeQuerier writequeries.Querier
 }
 
 type serverKey struct{}
@@ -29,11 +31,11 @@ func ServerFromServices(registry *services.Services[any, any]) (*Server, bool) {
 
 func NewServer(registry *services.Services[any, any]) *Server {
 	database, _ := db.FromServices(registry)
-	var querier queries.Querier
+	server := &Server{}
 	if database != nil {
-		querier = database.WriteQuerier
+		server.readQuerier = database.ReadQuerier
+		server.writeQuerier = database.WriteQuerier
 	}
-	server := &Server{querier: querier}
 	RegisterServer(registry, server)
 	return server
 }

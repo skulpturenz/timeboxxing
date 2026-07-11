@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: get_semantic_index_counts.sql
 
-package queries
+package readqueries
 
 import (
 	"context"

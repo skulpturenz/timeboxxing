@@ -9,15 +9,15 @@ import (
 )
 
 func (s *Server) ListModelOptions(ctx context.Context, _ *settingsv1.ListModelOptionsRequest) (*settingsv1.ListModelOptionsResponse, error) {
-	if s.querier == nil {
+	if s.readQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "settings store is unavailable")
 	}
 
-	embeddingModels, err := s.querier.ListEmbeddingModels(ctx)
+	embeddingModels, err := s.readQuerier.ListEmbeddingModels(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list embedding models: %v", err)
 	}
-	semanticModels, err := s.querier.ListSemanticModels(ctx)
+	semanticModels, err := s.readQuerier.ListSemanticModels(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list semantic models: %v", err)
 	}

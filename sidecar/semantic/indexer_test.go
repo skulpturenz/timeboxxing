@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
 type fakeEmbedder struct{}
@@ -53,9 +53,9 @@ func (failingEmbedder) Embed(context.Context, string) ([]float32, error) {
 func TestIndexerAndSearcher(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticVectorTestDatabase(t, ctx)
-	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteConn)
+	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteQuerier)
 
-	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{})
+	indexer := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{})
 	documentID, err := indexer.IndexTransitionEvent(ctx, eventID)
 	if err != nil {
 		t.Fatalf("index transition event: %v", err)
@@ -86,8 +86,8 @@ func TestIndexerAndSearcher(t *testing.T) {
 func TestIndexerIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteConn)
-	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{})
+	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteQuerier)
+	indexer := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{})
 
 	firstDocumentID, err := indexer.IndexTransitionEvent(ctx, eventID)
 	if err != nil {
@@ -112,8 +112,8 @@ func TestIndexerIsIdempotent(t *testing.T) {
 func TestIndexerDoesNotPersistOnEmbeddingFailure(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteConn)
-	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, failingEmbedder{})
+	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteQuerier)
+	indexer := NewIndexer(database.WriteQuerier, database.ReadQuerier, failingEmbedder{})
 
 	if _, err := indexer.IndexTransitionEvent(ctx, eventID); err == nil {
 		t.Fatal("expected embedding error")
@@ -129,12 +129,12 @@ func TestIndexerDoesNotPersistOnEmbeddingFailure(t *testing.T) {
 func TestIndexerValidationFailures(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteConn)
+	eventID := createSemanticTestTransitionEvent(t, ctx, database.WriteQuerier)
 
-	if _, err := NewIndexer(database.WriteConn, database.ReadQuerier, dimensionMismatchEmbedder{}).IndexTransitionEvent(ctx, eventID); err == nil {
+	if _, err := NewIndexer(database.WriteQuerier, database.ReadQuerier, dimensionMismatchEmbedder{}).IndexTransitionEvent(ctx, eventID); err == nil {
 		t.Fatal("expected dimension mismatch error")
 	}
-	if _, err := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{}).IndexTransitionEvent(ctx, eventID+1000); err == nil {
+	if _, err := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{}).IndexTransitionEvent(ctx, eventID+1000); err == nil {
 		t.Fatal("expected missing source error")
 	}
 }
@@ -171,22 +171,21 @@ func newSemanticTestDatabaseWithSQLiteVector(t *testing.T, ctx context.Context, 
 	return database
 }
 
-func createSemanticTestTransitionEvent(t *testing.T, ctx context.Context, conn *sql.DB) int64 {
+func createSemanticTestTransitionEvent(t *testing.T, ctx context.Context, q writequeries.Querier) int64 {
 	t.Helper()
-	return createSemanticTestTransitionEventAt(t, ctx, conn, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
+	return createSemanticTestTransitionEventAt(t, ctx, q, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
 }
 
-func createSemanticTestTransitionEventAt(t *testing.T, ctx context.Context, conn *sql.DB, startedAt time.Time) int64 {
+func createSemanticTestTransitionEventAt(t *testing.T, ctx context.Context, q writequeries.Querier, startedAt time.Time) int64 {
 	t.Helper()
-	q := queries.New(conn)
-	applicationID, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{
+	applicationID, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 		Name: "Google Chrome",
 	})
 	if err != nil {
 		t.Fatalf("upsert application: %v", err)
 	}
 
-	eventID, err := q.CreateTransitionEvent(ctx, queries.CreateTransitionEventParams{
+	eventID, err := q.CreateTransitionEvent(ctx, writequeries.CreateTransitionEventParams{
 		ApplicationID: sql.NullInt64{Int64: applicationID, Valid: true},
 		Reason:        "tab_change",
 		StartedAt:     startedAt,
@@ -197,7 +196,7 @@ func createSemanticTestTransitionEventAt(t *testing.T, ctx context.Context, conn
 	}
 	tab := "GitHub"
 	url := "https://github.com/"
-	if err := q.CreateTransitionEventMetadata(ctx, queries.CreateTransitionEventMetadataParams{
+	if err := q.CreateTransitionEventMetadata(ctx, writequeries.CreateTransitionEventMetadataParams{
 		TransitionEventID: eventID,
 		Browser:           true,
 		Tab:               &tab,

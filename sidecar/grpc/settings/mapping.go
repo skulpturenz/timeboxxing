@@ -1,7 +1,7 @@
 package settings
 
 import (
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"google.golang.org/grpc/codes"
@@ -30,7 +30,7 @@ func providerToProto(provider string) settingsv1.AiProvider {
 	}
 }
 
-func embeddingModelsToProto(models []queries.EmbeddingModel) []*settingsv1.ModelOption {
+func embeddingModelsToProto(models []readqueries.EmbeddingModel) []*settingsv1.ModelOption {
 	out := make([]*settingsv1.ModelOption, 0, len(models))
 	for _, model := range models {
 		out = append(out, &settingsv1.ModelOption{
@@ -43,7 +43,7 @@ func embeddingModelsToProto(models []queries.EmbeddingModel) []*settingsv1.Model
 	return out
 }
 
-func semanticModelsToProto(models []queries.SemanticModel) []*settingsv1.ModelOption {
+func semanticModelsToProto(models []readqueries.SemanticModel) []*settingsv1.ModelOption {
 	out := make([]*settingsv1.ModelOption, 0, len(models))
 	for _, model := range models {
 		out = append(out, &settingsv1.ModelOption{
@@ -56,7 +56,7 @@ func semanticModelsToProto(models []queries.SemanticModel) []*settingsv1.ModelOp
 	return out
 }
 
-func aiSettingsToProto(row queries.GetAISettingsRow, openRouterSecretExists bool, ollamaSecretExists bool) *settingsv1.AiSettings {
+func aiSettingsToProto(row readqueries.GetAISettingsRow, openRouterSecretExists bool, ollamaSecretExists bool) *settingsv1.AiSettings {
 	return &settingsv1.AiSettings{
 		Provider:               providerToProto(row.Provider),
 		OpenrouterBaseUrl:      row.OpenrouterBaseUrl,
@@ -68,20 +68,20 @@ func aiSettingsToProto(row queries.GetAISettingsRow, openRouterSecretExists bool
 	}
 }
 
-func findEmbeddingModel(models []queries.EmbeddingModel, id int64) (queries.EmbeddingModel, bool) {
+func findEmbeddingModel(models []readqueries.EmbeddingModel, id int64) (readqueries.EmbeddingModel, bool) {
 	for _, model := range models {
 		if model.ID == id {
 			return model, true
 		}
 	}
-	return queries.EmbeddingModel{}, false
+	return readqueries.EmbeddingModel{}, false
 }
 
-func findSemanticModel(models []queries.SemanticModel, id int64) (queries.SemanticModel, bool) {
+func findSemanticModel(models []readqueries.SemanticModel, id int64) (readqueries.SemanticModel, bool) {
 	for _, model := range models {
 		if model.ID == id {
 			return model, true
 		}
 	}
-	return queries.SemanticModel{}, false
+	return readqueries.SemanticModel{}, false
 }

@@ -9,7 +9,7 @@ import (
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
@@ -308,7 +308,7 @@ func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Datab
 	t.Helper()
 	applicationID := sql.NullInt64{}
 	if !fixture.Idle && fixture.ApplicationName != "" {
-		id, err := database.WriteQuerier.UpsertApplication(ctx, queries.UpsertApplicationParams{
+		id, err := database.WriteQuerier.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 			Name:               fixture.ApplicationName,
 			PlatformIdentifier: nullableString(fixture.ApplicationIdentifier),
 			Path:               nullableString(fixture.ApplicationPath),
@@ -319,7 +319,7 @@ func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Datab
 		applicationID = sql.NullInt64{Int64: id, Valid: true}
 	}
 
-	id, err := database.WriteQuerier.CreateTransitionEvent(ctx, queries.CreateTransitionEventParams{
+	id, err := database.WriteQuerier.CreateTransitionEvent(ctx, writequeries.CreateTransitionEventParams{
 		ApplicationID: applicationID,
 		Reason:        "focus_change",
 		StartedAt:     fixture.StartedAt,
@@ -328,7 +328,7 @@ func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Datab
 	if err != nil {
 		t.Fatalf("create transition event: %v", err)
 	}
-	if err := database.WriteQuerier.CreateTransitionEventMetadata(ctx, queries.CreateTransitionEventMetadataParams{
+	if err := database.WriteQuerier.CreateTransitionEventMetadata(ctx, writequeries.CreateTransitionEventMetadataParams{
 		TransitionEventID: id,
 		Browser:           fixture.Browser,
 		Tab:               fixture.Tab,

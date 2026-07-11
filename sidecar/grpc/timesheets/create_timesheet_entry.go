@@ -6,14 +6,16 @@ import (
 	"errors"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	"github.com/mattn/go-sqlite3"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func (s *Server) CreateTimesheetEntry(ctx context.Context, req *timesheetsv1.CreateTimesheetEntryRequest) (*timesheetsv1.TimesheetEntry, error) {
-	if s.database == nil || s.database.WriteConn == nil {
+	if s.database == nil {
 		return nil, status.Error(codes.FailedPrecondition, "timesheet store is unavailable")
 	}
 	dayStartedAt, dayEndedAt, ok := dayWindow(req.GetDayStartedAt(), req.GetDayEndedAt())
@@ -24,92 +26,93 @@ func (s *Server) CreateTimesheetEntry(ctx context.Context, req *timesheetsv1.Cre
 		return nil, status.Error(codes.InvalidArgument, "timesheet entry time is invalid")
 	}
 
-	tx, err := s.database.WriteConn.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "begin timesheet transaction: %v", err)
-	}
-	q := queries.New(tx)
-	defer tx.Rollback()
-
-	projectID := projectIDOrEmpty(req.GetProjectId())
 	projectIDParam := sql.NullString{}
-	if projectID != "" {
-		count, err := q.CountProjectsByID(ctx, projectID)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "check project: %v", err)
-		}
-		if count == 0 {
-			return nil, status.Error(codes.InvalidArgument, "project does not exist")
-		}
+	if projectID := projectIDOrEmpty(req.GetProjectId()); projectID != "" {
 		projectIDParam = sql.NullString{String: projectID, Valid: true}
 	}
 
-	timesheet, err := ensureTimesheet(ctx, q, dayStartedAt, dayEndedAt)
+	timesheetID, err := randomID("timesheet")
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "upsert timesheet: %v", err)
+		return nil, status.Errorf(codes.Internal, "generate timesheet id: %v", err)
 	}
 	entryID, err := randomID("entry")
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "generate entry id: %v", err)
 	}
-	now := time.Now().UTC()
-	entry, err := q.CreateTimesheetEntry(ctx, queries.CreateTimesheetEntryParams{
-		ID:              entryID,
-		TimesheetID:     timesheet.ID,
-		ProjectID:       projectIDParam,
-		Title:           entryTitle(req.GetTitle()),
-		Notes:           req.GetNotes(),
-		StartMinute:     int64(req.GetStartMinute()),
-		DurationMinutes: int64(req.GetDurationMinutes()),
-		Billable:        req.GetBillable(),
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "create timesheet entry: %v", err)
-	}
-
 	usageIDs := sanitizedUsageIDs(req.GetSourceUsageIds())
-	for index, usageID := range usageIDs {
-		if err := q.CreateTimesheetEntryUsageBlock(ctx, queries.CreateTimesheetEntryUsageBlockParams{
-			TimesheetEntryID: entry.ID,
-			UsageID:          usageID,
-			SortOrder:        int64(index),
-		}); err != nil {
-			return nil, status.Errorf(codes.Internal, "link usage block: %v", err)
+
+	var entry writequeries.TimesheetEntry
+	if err := s.database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
+		now := time.Now().UTC()
+		// Get-or-create the timesheet for this window in one write (see EnsureTimesheet).
+		timesheet, err := q.EnsureTimesheet(ctx, writequeries.EnsureTimesheetParams{
+			ID:        timesheetID,
+			StartedAt: dayStartedAt,
+			EndedAt:   dayEndedAt,
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+		if err != nil {
+			return status.Errorf(codes.Internal, "upsert timesheet: %v", err)
 		}
+
+		entry, err = q.CreateTimesheetEntry(ctx, writequeries.CreateTimesheetEntryParams{
+			ID:              entryID,
+			TimesheetID:     timesheet.ID,
+			ProjectID:       projectIDParam,
+			Title:           entryTitle(req.GetTitle()),
+			Notes:           req.GetNotes(),
+			StartMinute:     int64(req.GetStartMinute()),
+			DurationMinutes: int64(req.GetDurationMinutes()),
+			Billable:        req.GetBillable(),
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		})
+		if err != nil {
+			// A non-existent project_id trips the timesheet_entries -> projects foreign key.
+			if isForeignKeyConstraintErr(err) {
+				return status.Error(codes.InvalidArgument, "project does not exist")
+			}
+			return status.Errorf(codes.Internal, "create timesheet entry: %v", err)
+		}
+
+		for index, usageID := range usageIDs {
+			if err := q.CreateTimesheetEntryUsageBlock(ctx, writequeries.CreateTimesheetEntryUsageBlockParams{
+				TimesheetEntryID: entry.ID,
+				UsageID:          usageID,
+				SortOrder:        int64(index),
+			}); err != nil {
+				return status.Errorf(codes.Internal, "link usage block: %v", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, status.Errorf(codes.Internal, "commit timesheet entry: %v", err)
-	}
-	return entryToProtoWithUsageIDs(entry, usageIDs), nil
+	return entryToProtoWithUsageIDs(writeEntryToRead(entry), usageIDs), nil
 }
 
-func ensureTimesheet(ctx context.Context, q *queries.Queries, dayStartedAt time.Time, dayEndedAt time.Time) (queries.Timesheet, error) {
-	timesheet, err := q.GetTimesheetByWindow(ctx, queries.GetTimesheetByWindowParams{
-		StartedAt: dayStartedAt,
-		EndedAt:   dayEndedAt,
-	})
-	if err == nil {
-		return timesheet, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return queries.Timesheet{}, err
-	}
+func isForeignKeyConstraintErr(err error) bool {
+	var sqliteErr sqlite3.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintForeignKey
+}
 
-	id, err := randomID("timesheet")
-	if err != nil {
-		return queries.Timesheet{}, err
+// writeEntryToRead converts a write-package entry row into the read-package struct the proto mappers
+// are typed on (identical fields; the two sqlc packages generate distinct types).
+func writeEntryToRead(e writequeries.TimesheetEntry) readqueries.TimesheetEntry {
+	return readqueries.TimesheetEntry{
+		ID:              e.ID,
+		TimesheetID:     e.TimesheetID,
+		ProjectID:       e.ProjectID,
+		Title:           e.Title,
+		Notes:           e.Notes,
+		StartMinute:     e.StartMinute,
+		DurationMinutes: e.DurationMinutes,
+		Billable:        e.Billable,
+		CreatedAt:       e.CreatedAt,
+		UpdatedAt:       e.UpdatedAt,
 	}
-	now := time.Now().UTC()
-	return q.CreateTimesheet(ctx, queries.CreateTimesheetParams{
-		ID:        id,
-		StartedAt: dayStartedAt,
-		EndedAt:   dayEndedAt,
-		CreatedAt: now,
-		UpdatedAt: now,
-	})
 }
 
 func sanitizedUsageIDs(input []string) []string {

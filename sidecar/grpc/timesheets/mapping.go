@@ -3,19 +3,19 @@ package timesheets
 import (
 	"context"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 )
 
-func (s *Server) entryToProto(ctx context.Context, entry queries.TimesheetEntry) (*timesheetsv1.TimesheetEntry, error) {
-	usageIDs, err := s.querier.ListTimesheetEntryUsageBlocks(ctx, entry.ID)
+func (s *Server) entryToProto(ctx context.Context, entry readqueries.TimesheetEntry) (*timesheetsv1.TimesheetEntry, error) {
+	usageIDs, err := s.readQuerier.ListTimesheetEntryUsageBlocks(ctx, entry.ID)
 	if err != nil {
 		return nil, err
 	}
 	return entryToProtoWithUsageIDs(entry, usageIDs), nil
 }
 
-func entryToProtoWithUsageIDs(entry queries.TimesheetEntry, usageIDs []string) *timesheetsv1.TimesheetEntry {
+func entryToProtoWithUsageIDs(entry readqueries.TimesheetEntry, usageIDs []string) *timesheetsv1.TimesheetEntry {
 	projectID := ""
 	if entry.ProjectID.Valid {
 		projectID = entry.ProjectID.String
@@ -32,7 +32,7 @@ func entryToProtoWithUsageIDs(entry queries.TimesheetEntry, usageIDs []string) *
 	}
 }
 
-func entriesToProto(ctx context.Context, server *Server, rows []queries.TimesheetEntry) ([]*timesheetsv1.TimesheetEntry, error) {
+func entriesToProto(ctx context.Context, server *Server, rows []readqueries.TimesheetEntry) ([]*timesheetsv1.TimesheetEntry, error) {
 	out := make([]*timesheetsv1.TimesheetEntry, 0, len(rows))
 	for _, row := range rows {
 		entry, err := server.entryToProto(ctx, row)

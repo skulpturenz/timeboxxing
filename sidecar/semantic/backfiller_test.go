@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 type modelKeyEmbedder struct {
@@ -29,11 +29,11 @@ func (modelKeyEmbedder) Embed(context.Context, string) ([]float32, error) {
 func TestListMissingSemanticEventDocumentIDsFindsMissingDocumentsAndEmbeddings(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{})
+	indexer := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{})
 
-	completeID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
-	missingEmbeddingID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
-	missingDocumentID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 11, 0, 0, 0, time.UTC))
+	completeID := createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
+	missingEmbeddingID := createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
+	missingDocumentID := createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 11, 0, 0, 0, time.UTC))
 
 	if _, err := indexer.IndexTransitionEvent(ctx, completeID); err != nil {
 		t.Fatalf("index complete event: %v", err)
@@ -46,7 +46,7 @@ func TestListMissingSemanticEventDocumentIDsFindsMissingDocumentsAndEmbeddings(t
 		t.Fatalf("delete embedding: %v", err)
 	}
 
-	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
 		EmbeddingModel: fakeEmbedder{}.Model(),
 		Limit:          10,
 	})
@@ -63,11 +63,11 @@ func TestListMissingSemanticEventDocumentIDsFindsMissingDocumentsAndEmbeddings(t
 func TestBackfillerEnqueuesMissingTransitionEvents(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)
-	indexer := NewIndexer(database.WriteConn, database.ReadQuerier, fakeEmbedder{})
+	indexer := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{})
 	enqueuer := &recordingBackfillEnqueuer{}
 
-	firstID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
-	secondID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
+	firstID := createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
+	secondID := createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
 	if _, err := indexer.IndexTransitionEvent(ctx, firstID); err != nil {
 		t.Fatalf("index first event: %v", err)
 	}
@@ -93,12 +93,12 @@ func TestBackfillerTreatsEmbeddingModelChangesAsMissing(t *testing.T) {
 	firstModel := modelKeyEmbedder{model: "embedding-model-a"}
 	secondModel := modelKeyEmbedder{model: "embedding-model-b"}
 
-	eventID := createSemanticTestTransitionEventAt(t, ctx, database.WriteConn, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
-	if _, err := NewIndexer(database.WriteConn, database.ReadQuerier, firstModel).IndexTransitionEvent(ctx, eventID); err != nil {
+	eventID := createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC))
+	if _, err := NewIndexer(database.WriteQuerier, database.ReadQuerier, firstModel).IndexTransitionEvent(ctx, eventID); err != nil {
 		t.Fatalf("index first model: %v", err)
 	}
 
-	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
 		EmbeddingModel: secondModel.Model(),
 		Limit:          10,
 	})
@@ -245,7 +245,7 @@ type staticMissingTransitionEventLister struct {
 	err error
 }
 
-func (s staticMissingTransitionEventLister) ListMissingSemanticEventDocumentIDs(context.Context, queries.ListMissingSemanticEventDocumentIDsParams) ([]int64, error) {
+func (s staticMissingTransitionEventLister) ListMissingSemanticEventDocumentIDs(context.Context, readqueries.ListMissingSemanticEventDocumentIDsParams) ([]int64, error) {
 	return s.ids, s.err
 }
 

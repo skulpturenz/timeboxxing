@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
 const (
@@ -42,7 +42,7 @@ func fileHasMarker(t *testing.T, path, marker string) bool {
 
 func insertMarkerProject(t *testing.T, ctx context.Context, d *Database) {
 	t.Helper()
-	if _, err := d.WriteQuerier.CreateProject(ctx, queries.CreateProjectParams{
+	if _, err := d.WriteQuerier.CreateProject(ctx, writequeries.CreateProjectParams{
 		ID:        "marker",
 		Name:      projectMarker,
 		ColorArgb: 0xFF00FFEE,

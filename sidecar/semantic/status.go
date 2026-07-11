@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 type IndexState string
@@ -26,12 +26,12 @@ type IndexStatus struct {
 }
 
 type IndexStatusService struct {
-	querier        queries.Querier
+	querier        readqueries.Querier
 	backfilling    *BackfillCoordinator
 	embeddingModel string
 }
 
-func NewIndexStatusService(querier queries.Querier, backfilling *BackfillCoordinator, embeddingModel string) *IndexStatusService {
+func NewIndexStatusService(querier readqueries.Querier, backfilling *BackfillCoordinator, embeddingModel string) *IndexStatusService {
 	return &IndexStatusService{querier: querier, backfilling: backfilling, embeddingModel: embeddingModel}
 }
 

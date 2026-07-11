@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 const (
@@ -66,7 +66,7 @@ var semanticTimeBlocks = []timeBlock{
 	{Key: "evening", Label: "evening", StartHour: 18, EndHour: 24},
 }
 
-func eventDocumentSpec(src queries.GetSemanticEventDocumentSourceRow, loc *time.Location) DocumentSpec {
+func eventDocumentSpec(src readqueries.GetSemanticEventDocumentSourceRow, loc *time.Location) DocumentSpec {
 	source := transitionDocumentSource{
 		TransitionEventID: src.TransitionEventID,
 		ApplicationName:   src.ApplicationName,
@@ -88,7 +88,7 @@ func eventDocumentSpec(src queries.GetSemanticEventDocumentSourceRow, loc *time.
 	}
 }
 
-func summaryDocumentSpecs(rows []queries.ListTransitionEventDocumentSourcesForWindowRow, day time.Time, loc *time.Location) []DocumentSpec {
+func summaryDocumentSpecs(rows []readqueries.ListTransitionEventDocumentSourcesForWindowRow, day time.Time, loc *time.Location) []DocumentSpec {
 	if loc == nil {
 		loc = time.Local
 	}

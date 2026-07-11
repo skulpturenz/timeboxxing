@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 func (s *Service) GetTransitionEvents(ctx context.Context, params GetTransitionEventsParams) ([]Event, error) {
@@ -12,7 +12,7 @@ func (s *Service) GetTransitionEvents(ctx context.Context, params GetTransitionE
 		return nil, fmt.Errorf("transition event store is unavailable")
 	}
 
-	queryParams := queries.GetTransitionEventsParams{}
+	queryParams := readqueries.GetTransitionEventsParams{}
 	if params.Filters.StartedAt != nil {
 		queryParams.StartedAt = params.Filters.StartedAt.UTC()
 	}
