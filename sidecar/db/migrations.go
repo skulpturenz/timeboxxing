@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"path"
+	"sort"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -47,6 +48,17 @@ func runSeedMigrations(ctx context.Context, conn *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("read %s seed migration directories: %w", seedDirs, err)
 	}
+
+	// most of the seeder scripts are for reference data, there are no dependencies between
+	// we add a record to `application_settings` for default settings which depends on reference data
+	// run it last
+	sort.Slice(seedDirs, func(i int, j int) bool {
+		if path.Base(seedDirs[i]) != "application_settings" && path.Base(seedDirs[j]) == "application_settings" {
+			return true
+		}
+
+		return seedDirs[i] < seedDirs[j]
+	})
 
 	for _, seedDir := range seedDirs {
 		migrationTable := fmt.Sprintf("seed_migrations_%s", path.Base(seedDir))

@@ -34,5 +34,5 @@ func Parse(s string) (JournalMode, error) {
 		return WAL, nil
 	}
 
-	return WAL, fmt.Errorf("unrecognized db type: %s", s)
+	return WAL, fmt.Errorf("unrecognized journal mode: %s", s)
 }
