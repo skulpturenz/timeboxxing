@@ -25,7 +25,7 @@ func ResolvedDatabaseKey() (string, bool) {
 	if databaseKeyOverride != "" {
 		return databaseKeyOverride, true
 	}
-	value, _ := DatabaseKey.Value()
+	value, _ := DATABASE_KEY.Value()
 	value = strings.TrimSpace(value)
 	return value, value != ""
 }
@@ -36,7 +36,7 @@ func ResolvedOpenRouterAPIKey() (string, bool) {
 	if openRouterAPIKeyOverride != "" {
 		return openRouterAPIKeyOverride, true
 	}
-	value, _ := OpenRouterAPIKey.Value()
+	value, _ := OPENROUTER_API_KEY.Value()
 	value = strings.TrimSpace(value)
 	return value, value != ""
 }
@@ -46,7 +46,7 @@ func ResolvedOllamaAPIKey() (string, bool) {
 	if ollamaAPIKeyOverride != "" {
 		return ollamaAPIKeyOverride, true
 	}
-	value, _ := OllamaAPIKey.Value()
+	value, _ := OLLAMA_API_KEY.Value()
 	value = strings.TrimSpace(value)
 	return value, value != ""
 }

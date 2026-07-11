@@ -11,6 +11,7 @@ import (
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
@@ -22,12 +23,12 @@ import (
 func TestDatabaseMaintenanceStatusReportsSqliteFootprint(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "maintenance.db")
-	writeFileOfSize(t, path, 11)
-	writeFileOfSize(t, path+"-wal", 13)
-	writeFileOfSize(t, path+"-shm", 17)
+	dsn := db.NewDSN(filepath.Join(dir, "maintenance.db"))
+	writeFileOfSize(t, dsn.GetPath(), 11)
+	writeFileOfSize(t, dsn.GetPath()+"-wal", 13)
+	writeFileOfSize(t, dsn.GetPath()+"-shm", 17)
 
-	server := &Server{database: &db.Database{DataSourceName: path + "?_journal_mode=WAL"}}
+	server := &Server{database: &db.Database{DSN: dsn}}
 	status, err := server.GetDatabaseMaintenanceStatus(ctx, &settingsv1.GetDatabaseMaintenanceStatusRequest{})
 	if err != nil {
 		t.Fatalf("get status: %v", err)
@@ -132,7 +133,7 @@ CREATE TABLE vacuum_payload (
 		t.Fatalf("seed vacuum payload: %v", err)
 	}
 
-	sizeWithRows, err := sqliteFootprintSize(database.DataSourceName)
+	sizeWithRows, err := sqliteFootprintSize(database.DSN.GetPath())
 	if err != nil {
 		t.Fatalf("measure size with rows: %v", err)
 	}
@@ -142,11 +143,11 @@ CREATE TABLE vacuum_payload (
 	}); err != nil {
 		t.Fatalf("delete payload: %v", err)
 	}
-	sizeAfterDelete, err := sqliteFootprintSize(database.DataSourceName)
+	sizeAfterDelete, err := sqliteFootprintSize(database.DSN.GetPath())
 	if err != nil {
 		t.Fatalf("measure size after delete: %v", err)
 	}
-	mainInfo, err := os.Stat(sqliteDatabasePath(database.DataSourceName))
+	mainInfo, err := os.Stat(sqliteDatabasePath(database.DSN.GetPath()))
 	if err != nil {
 		t.Fatalf("stat main database: %v", err)
 	}
@@ -167,7 +168,7 @@ CREATE TABLE vacuum_payload (
 	if response.GetSizeAfterBytes() >= sizeWithRows {
 		t.Fatalf("expected vacuumed footprint %d to be smaller than populated footprint %d", response.GetSizeAfterBytes(), sizeWithRows)
 	}
-	walInfo, err := os.Stat(sqliteDatabasePath(database.DataSourceName) + "-wal")
+	walInfo, err := os.Stat(sqliteDatabasePath(database.DSN.GetPath()) + "-wal")
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("stat WAL: %v", err)
 	}
@@ -179,10 +180,11 @@ CREATE TABLE vacuum_payload (
 func newTestSettingsServer(t *testing.T, ctx context.Context) (*Server, *db.Database, func()) {
 	t.Helper()
 
-	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "settings.db"),
-	})
+	dsn := db.NewDSN(filepath.Join(t.TempDir(), "settings.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := db.New(ctx, db.Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}

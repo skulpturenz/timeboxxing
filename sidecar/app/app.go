@@ -7,12 +7,14 @@ import (
 	"net"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	grpcLogging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	componentUsage "github.com/skulpturenz/timeboxxing/sidecar/components/usage"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	"github.com/skulpturenz/timeboxxing/sidecar/envs"
 	amav1 "github.com/skulpturenz/timeboxxing/sidecar/gen/ama/v1"
 	projectsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1"
@@ -54,13 +56,23 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	registry := services.New()
 	sidecarLogging.RegisterLogger(registry, logger)
 
-	sqliteVectorExtensionPath, _ := envs.SQLiteVectorExtensionPath.Value()
+	var sqliteVectorExtensionPath *string
+	if path, ok := envs.SQLiteVectorExtensionPath.Value(); ok {
+		sqliteVectorExtensionPath = &path
+	}
 	databaseKey, _ := envs.ResolvedDatabaseKey()
+	dsn := db.NewDSN(envs.DB_DSN.Value())
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	if databaseKey != "" {
+		if err := dsn.EnableEncryption(databaseKey); err != nil {
+			return fmt.Errorf("configure database encryption: %w", err)
+		}
+	}
 	database, err := db.New(ctx, db.Options{
-		Engine:                    envs.DatabaseEngine.Value(),
-		DataSourceName:            envs.DatabaseDSN.Value(),
+		DSN:                       dsn,
 		SQLiteVectorExtensionPath: sqliteVectorExtensionPath,
-		EncryptionKey:             databaseKey,
 	})
 	if err != nil {
 		return fmt.Errorf("create database: %w", err)
@@ -101,16 +113,11 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 }
 
 func buildQueues(ctx context.Context, registry *services.Services[any, any]) error {
-	queueDSN := envs.DatabaseDSN.Value()
-	if envs.DatabaseEngine.Value() == db.EngineSqlite {
-		// Reuse the exact keyed DSN the writer/reader use so the queue connection is encrypted
-		// identically — sqliteq opens the same file via a hardcoded sql.Open("sqlite3", ...).
-		if database, ok := db.FromServices(registry); ok {
-			queueDSN = database.DataSourceName
-		} else {
-			queueDSN = db.SqliteDataSourceName(queueDSN)
-		}
-	}
+	// Reuse the exact keyed DSN the writer/reader use so the queue connection is encrypted
+	// identically — sqliteq opens the same file via a hardcoded sql.Open("sqlite3", ...).
+	// buildQueues runs immediately after db.Register, so the database is always present.
+	database, _ := db.FromServices(registry)
+	queueDSN := database.DSN.String()
 
 	transitionEventQueue, err := queue.New[reporter.TransitionEvent](ctx, queue.QueueOptions{
 		ConnectionString: queueDSN,
@@ -206,7 +213,7 @@ func serveGRPC(ctx context.Context, registry *services.Services[any, any], logge
 		return nil
 	}
 
-	listenAddress := envs.GrpcListenAddress.Value().String()
+	listenAddress := envs.GRPC_LISTEN_ADDRESS.Value().String()
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		return fmt.Errorf("listen on address %s: %w", listenAddress, err)

@@ -18,8 +18,8 @@ func TestSentryConfigUsesFerriteDefaults(t *testing.T) {
 	if config.DSN != envs.PlaceholderSidecarSentryDSN {
 		t.Fatalf("expected placeholder DSN %q, got %q", envs.PlaceholderSidecarSentryDSN, config.DSN)
 	}
-	if config.Environment != "production" {
-		t.Fatalf("expected production environment, got %q", config.Environment)
+	if config.Environment != "development" {
+		t.Fatalf("expected development environment, got %q", config.Environment)
 	}
 }
 
@@ -65,8 +65,8 @@ func TestSentryConfigSetsPrivacyTracingAndLogDefaults(t *testing.T) {
 	if config.Tags["process"] != "sidecar" {
 		t.Fatalf("expected sidecar process tag, got %q", config.Tags["process"])
 	}
-	if config.Tags["go_env"] != "production" {
-		t.Fatalf("expected production go_env tag, got %q", config.Tags["go_env"])
+	if config.Tags["go_env"] != "development" {
+		t.Fatalf("expected development go_env tag, got %q", config.Tags["go_env"])
 	}
 }
 

@@ -116,8 +116,7 @@ func newTestProjectsServer(t *testing.T, ctx context.Context) (*Server, func()) 
 	t.Helper()
 
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		DSN: db.NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
