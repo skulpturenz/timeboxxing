@@ -1,10 +1,37 @@
+This release consists primarily of internal changes: the local database can now be encrypted, the database design has been reworked and there is a strict separation between reads and writes.
+
+Encryption is implemented using a fork of [mattn/go-sqlite3](https://github.com/mattn/go-sqlite3) which already had some incomplete changes to implement [SQLCipher](https://github.com/sqlcipher/sqlcipher). It is largely based on the work done here https://github.com/mattn/go-sqlite3/pull/1109. Changes required for encryption has been merged with changes in the latest release, the patches are available in `sidecar/third_party/go-sqlite3/UPSTREAM-CHANGES.patch`.
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-[225a5e3](225a5e387fac4f76eb93f72b71a28de0d7c92e34)...[f1fd4d0](f1fd4d0aab0b0f1db2286684d1f20e009019158c)
+[cc9c169](cc9c169736001a1c3b200fc5e2e2330ebc1e8891)...[d7c0620](d7c062091581d55fa78065a026453146847c0f2e)
+
+### Documentation
+
+- Concurrent writes and constructing timeline ([79251c7](79251c7f0e01859be71fd1fb5a53b7da37fc3fc7))
+- Todo plugins ([8c680f8](8c680f8d1beef84f310402690344b4b0ad4bdcbc))
+- Todo encryption ([733be29](733be29a43e1038b6e11be1602ea10d9ee19ce87))
+
+### Features
+
+- Split read and write queries (#22) ([b2e4fc2](b2e4fc2d4a7e6753abdd7cc1e5698812c5f9842a))
+- Rework db module  (#25) ([9d605a1](9d605a17d281faba97f3540e1ee7e51e313193a3))
+- Rework db design (#26) ([3be0857](3be08571242f9f8d38c6d9d2c93cae69b2960408))
+
+### Miscellaneous Tasks
+
+- Mvp vibe slop - sqlite encryption ([2e3e68b](2e3e68b5bbc5d1f87b7f2008967874b05fdda725))
+- Mvp vibe slop - bump mattn/go-sqlite3 master ([d1e0635](d1e06352f0fbbd537b18f168c5a228e966ecd6eb))
+- Add status-checks workflow (#23) ([ef641b0](ef641b006fcd2740f21e283a36594e4007756263))
+- V0.0.1-15 (#27) ([d7c0620](d7c062091581d55fa78065a026453146847c0f2e))
+
+## 0.0.1-14 - 2026-07-06
+
+[225a5e3](225a5e387fac4f76eb93f72b71a28de0d7c92e34)...[cc9c169](cc9c169736001a1c3b200fc5e2e2330ebc1e8891)
 
 ### Features
 
