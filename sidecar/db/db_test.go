@@ -3,12 +3,15 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
 func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
@@ -32,7 +35,7 @@ func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 	}
 
 	var version string
-	if err := database.WriteConn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
+	if err := database.WriteQuerier.conn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
 		t.Fatalf("query sqlite-vector version: %v", err)
 	}
 	if version == "" {
@@ -57,7 +60,7 @@ func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 	defer database.Close()
 
 	var version string
-	if err := database.WriteConn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
+	if err := database.WriteQuerier.conn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
 		t.Fatalf("query sqlite-vector version: %v", err)
 	}
 	if version == "" {
@@ -107,7 +110,7 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	}
 	defer database.Close()
 
-	if _, err := database.WriteQuerier.CreateProject(ctx, queries.CreateProjectParams{
+	if _, err := database.WriteQuerier.CreateProject(ctx, writequeries.CreateProjectParams{
 		ID:        "client-work",
 		Name:      "Client Work",
 		ColorArgb: 0xFF00FFEE,
@@ -143,7 +146,7 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	defer database.Close()
 
 	now := time.Now().UTC()
-	timesheet, err := database.WriteQuerier.CreateTimesheet(ctx, queries.CreateTimesheetParams{
+	timesheet, err := database.WriteQuerier.EnsureTimesheet(ctx, writequeries.EnsureTimesheetParams{
 		ID:        "timesheet-test",
 		StartedAt: now,
 		EndedAt:   now.Add(24 * time.Hour),
@@ -153,7 +156,7 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create timesheet: %v", err)
 	}
-	entry, err := database.WriteQuerier.CreateTimesheetEntry(ctx, queries.CreateTimesheetEntryParams{
+	entry, err := database.WriteQuerier.CreateTimesheetEntry(ctx, writequeries.CreateTimesheetEntryParams{
 		ID:              "entry-test",
 		TimesheetID:     timesheet.ID,
 		Title:           "Design review",
@@ -167,7 +170,7 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create timesheet entry: %v", err)
 	}
-	if err := database.WriteQuerier.CreateTimesheetEntryUsageBlock(ctx, queries.CreateTimesheetEntryUsageBlockParams{
+	if err := database.WriteQuerier.CreateTimesheetEntryUsageBlock(ctx, writequeries.CreateTimesheetEntryUsageBlockParams{
 		TimesheetEntryID: entry.ID,
 		UsageID:          "sidecar-123",
 		SortOrder:        0,
@@ -175,7 +178,7 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 		t.Fatalf("create usage block: %v", err)
 	}
 
-	entries, err := database.ReadQuerier.ListTimesheetEntries(ctx, queries.ListTimesheetEntriesParams{
+	entries, err := database.ReadQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
 		StartedAt: timesheet.StartedAt,
 		EndedAt:   timesheet.EndedAt,
 	})
@@ -187,7 +190,7 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	}
 }
 
-func TestSqliteUsesWALAndSingleWriterPool(t *testing.T) {
+func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
 		Engine:         EngineSqlite,
@@ -198,7 +201,7 @@ func TestSqliteUsesWALAndSingleWriterPool(t *testing.T) {
 	}
 	defer database.Close()
 
-	if database.WriteConn == nil {
+	if database.WriteQuerier.conn == nil {
 		t.Fatal("expected writer connection")
 	}
 	if database.ReadConn == nil {
@@ -210,19 +213,65 @@ func TestSqliteUsesWALAndSingleWriterPool(t *testing.T) {
 	if database.ReadQuerier == nil {
 		t.Fatal("expected reader querier")
 	}
-	if database.WriteConn == database.ReadConn {
+	if database.WriteQuerier.conn == database.ReadConn {
 		t.Fatal("expected separate writer and reader connection pools")
 	}
-	if got := database.WriteConn.Stats().MaxOpenConnections; got != 1 {
-		t.Fatalf("expected one writer connection, got %d", got)
-	}
 
-	assertJournalMode(t, ctx, database.WriteConn, "writer")
+	assertJournalMode(t, ctx, database.WriteQuerier.conn, "writer")
 	assertJournalMode(t, ctx, database.ReadConn, "reader")
-	assertBusyTimeout(t, ctx, database.WriteConn, "writer")
+	assertBusyTimeout(t, ctx, database.WriteQuerier.conn, "writer")
 	assertBusyTimeout(t, ctx, database.ReadConn, "reader")
-	assertForeignKeys(t, ctx, database.WriteConn, "writer")
+	assertForeignKeys(t, ctx, database.WriteQuerier.conn, "writer")
 	assertForeignKeys(t, ctx, database.ReadConn, "reader")
+}
+
+func TestSqliteSerializesConcurrentWrites(t *testing.T) {
+	ctx := context.Background()
+	database, err := New(ctx, Options{
+		Engine:         EngineSqlite,
+		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+	})
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	defer database.Close()
+
+	// With the writer connection pool no longer capped at 1, the write mutex is what keeps SQLite
+	// from ever seeing two concurrent writers. Hammer both write paths (the serial querier and
+	// WriteTx) from many goroutines and assert none of them observe SQLITE_BUSY or any other error.
+	const writers = 16
+	const perWriter = 25
+	var wg sync.WaitGroup
+	errs := make(chan error, writers*perWriter)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < perWriter; i++ {
+				if i%2 == 0 {
+					if _, err := database.WriteQuerier.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+						Name: fmt.Sprintf("app-%d-%d", w, i),
+					}); err != nil {
+						errs <- err
+					}
+					continue
+				}
+				if err := database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
+					_, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+						Name: fmt.Sprintf("app-tx-%d-%d", w, i),
+					})
+					return err
+				}); err != nil {
+					errs <- err
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent write failed: %v", err)
+	}
 }
 
 func assertMigrationTableVersion(t *testing.T, ctx context.Context, database *Database, table string, expectedVersion int64) {
@@ -230,7 +279,7 @@ func assertMigrationTableVersion(t *testing.T, ctx context.Context, database *Da
 
 	var version int64
 	var dirty bool
-	if err := database.WriteConn.QueryRowContext(ctx, "SELECT version, dirty FROM "+table).Scan(&version, &dirty); err != nil {
+	if err := database.WriteQuerier.conn.QueryRowContext(ctx, "SELECT version, dirty FROM "+table).Scan(&version, &dirty); err != nil {
 		t.Fatalf("query %s: %v", table, err)
 	}
 	if version != expectedVersion {

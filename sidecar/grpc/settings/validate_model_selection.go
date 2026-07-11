@@ -10,11 +10,11 @@ import (
 )
 
 func (s *Server) validateModelSelection(ctx context.Context, provider semantic.Provider, embeddingModelID int64, semanticModelID int64) error {
-	embeddingModels, err := s.querier.ListEmbeddingModels(ctx)
+	embeddingModels, err := s.readQuerier.ListEmbeddingModels(ctx)
 	if err != nil {
 		return status.Errorf(codes.Internal, "list embedding models: %v", err)
 	}
-	semanticModels, err := s.querier.ListSemanticModels(ctx)
+	semanticModels, err := s.readQuerier.ListSemanticModels(ctx)
 	if err != nil {
 		return status.Errorf(codes.Internal, "list semantic models: %v", err)
 	}

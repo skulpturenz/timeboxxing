@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: create_transition_event.sql
 
-package queries
+package writequeries
 
 import (
 	"context"

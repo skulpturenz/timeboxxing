@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: list_missing_semantic_event_document_ids.sql
 
-package queries
+package readqueries
 
 import (
 	"context"

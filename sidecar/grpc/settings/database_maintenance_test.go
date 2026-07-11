@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
@@ -64,7 +64,7 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 
 	inEventID := createTestTransitionEvent(t, ctx, q, "In Range App", dayStart.Add(9*time.Hour), dayStart.Add(10*time.Hour))
 	outEventID := createTestTransitionEvent(t, ctx, q, "Out Range App", outStart.Add(9*time.Hour), outStart.Add(10*time.Hour))
-	if _, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{Name: "Already Orphaned App"}); err != nil {
+	if _, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{Name: "Already Orphaned App"}); err != nil {
 		t.Fatalf("upsert orphan application: %v", err)
 	}
 	createTestSemanticDocument(t, ctx, q, "event:in", sql.NullInt64{Int64: inEventID, Valid: true}, dayStart.Add(9*time.Hour), dayStart.Add(10*time.Hour))
@@ -99,14 +99,14 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 		t.Fatalf("expected size bytes in prune response, got %d", response.GetSizeBytes())
 	}
 
-	assertTableCount(t, ctx, database.WriteConn, "transition_events", 1)
-	assertTableCount(t, ctx, database.WriteConn, "transition_event_metadata", 1)
-	assertTableCount(t, ctx, database.WriteConn, "semantic_documents", 1)
-	assertTableCount(t, ctx, database.WriteConn, "semantic_document_embeddings", 1)
-	assertTableCount(t, ctx, database.WriteConn, "timesheet_entries", 1)
-	assertTableCount(t, ctx, database.WriteConn, "timesheets", 1)
-	assertTableCount(t, ctx, database.WriteConn, "applications", 2)
-	assertTableCount(t, ctx, database.WriteConn, "timesheet_entry_usage_blocks", 1)
+	assertTableCount(t, ctx, database.ReadConn, "transition_events", 1)
+	assertTableCount(t, ctx, database.ReadConn, "transition_event_metadata", 1)
+	assertTableCount(t, ctx, database.ReadConn, "semantic_documents", 1)
+	assertTableCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 1)
+	assertTableCount(t, ctx, database.ReadConn, "timesheet_entries", 1)
+	assertTableCount(t, ctx, database.ReadConn, "timesheets", 1)
+	assertTableCount(t, ctx, database.ReadConn, "applications", 2)
+	assertTableCount(t, ctx, database.ReadConn, "timesheet_entry_usage_blocks", 1)
 }
 
 func TestVacuumDatabaseCompactsSqliteFootprint(t *testing.T) {
@@ -114,27 +114,32 @@ func TestVacuumDatabaseCompactsSqliteFootprint(t *testing.T) {
 	server, database, cleanup := newTestSettingsServer(t, ctx)
 	defer cleanup()
 
-	if _, err := database.WriteConn.ExecContext(ctx, `
+	if err := database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		if _, err := conn.ExecContext(ctx, `
 CREATE TABLE vacuum_payload (
   id INTEGER PRIMARY KEY,
   payload BLOB NOT NULL
 )`); err != nil {
-		t.Fatalf("create payload table: %v", err)
-	}
-	for range 512 {
-		if _, err := database.WriteConn.ExecContext(ctx, "INSERT INTO vacuum_payload (payload) VALUES (zeroblob(4096))"); err != nil {
-			t.Fatalf("insert payload: %v", err)
+			return fmt.Errorf("create payload table: %w", err)
 		}
-	}
-	if err := runWalCheckpointTruncate(ctx, database.WriteConn); err != nil {
-		t.Fatalf("checkpoint payload inserts: %v", err)
+		for range 512 {
+			if _, err := conn.ExecContext(ctx, "INSERT INTO vacuum_payload (payload) VALUES (zeroblob(4096))"); err != nil {
+				return fmt.Errorf("insert payload: %w", err)
+			}
+		}
+		return runWalCheckpointTruncate(ctx, conn)
+	}); err != nil {
+		t.Fatalf("seed vacuum payload: %v", err)
 	}
 
 	sizeWithRows, err := sqliteFootprintSize(database.DataSourceName)
 	if err != nil {
 		t.Fatalf("measure size with rows: %v", err)
 	}
-	if _, err := database.WriteConn.ExecContext(ctx, "DELETE FROM vacuum_payload"); err != nil {
+	if err := database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		_, err := conn.ExecContext(ctx, "DELETE FROM vacuum_payload")
+		return err
+	}); err != nil {
 		t.Fatalf("delete payload: %v", err)
 	}
 	sizeAfterDelete, err := sqliteFootprintSize(database.DataSourceName)
@@ -192,16 +197,16 @@ func newTestSettingsServer(t *testing.T, ctx context.Context) (*Server, *db.Data
 	}
 }
 
-func createTestTransitionEvent(t *testing.T, ctx context.Context, q queries.Querier, appName string, startedAt time.Time, endedAt time.Time) int64 {
+func createTestTransitionEvent(t *testing.T, ctx context.Context, q writequeries.Querier, appName string, startedAt time.Time, endedAt time.Time) int64 {
 	t.Helper()
 
-	appID, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{
+	appID, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 		Name: appName,
 	})
 	if err != nil {
 		t.Fatalf("upsert application: %v", err)
 	}
-	eventID, err := q.CreateTransitionEvent(ctx, queries.CreateTransitionEventParams{
+	eventID, err := q.CreateTransitionEvent(ctx, writequeries.CreateTransitionEventParams{
 		ApplicationID: sql.NullInt64{Int64: appID, Valid: true},
 		Reason:        "focus_change",
 		StartedAt:     startedAt,
@@ -210,7 +215,7 @@ func createTestTransitionEvent(t *testing.T, ctx context.Context, q queries.Quer
 	if err != nil {
 		t.Fatalf("create transition event: %v", err)
 	}
-	if err := q.CreateTransitionEventMetadata(ctx, queries.CreateTransitionEventMetadataParams{
+	if err := q.CreateTransitionEventMetadata(ctx, writequeries.CreateTransitionEventMetadataParams{
 		TransitionEventID: eventID,
 		Browser:           false,
 		Idle:              false,
@@ -220,10 +225,10 @@ func createTestTransitionEvent(t *testing.T, ctx context.Context, q queries.Quer
 	return eventID
 }
 
-func createTestSemanticDocument(t *testing.T, ctx context.Context, q queries.Querier, key string, eventID sql.NullInt64, startedAt time.Time, endedAt time.Time) {
+func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequeries.Querier, key string, eventID sql.NullInt64, startedAt time.Time, endedAt time.Time) {
 	t.Helper()
 
-	documentID, err := q.UpsertSemanticDocument(ctx, queries.UpsertSemanticDocumentParams{
+	documentID, err := q.UpsertSemanticDocument(ctx, writequeries.UpsertSemanticDocumentParams{
 		DocumentKey:       key,
 		DocumentType:      "event",
 		TransitionEventID: eventID,
@@ -242,7 +247,7 @@ func createTestSemanticDocument(t *testing.T, ctx context.Context, q queries.Que
 	if err != nil {
 		t.Fatalf("encode embedding: %v", err)
 	}
-	if err := q.CreateSemanticDocumentEmbedding(ctx, queries.CreateSemanticDocumentEmbeddingParams{
+	if err := q.CreateSemanticDocumentEmbedding(ctx, writequeries.CreateSemanticDocumentEmbeddingParams{
 		SemanticDocumentID: documentID,
 		EmbeddingModel:     "test-model",
 		EmbeddingDimension: semantic.StoreEmbeddingDimension,
@@ -253,11 +258,11 @@ func createTestSemanticDocument(t *testing.T, ctx context.Context, q queries.Que
 	}
 }
 
-func createTestTimesheetEntry(t *testing.T, ctx context.Context, q queries.Querier, sheetID string, entryID string, startedAt time.Time, endedAt time.Time, usageIDs []string) {
+func createTestTimesheetEntry(t *testing.T, ctx context.Context, q writequeries.Querier, sheetID string, entryID string, startedAt time.Time, endedAt time.Time, usageIDs []string) {
 	t.Helper()
 
 	now := time.Now().UTC()
-	if _, err := q.CreateTimesheet(ctx, queries.CreateTimesheetParams{
+	if _, err := q.EnsureTimesheet(ctx, writequeries.EnsureTimesheetParams{
 		ID:        sheetID,
 		StartedAt: startedAt,
 		EndedAt:   endedAt,
@@ -266,7 +271,7 @@ func createTestTimesheetEntry(t *testing.T, ctx context.Context, q queries.Queri
 	}); err != nil {
 		t.Fatalf("create timesheet: %v", err)
 	}
-	if _, err := q.CreateTimesheetEntry(ctx, queries.CreateTimesheetEntryParams{
+	if _, err := q.CreateTimesheetEntry(ctx, writequeries.CreateTimesheetEntryParams{
 		ID:              entryID,
 		TimesheetID:     sheetID,
 		Title:           entryID,
@@ -280,7 +285,7 @@ func createTestTimesheetEntry(t *testing.T, ctx context.Context, q queries.Queri
 		t.Fatalf("create timesheet entry: %v", err)
 	}
 	for index, usageID := range usageIDs {
-		if err := q.CreateTimesheetEntryUsageBlock(ctx, queries.CreateTimesheetEntryUsageBlockParams{
+		if err := q.CreateTimesheetEntryUsageBlock(ctx, writequeries.CreateTimesheetEntryUsageBlockParams{
 			TimesheetEntryID: entryID,
 			UsageID:          usageID,
 			SortOrder:        int64(index),

@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: delete_semantic_document_embedding.sql
 
-package queries
+package writequeries
 
 import (
 	"context"

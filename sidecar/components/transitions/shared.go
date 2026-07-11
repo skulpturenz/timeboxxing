@@ -3,7 +3,7 @@ package transitions
 import (
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 const subscriberBufferSize = 64
@@ -75,7 +75,7 @@ func eventMatchesFilters(event Event, filters Filters) bool {
 	return true
 }
 
-func eventFromGetTransitionEventsRow(row queries.GetTransitionEventsRow) Event {
+func eventFromGetTransitionEventsRow(row readqueries.GetTransitionEventsRow) Event {
 	event := Event{
 		ID:        row.TransitionEventID,
 		Reason:    row.Reason,
@@ -110,7 +110,7 @@ func eventFromGetTransitionEventsRow(row queries.GetTransitionEventsRow) Event {
 	return event
 }
 
-func eventFromGetTransitionEventRow(row queries.GetTransitionEventRow) Event {
+func eventFromGetTransitionEventRow(row readqueries.GetTransitionEventRow) Event {
 	event := Event{
 		ID:        row.TransitionEventID,
 		Reason:    row.Reason,

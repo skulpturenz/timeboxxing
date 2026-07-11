@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: get_ai_settings.sql
 
-package queries
+package readqueries
 
 import (
 	"context"

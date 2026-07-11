@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: list_embedding_models.sql
 
-package queries
+package readqueries
 
 import (
 	"context"

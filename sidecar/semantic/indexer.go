@@ -6,18 +6,24 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
+// writeTxRunner runs a function inside a serialized write transaction. *db.Database satisfies it.
+type writeTxRunner interface {
+	WriteTx(ctx context.Context, fn func(*writequeries.Queries) error) error
+}
+
 type Indexer struct {
-	writeConn   *sql.DB
-	readQuerier queries.Querier
+	writeTx     writeTxRunner
+	readQuerier readqueries.Querier
 	embedder    Embedder
 	location    *time.Location
 }
 
-func NewIndexer(writeConn *sql.DB, readQuerier queries.Querier, embedder Embedder) *Indexer {
-	return &Indexer{writeConn: writeConn, readQuerier: readQuerier, embedder: embedder, location: time.Local}
+func NewIndexer(writeTx writeTxRunner, readQuerier readqueries.Querier, embedder Embedder) *Indexer {
+	return &Indexer{writeTx: writeTx, readQuerier: readQuerier, embedder: embedder, location: time.Local}
 }
 
 func (i *Indexer) IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error) {
@@ -53,7 +59,7 @@ func (i *Indexer) RefreshSummariesForTime(ctx context.Context, value time.Time) 
 
 	dayStart := startOfLocalDay(value, i.location)
 	dayEnd := dayStart.AddDate(0, 0, 1)
-	rows, err := i.readQuerier.ListTransitionEventDocumentSourcesForWindow(ctx, queries.ListTransitionEventDocumentSourcesForWindowParams{
+	rows, err := i.readQuerier.ListTransitionEventDocumentSourcesForWindow(ctx, readqueries.ListTransitionEventDocumentSourcesForWindowParams{
 		WindowStartedAt: dayStart.UTC(),
 		WindowEndedAt:   dayEnd.UTC(),
 	})
@@ -84,42 +90,36 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 		return 0, err
 	}
 
-	tx, err := i.writeConn.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin semantic index transaction: %w", err)
-	}
-	defer tx.Rollback()
+	var documentID int64
+	if err := i.writeTx.WriteTx(ctx, func(q *writequeries.Queries) error {
+		documentID, err = q.UpsertSemanticDocument(ctx, writequeries.UpsertSemanticDocumentParams{
+			DocumentKey:       spec.Key,
+			DocumentType:      spec.Type,
+			TransitionEventID: spec.TransitionEventID,
+			StartedAt:         utcNullTime(spec.StartedAt),
+			EndedAt:           utcNullTime(spec.EndedAt),
+			Content:           content,
+		})
+		if err != nil {
+			return fmt.Errorf("upsert semantic document %q: %w", spec.Key, err)
+		}
 
-	q := queries.New(tx)
+		if err := q.DeleteSemanticDocumentEmbedding(ctx, documentID); err != nil {
+			return fmt.Errorf("delete semantic document embedding %q: %w", spec.Key, err)
+		}
 
-	documentID, err := q.UpsertSemanticDocument(ctx, queries.UpsertSemanticDocumentParams{
-		DocumentKey:       spec.Key,
-		DocumentType:      spec.Type,
-		TransitionEventID: spec.TransitionEventID,
-		StartedAt:         utcNullTime(spec.StartedAt),
-		EndedAt:           utcNullTime(spec.EndedAt),
-		Content:           content,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("upsert semantic document %q: %w", spec.Key, err)
-	}
-
-	if err := q.DeleteSemanticDocumentEmbedding(ctx, documentID); err != nil {
-		return 0, fmt.Errorf("delete semantic document embedding %q: %w", spec.Key, err)
-	}
-
-	if err := q.CreateSemanticDocumentEmbedding(ctx, queries.CreateSemanticDocumentEmbeddingParams{
-		SemanticDocumentID: documentID,
-		EmbeddingModel:     i.embedder.Model(),
-		EmbeddingDimension: int64(i.embedder.Dimension()),
-		EmbeddedAt:         sql.NullTime{Time: time.Now().UTC(), Valid: true},
-		Embedding:          encoded,
+		if err := q.CreateSemanticDocumentEmbedding(ctx, writequeries.CreateSemanticDocumentEmbeddingParams{
+			SemanticDocumentID: documentID,
+			EmbeddingModel:     i.embedder.Model(),
+			EmbeddingDimension: int64(i.embedder.Dimension()),
+			EmbeddedAt:         sql.NullTime{Time: time.Now().UTC(), Valid: true},
+			Embedding:          encoded,
+		}); err != nil {
+			return fmt.Errorf("create semantic document embedding %q: %w", spec.Key, err)
+		}
+		return nil
 	}); err != nil {
-		return 0, fmt.Errorf("create semantic document embedding %q: %w", spec.Key, err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit semantic index transaction: %w", err)
+		return 0, err
 	}
 
 	return documentID, nil

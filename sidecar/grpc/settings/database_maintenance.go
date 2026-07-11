@@ -27,7 +27,7 @@ func (s *Server) GetDatabaseMaintenanceStatus(context.Context, *settingsv1.GetDa
 }
 
 func (s *Server) PruneDatabaseRange(ctx context.Context, req *settingsv1.PruneDatabaseRangeRequest) (*settingsv1.PruneDatabaseRangeResponse, error) {
-	if s.database == nil || s.database.WriteConn == nil {
+	if s.database == nil || s.database.WriteQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "database is unavailable")
 	}
 
@@ -39,35 +39,43 @@ func (s *Server) PruneDatabaseRange(ctx context.Context, req *settingsv1.PruneDa
 	s.maintenanceMu.Lock()
 	defer s.maintenanceMu.Unlock()
 
-	tx, err := s.database.WriteConn.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "begin prune transaction: %v", err)
-	}
-	defer tx.Rollback()
-
-	cleanupNeeded := true
-	defer func() {
-		if cleanupNeeded {
-			_ = dropPruneTempTables(ctx, tx)
+	// Hold the shared write lock for the whole prune transaction so it serializes against every
+	// other writer (the usage monitor, gRPC writes) rather than racing them on the write connection.
+	var counts pruneCounts
+	if err := s.database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return status.Errorf(codes.Internal, "begin prune transaction: %v", err)
 		}
-	}()
+		defer tx.Rollback()
 
-	if err := createPruneTempTables(ctx, tx, startedAt, endedAt); err != nil {
-		return nil, status.Errorf(codes.Internal, "prepare prune scope: %v", err)
-	}
+		cleanupNeeded := true
+		defer func() {
+			if cleanupNeeded {
+				_ = dropPruneTempTables(ctx, tx)
+			}
+		}()
 
-	counts, err := deletePruneRows(ctx, tx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "delete pruned rows: %v", err)
-	}
+		if err := createPruneTempTables(ctx, tx, startedAt, endedAt); err != nil {
+			return status.Errorf(codes.Internal, "prepare prune scope: %v", err)
+		}
 
-	if err := dropPruneTempTables(ctx, tx); err != nil {
-		return nil, status.Errorf(codes.Internal, "clean prune scope: %v", err)
-	}
-	cleanupNeeded = false
+		counts, err = deletePruneRows(ctx, tx)
+		if err != nil {
+			return status.Errorf(codes.Internal, "delete pruned rows: %v", err)
+		}
 
-	if err := tx.Commit(); err != nil {
-		return nil, status.Errorf(codes.Internal, "commit prune transaction: %v", err)
+		if err := dropPruneTempTables(ctx, tx); err != nil {
+			return status.Errorf(codes.Internal, "clean prune scope: %v", err)
+		}
+		cleanupNeeded = false
+
+		if err := tx.Commit(); err != nil {
+			return status.Errorf(codes.Internal, "commit prune transaction: %v", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	size, err := sqliteFootprintSize(s.database.DataSourceName)
@@ -89,7 +97,7 @@ func (s *Server) PruneDatabaseRange(ctx context.Context, req *settingsv1.PruneDa
 }
 
 func (s *Server) VacuumDatabase(ctx context.Context, _ *settingsv1.VacuumDatabaseRequest) (*settingsv1.VacuumDatabaseResponse, error) {
-	if s.database == nil || s.database.WriteConn == nil {
+	if s.database == nil || s.database.WriteQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "database is unavailable")
 	}
 
@@ -101,7 +109,11 @@ func (s *Server) VacuumDatabase(ctx context.Context, _ *settingsv1.VacuumDatabas
 		return nil, status.Errorf(codes.Internal, "get database size before vacuum: %v", err)
 	}
 
-	if err := vacuumSQLiteDatabase(ctx, s.database.WriteConn); err != nil {
+	// VACUUM cannot run inside a transaction, so serialize it against other writers with the write
+	// lock directly rather than via WriteTx.
+	if err := s.database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		return vacuumSQLiteDatabase(ctx, conn)
+	}); err != nil {
 		return nil, status.Errorf(codes.Internal, "vacuum database: %v", err)
 	}
 

@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: upsert_application.sql
 
-package queries
+package writequeries
 
 import (
 	"context"

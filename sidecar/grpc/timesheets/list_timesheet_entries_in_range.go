@@ -3,7 +3,7 @@ package timesheets
 import (
 	"context"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) ListTimesheetEntriesInRange(ctx context.Context, req *timesheetsv1.ListTimesheetEntriesInRangeRequest) (*timesheetsv1.ListTimesheetEntriesInRangeResponse, error) {
-	if s.querier == nil {
+	if s.readQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "timesheet store is unavailable")
 	}
 	rangeStartedAt, rangeEndedAt, ok := dayWindow(req.GetRangeStartedAt(), req.GetRangeEndedAt())
@@ -19,7 +19,7 @@ func (s *Server) ListTimesheetEntriesInRange(ctx context.Context, req *timesheet
 		return nil, status.Error(codes.InvalidArgument, "timesheet range window is invalid")
 	}
 
-	rows, err := s.querier.ListTimesheetEntriesInRange(ctx, queries.ListTimesheetEntriesInRangeParams{
+	rows, err := s.readQuerier.ListTimesheetEntriesInRange(ctx, readqueries.ListTimesheetEntriesInRangeParams{
 		StartedAt:   rangeStartedAt,
 		StartedAt_2: rangeEndedAt,
 	})
@@ -49,8 +49,8 @@ func (s *Server) ListTimesheetEntriesInRange(ctx context.Context, req *timesheet
 	return &timesheetsv1.ListTimesheetEntriesInRangeResponse{Days: days}, nil
 }
 
-func rangeRowToEntry(row queries.ListTimesheetEntriesInRangeRow) queries.TimesheetEntry {
-	return queries.TimesheetEntry{
+func rangeRowToEntry(row readqueries.ListTimesheetEntriesInRangeRow) readqueries.TimesheetEntry {
+	return readqueries.TimesheetEntry{
 		ID:              row.ID,
 		TimesheetID:     row.TimesheetID,
 		ProjectID:       row.ProjectID,

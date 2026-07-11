@@ -9,21 +9,21 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func (s *Server) ExportTimesheet(ctx context.Context, req *timesheetsv1.ExportTimesheetRequest) (*timesheetsv1.ExportTimesheetResponse, error) {
-	if s.querier == nil {
+	if s.readQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "timesheet store is unavailable")
 	}
 	dayStartedAt, dayEndedAt, ok := dayWindow(req.GetDayStartedAt(), req.GetDayEndedAt())
 	if !ok {
 		return nil, status.Error(codes.InvalidArgument, "timesheet day window is invalid")
 	}
-	entries, err := s.querier.ListTimesheetEntries(ctx, queries.ListTimesheetEntriesParams{
+	entries, err := s.readQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
 		StartedAt: dayStartedAt,
 		EndedAt:   dayEndedAt,
 	})
@@ -74,7 +74,7 @@ type exportedTimesheetEntry struct {
 	Billable   bool      `json:"billable"`
 }
 
-func exportTimesheetJSON(dayStartedAt time.Time, entries []queries.TimesheetEntry) ([]byte, error) {
+func exportTimesheetJSON(dayStartedAt time.Time, entries []readqueries.TimesheetEntry) ([]byte, error) {
 	out := exportedTimesheet{
 		ExportedAt: time.Now().UTC(),
 		Day:        dayStartedAt,
@@ -99,7 +99,7 @@ func exportTimesheetJSON(dayStartedAt time.Time, entries []queries.TimesheetEntr
 	return json.MarshalIndent(out, "", "  ")
 }
 
-func exportTimesheetCSV(dayStartedAt time.Time, entries []queries.TimesheetEntry) ([]byte, error) {
+func exportTimesheetCSV(dayStartedAt time.Time, entries []readqueries.TimesheetEntry) ([]byte, error) {
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
 	if err := writer.Write([]string{"Title", "Notes", "Started At", "Duration (ms)", "Billable"}); err != nil {

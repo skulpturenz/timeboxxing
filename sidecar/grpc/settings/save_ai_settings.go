@@ -5,14 +5,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func (s *Server) SaveAiSettings(ctx context.Context, req *settingsv1.SaveAiSettingsRequest) (*settingsv1.AiSettings, error) {
-	if s.querier == nil {
+	if s.writeQuerier == nil || s.readQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "settings store is unavailable")
 	}
 
@@ -34,7 +34,7 @@ func (s *Server) SaveAiSettings(ctx context.Context, req *settingsv1.SaveAiSetti
 		return nil, err
 	}
 
-	err = s.querier.UpsertAISettings(ctx, queries.UpsertAISettingsParams{
+	err = s.writeQuerier.UpsertAISettings(ctx, writequeries.UpsertAISettingsParams{
 		Provider:          string(provider),
 		OpenrouterBaseUrl: openRouterBaseURL,
 		OllamaBaseUrl:     ollamaBaseURL,
@@ -46,7 +46,7 @@ func (s *Server) SaveAiSettings(ctx context.Context, req *settingsv1.SaveAiSetti
 		return nil, status.Errorf(codes.Internal, "save AI settings: %v", err)
 	}
 
-	row, err := s.querier.GetAISettings(ctx)
+	row, err := s.readQuerier.GetAISettings(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reload AI settings: %v", err)
 	}

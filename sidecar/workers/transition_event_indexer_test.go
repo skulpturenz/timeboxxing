@@ -86,7 +86,7 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
 	_ = componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
-		Indexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
+		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}),
 	})
 
 	runtime := NewRuntime(registry)
@@ -152,7 +152,7 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
 	transitions := componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
-		Indexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
+		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}),
 	})
 
 	runtime := NewRuntime(registry)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
 func TestSQLiteVectorStoreQuantizedScanMatchesExactNearestNeighbor(t *testing.T) {
@@ -42,10 +42,10 @@ func TestSQLiteVectorStoreQuantizedScanMatchesExactNearestNeighbor(t *testing.T)
 	}
 }
 
-func createSemanticVectorDocument(t *testing.T, ctx context.Context, q queries.Querier, key string, values []float32) int64 {
+func createSemanticVectorDocument(t *testing.T, ctx context.Context, q writequeries.Querier, key string, values []float32) int64 {
 	t.Helper()
 	now := time.Now().UTC()
-	documentID, err := q.UpsertSemanticDocument(ctx, queries.UpsertSemanticDocumentParams{
+	documentID, err := q.UpsertSemanticDocument(ctx, writequeries.UpsertSemanticDocumentParams{
 		DocumentKey:  key,
 		DocumentType: DocumentTypeEvent,
 		StartedAt:    sql.NullTime{Time: now, Valid: true},
@@ -59,7 +59,7 @@ func createSemanticVectorDocument(t *testing.T, ctx context.Context, q queries.Q
 	if err != nil {
 		t.Fatalf("encode embedding: %v", err)
 	}
-	if err := q.CreateSemanticDocumentEmbedding(ctx, queries.CreateSemanticDocumentEmbeddingParams{
+	if err := q.CreateSemanticDocumentEmbedding(ctx, writequeries.CreateSemanticDocumentEmbeddingParams{
 		SemanticDocumentID: documentID,
 		EmbeddingModel:     "test-model",
 		EmbeddingDimension: StoreEmbeddingDimension,

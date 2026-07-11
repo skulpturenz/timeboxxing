@@ -2,7 +2,8 @@ package timesheets
 
 import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
@@ -10,8 +11,9 @@ import (
 type Server struct {
 	timesheetsv1.UnimplementedTimesheetsServiceServer
 
-	database *db.Database
-	querier  queries.Querier
+	database     *db.Database
+	readQuerier  readqueries.Querier
+	writeQuerier writequeries.Querier
 }
 
 type serverKey struct{}
@@ -30,13 +32,10 @@ func ServerFromServices(registry *services.Services[any, any]) (*Server, bool) {
 
 func NewServer(registry *services.Services[any, any]) *Server {
 	database, _ := db.FromServices(registry)
-	var querier queries.Querier
+	server := &Server{database: database}
 	if database != nil {
-		querier = database.WriteQuerier
-	}
-	server := &Server{
-		database: database,
-		querier:  querier,
+		server.readQuerier = database.ReadQuerier
+		server.writeQuerier = database.WriteQuerier
 	}
 	RegisterServer(registry, server)
 	return server

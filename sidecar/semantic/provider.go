@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 type Provider string
@@ -34,7 +34,7 @@ type AISettings struct {
 	SemanticModelLabel  string
 }
 
-func LoadAISettings(ctx context.Context, querier queries.Querier) (AISettings, error) {
+func LoadAISettings(ctx context.Context, querier readqueries.Querier) (AISettings, error) {
 	if querier == nil {
 		return AISettings{}, fmt.Errorf("settings querier is required")
 	}

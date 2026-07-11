@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: list_transition_event_document_sources_for_window.sql
 
-package queries
+package readqueries
 
 import (
 	"context"

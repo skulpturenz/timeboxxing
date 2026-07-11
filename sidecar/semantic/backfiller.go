@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 const semanticBackfillDelay = 100 * time.Millisecond
 
 type MissingTransitionEventLister interface {
-	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg queries.ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
+	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg readqueries.ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
 }
 
 type TransitionEventEnqueuer interface {
@@ -39,7 +39,7 @@ func (b *Backfiller) HasMissing(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("missing transition event lister is required")
 	}
 
-	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
 		EmbeddingModel: b.embeddingModel,
 		Limit:          1,
 	})
@@ -60,7 +60,7 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 		return BackfillResult{}, fmt.Errorf("transition event enqueuer is required")
 	}
 
-	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, queries.ListMissingSemanticEventDocumentIDsParams{
+	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
 		EmbeddingModel: b.embeddingModel,
 		Limit:          limit,
 	})

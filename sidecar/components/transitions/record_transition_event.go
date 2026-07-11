@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
 func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransitionEventParams) (int64, error) {
-	if s == nil || s.writeConn == nil {
+	if s == nil || s.writeTx == nil {
 		return 0, fmt.Errorf("transition event writer is unavailable")
 	}
 
@@ -20,59 +20,54 @@ func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransi
 		return 0, err
 	}
 
-	tx, err := s.writeConn.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin transition event transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	q := queries.New(tx)
-	appName := strings.TrimSpace(params.ApplicationName)
-	applicationID := sql.NullInt64{}
-
-	if !params.Idle && appName != "" {
-		id, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{
-			Name:               appName,
-			PlatformIdentifier: nullString(params.ApplicationIdentifier),
-			Path:               nullString(params.ApplicationPath),
-		})
-		if err != nil {
-			return 0, fmt.Errorf("upsert application %q: %w", appName, err)
-		}
-		applicationID = sql.NullInt64{Int64: id, Valid: true}
-	}
-
 	var eventID int64
-	if useDefaults {
-		eventID, err = q.CreateTransitionEventNow(ctx, queries.CreateTransitionEventNowParams{
-			ApplicationID: applicationID,
-			Reason:        params.Reason,
-		})
-	} else {
-		eventID, err = q.CreateTransitionEvent(ctx, queries.CreateTransitionEventParams{
-			ApplicationID: applicationID,
-			Reason:        params.Reason,
-			StartedAt:     startedAt,
-			EndedAt:       endedAt,
-		})
-	}
-	if err != nil {
-		return 0, fmt.Errorf("create transition event: %w", err)
-	}
+	if err := s.writeTx.WriteTx(ctx, func(q *writequeries.Queries) error {
+		appName := strings.TrimSpace(params.ApplicationName)
+		applicationID := sql.NullInt64{}
 
-	if err := q.CreateTransitionEventMetadata(ctx, queries.CreateTransitionEventMetadataParams{
-		TransitionEventID: eventID,
-		Browser:           params.Browser,
-		Tab:               params.Tab,
-		Idle:              params.Idle,
-		CdpUrl:            params.CDPURL,
-		Pid:               nullPID(params.PID),
+		if !params.Idle && appName != "" {
+			id, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+				Name:               appName,
+				PlatformIdentifier: nullString(params.ApplicationIdentifier),
+				Path:               nullString(params.ApplicationPath),
+			})
+			if err != nil {
+				return fmt.Errorf("upsert application %q: %w", appName, err)
+			}
+			applicationID = sql.NullInt64{Int64: id, Valid: true}
+		}
+
+		var err error
+		if useDefaults {
+			eventID, err = q.CreateTransitionEventNow(ctx, writequeries.CreateTransitionEventNowParams{
+				ApplicationID: applicationID,
+				Reason:        params.Reason,
+			})
+		} else {
+			eventID, err = q.CreateTransitionEvent(ctx, writequeries.CreateTransitionEventParams{
+				ApplicationID: applicationID,
+				Reason:        params.Reason,
+				StartedAt:     startedAt,
+				EndedAt:       endedAt,
+			})
+		}
+		if err != nil {
+			return fmt.Errorf("create transition event: %w", err)
+		}
+
+		if err := q.CreateTransitionEventMetadata(ctx, writequeries.CreateTransitionEventMetadataParams{
+			TransitionEventID: eventID,
+			Browser:           params.Browser,
+			Tab:               params.Tab,
+			Idle:              params.Idle,
+			CdpUrl:            params.CDPURL,
+			Pid:               nullPID(params.PID),
+		}); err != nil {
+			return fmt.Errorf("create transition event metadata: %w", err)
+		}
+		return nil
 	}); err != nil {
-		return 0, fmt.Errorf("create transition event metadata: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit transition event transaction: %w", err)
+		return 0, err
 	}
 
 	if err := s.PublishTransitionEvent(ctx, PublishTransitionEventParams{ID: eventID}); err != nil {
