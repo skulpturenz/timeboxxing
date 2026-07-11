@@ -1,19 +1,38 @@
 version: "2"
 sql:
   - engine: sqlite
-    schema: sqlite/sqlc_schema
-    queries: sqlite/queries
+    schema: schema
+    queries: read_queries
     gen:
       go:
-        package: queries
-        out: queries
+        package: readqueries
+        out: read_queries
         emit_interface: true
+        omit_unused_structs: true
         overrides:
-          - column: transition_event_metadata.tab
+          - column: foreground_process_metadata.tab
             go_type:
               type: string
               pointer: true
-          - column: transition_event_metadata.cdp_url
+          - column: foreground_process_metadata.cdp_url
+            go_type:
+              type: string
+              pointer: true
+  - engine: sqlite
+    schema: schema
+    queries: write_queries
+    gen:
+      go:
+        package: writequeries
+        out: write_queries
+        emit_interface: true
+        omit_unused_structs: true
+        overrides:
+          - column: foreground_process_metadata.tab
+            go_type:
+              type: string
+              pointer: true
+          - column: foreground_process_metadata.cdp_url
             go_type:
               type: string
               pointer: true

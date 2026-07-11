@@ -8,13 +8,26 @@ import "strings"
 var (
 	openRouterAPIKeyOverride string
 	ollamaAPIKeyOverride     string
+	databaseKeyOverride      string
 )
 
 // SetSecretOverrides installs the stdin-provided secrets. Blank values leave the environment-based
 // configuration in effect.
-func SetSecretOverrides(openRouterAPIKey, ollamaAPIKey string) {
+func SetSecretOverrides(openRouterAPIKey, ollamaAPIKey, databaseKey string) {
 	openRouterAPIKeyOverride = strings.TrimSpace(openRouterAPIKey)
 	ollamaAPIKeyOverride = strings.TrimSpace(ollamaAPIKey)
+	databaseKeyOverride = strings.TrimSpace(databaseKey)
+}
+
+// ResolvedDatabaseKey returns the stdin override when present, otherwise the environment value. The
+// bool reports whether a non-empty key is configured.
+func ResolvedDatabaseKey() (string, bool) {
+	if databaseKeyOverride != "" {
+		return databaseKeyOverride, true
+	}
+	value, _ := DATABASE_KEY.Value()
+	value = strings.TrimSpace(value)
+	return value, value != ""
 }
 
 // ResolvedOpenRouterAPIKey returns the stdin override when present, otherwise the environment
@@ -23,7 +36,7 @@ func ResolvedOpenRouterAPIKey() (string, bool) {
 	if openRouterAPIKeyOverride != "" {
 		return openRouterAPIKeyOverride, true
 	}
-	value, _ := OpenRouterAPIKey.Value()
+	value, _ := OPENROUTER_API_KEY.Value()
 	value = strings.TrimSpace(value)
 	return value, value != ""
 }
@@ -33,7 +46,7 @@ func ResolvedOllamaAPIKey() (string, bool) {
 	if ollamaAPIKeyOverride != "" {
 		return ollamaAPIKeyOverride, true
 	}
-	value, _ := OllamaAPIKey.Value()
+	value, _ := OLLAMA_API_KEY.Value()
 	value = strings.TrimSpace(value)
 	return value, value != ""
 }

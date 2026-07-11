@@ -2,6 +2,7 @@ package timesheets
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"path/filepath"
@@ -10,7 +11,8 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 	"google.golang.org/grpc/codes"
@@ -23,6 +25,11 @@ func TestCreateEntryCreatesDailyTimesheetAndListsUsageBlocks(t *testing.T) {
 	server, database, cleanup := newTestTimesheetsServer(t, ctx)
 	defer cleanup()
 	dayStart, dayEnd := testDay()
+
+	// Usage ids now reference real timeline rows (ledger_item_timeline_entries has a timeline FK), so
+	// the two timelines the entry links to must exist first. A fresh DB assigns them ids 1 and 2.
+	createTestTimeline(t, ctx, database, dayStart.Add(time.Hour))
+	createTestTimeline(t, ctx, database, dayStart.Add(2*time.Hour))
 
 	entry, err := server.CreateTimesheetEntry(ctx, &timesheetsv1.CreateTimesheetEntryRequest{
 		DayStartedAt:    timestamppb.New(dayStart),
@@ -37,8 +44,8 @@ func TestCreateEntryCreatesDailyTimesheetAndListsUsageBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create entry: %v", err)
 	}
-	if entry.GetProjectId() != "" {
-		t.Fatalf("expected no project id, got %q", entry.GetProjectId())
+	if entry.GetProjectId() != 0 {
+		t.Fatalf("expected no project id, got %d", entry.GetProjectId())
 	}
 	if entry.GetTitle() != "Design review" {
 		t.Fatalf("expected trimmed title, got %q", entry.GetTitle())
@@ -58,7 +65,7 @@ func TestCreateEntryCreatesDailyTimesheetAndListsUsageBlocks(t *testing.T) {
 		t.Fatalf("expected 1 entry, got %d", len(listed.GetEntries()))
 	}
 	if listed.GetEntries()[0].GetId() != entry.GetId() {
-		t.Fatalf("expected listed entry %q, got %q", entry.GetId(), listed.GetEntries()[0].GetId())
+		t.Fatalf("expected listed entry %d, got %d", entry.GetId(), listed.GetEntries()[0].GetId())
 	}
 
 	if _, err := server.CreateTimesheetEntry(ctx, &timesheetsv1.CreateTimesheetEntryRequest{
@@ -71,12 +78,13 @@ func TestCreateEntryCreatesDailyTimesheetAndListsUsageBlocks(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create second entry: %v", err)
 	}
-	var timesheetCount int
-	if err := database.WriteConn.QueryRowContext(ctx, "SELECT COUNT(*) FROM timesheets").Scan(&timesheetCount); err != nil {
-		t.Fatalf("count timesheets: %v", err)
+	// The ledger is a seeded singleton (id=1); every entry links to it, so there is always exactly one.
+	var ledgerCount int
+	if err := database.ReadConn.QueryRowContext(ctx, "SELECT COUNT(*) FROM ledger").Scan(&ledgerCount); err != nil {
+		t.Fatalf("count ledger: %v", err)
 	}
-	if timesheetCount != 1 {
-		t.Fatalf("expected one upserted timesheet, got %d", timesheetCount)
+	if ledgerCount != 1 {
+		t.Fatalf("expected one ledger, got %d", ledgerCount)
 	}
 }
 
@@ -89,7 +97,7 @@ func TestCreateEntryValidatesProjectAndTime(t *testing.T) {
 	if _, err := server.CreateTimesheetEntry(ctx, &timesheetsv1.CreateTimesheetEntryRequest{
 		DayStartedAt:    timestamppb.New(dayStart),
 		DayEndedAt:      timestamppb.New(dayEnd),
-		ProjectId:       "missing-project",
+		ProjectId:       999,
 		Title:           "Work",
 		StartMinute:     60,
 		DurationMinutes: 30,
@@ -126,7 +134,7 @@ func TestDeletingProjectUnlinksPersistedEntry(t *testing.T) {
 		t.Fatalf("create entry: %v", err)
 	}
 	if entry.GetProjectId() != projectID {
-		t.Fatalf("expected linked project %q, got %q", projectID, entry.GetProjectId())
+		t.Fatalf("expected linked project %d, got %d", projectID, entry.GetProjectId())
 	}
 	if err := database.WriteQuerier.DeleteProject(ctx, projectID); err != nil {
 		t.Fatalf("delete project: %v", err)
@@ -139,8 +147,8 @@ func TestDeletingProjectUnlinksPersistedEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list entries: %v", err)
 	}
-	if got := listed.GetEntries()[0].GetProjectId(); got != "" {
-		t.Fatalf("expected unlinked project, got %q", got)
+	if got := listed.GetEntries()[0].GetProjectId(); got != 0 {
+		t.Fatalf("expected unlinked project, got %d", got)
 	}
 }
 
@@ -309,10 +317,11 @@ func TestListTimesheetEntriesInRangeRejectsInvalidWindow(t *testing.T) {
 func newTestTimesheetsServer(t *testing.T, ctx context.Context) (*Server, *db.Database, func()) {
 	t.Helper()
 
-	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
-	})
+	dsn := db.NewDSN(filepath.Join(t.TempDir(), "test.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := db.New(ctx, db.Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -327,21 +336,44 @@ func newTestTimesheetsServer(t *testing.T, ctx context.Context) (*Server, *db.Da
 	}
 }
 
-func createTestProject(t *testing.T, ctx context.Context, database *db.Database) string {
+func createTestProject(t *testing.T, ctx context.Context, database *db.Database) int64 {
 	t.Helper()
 
-	now := time.Now().UTC()
-	project, err := database.WriteQuerier.CreateProject(ctx, queries.CreateProjectParams{
-		ID:        "client-work",
-		Name:      "Client Work",
-		ColorArgb: 0xFF00FFEE,
-		CreatedAt: now,
-		UpdatedAt: now,
-	})
+	id, err := database.WriteQuerier.CreateProject(ctx, "Client Work")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	return project.ID
+	return id
+}
+
+// createTestTimeline inserts a minimal event-store timeline (two foreground_processes boundary rows
+// tied by a timeline row) and returns its id, which is what "sidecar-<id>" usage ids reference.
+func createTestTimeline(t *testing.T, ctx context.Context, database *db.Database, startedAt time.Time) int64 {
+	t.Helper()
+	q := database.WriteQuerier
+
+	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
+		Pid:          4242,
+		CreatedAtUtc: startedAt.UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upsert initial foreground process: %v", err)
+	}
+	endFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
+		Pid:          4242,
+		CreatedAtUtc: startedAt.Add(5 * time.Minute).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upsert end foreground process: %v", err)
+	}
+	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
+		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
+		EndForegroundProcessID:     sql.NullInt64{Int64: endFP, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create timeline: %v", err)
+	}
+	return timelineID
 }
 
 func testDay() (time.Time, time.Time) {

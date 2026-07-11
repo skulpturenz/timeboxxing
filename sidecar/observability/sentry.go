@@ -42,9 +42,9 @@ func InitSentry(config SentryConfig) (func(), error) {
 }
 
 func SentryConfigFromEnv() SentryConfig {
-	goEnv := envs.RuntimeEnvironment.Value()
+	goEnv := envs.GO_ENV.Value()
 	return SentryConfig{
-		DSN:              envs.SentryDSN.Value(),
+		DSN:              envs.SENTRY_DSN.Value(),
 		Release:          trimmedValue(os.Getenv("SENTRY_RELEASE"), defaultRelease),
 		Environment:      string(goEnv),
 		SendDefaultPII:   false,

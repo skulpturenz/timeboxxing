@@ -23,7 +23,7 @@ const (
 
 type Project struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id              int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	ColorArgb       int64                  `protobuf:"varint,3,opt,name=color_argb,json=colorArgb,proto3" json:"color_argb,omitempty"`
 	Client          string                 `protobuf:"bytes,4,opt,name=client,proto3" json:"client,omitempty"`
@@ -62,11 +62,11 @@ func (*Project) Descriptor() ([]byte, []int) {
 	return file_projects_v1_projects_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Project) GetId() string {
+func (x *Project) GetId() int64 {
 	if x != nil {
 		return x.Id
 	}
-	return ""
+	return 0
 }
 
 func (x *Project) GetName() string {
@@ -231,7 +231,7 @@ func (x *CreateProjectRequest) GetColorArgb() int64 {
 
 type DeleteProjectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -266,11 +266,11 @@ func (*DeleteProjectRequest) Descriptor() ([]byte, []int) {
 	return file_projects_v1_projects_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *DeleteProjectRequest) GetId() string {
+func (x *DeleteProjectRequest) GetId() int64 {
 	if x != nil {
 		return x.Id
 	}
-	return ""
+	return 0
 }
 
 type DeleteProjectResponse struct {
@@ -315,7 +315,7 @@ const file_projects_v1_projects_proto_rawDesc = "" +
 	"\n" +
 	"\x1aprojects/v1/projects.proto\x12\vprojects.v1\"\x90\x01\n" +
 	"\aProject\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"color_argb\x18\x03 \x01(\x03R\tcolorArgb\x12\x16\n" +
@@ -329,7 +329,7 @@ const file_projects_v1_projects_proto_rawDesc = "" +
 	"\n" +
 	"color_argb\x18\x02 \x01(\x03R\tcolorArgb\"&\n" +
 	"\x14DeleteProjectRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x17\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"\x17\n" +
 	"\x15DeleteProjectResponse2\x88\x02\n" +
 	"\x0fProjectsService\x12S\n" +
 	"\fListProjects\x12 .projects.v1.ListProjectsRequest\x1a!.projects.v1.ListProjectsResponse\x12H\n" +

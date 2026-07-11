@@ -12,6 +12,7 @@ import (
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	"github.com/skulpturenz/timeboxxing/sidecar/logging"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
@@ -39,11 +40,11 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	databasePath := filepath.Join(t.TempDir(), "workers.db")
-	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: databasePath,
-	})
+	dsn := db.NewDSN(filepath.Join(t.TempDir(), "workers.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := db.New(ctx, db.Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 		}
 	})
 
-	queueDSN := db.SqliteDataSourceName(databasePath)
+	queueDSN := dsn.String()
 	transitionEventQueue, err := queue.New[reporter.TransitionEvent](ctx, queue.QueueOptions{
 		ConnectionString: queueDSN,
 		QueueName:        TransitionEventQueueName.String(),
@@ -86,7 +87,7 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
 	_ = componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
-		Indexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
+		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}, 1),
 	})
 
 	runtime := NewRuntime(registry)
@@ -109,20 +110,20 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 		t.Fatalf("add transition event job: %v", err)
 	}
 
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "transition_events", 1)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_documents", 7)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline", 1)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_semantic_documents", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_embeddings", 7)
 }
 
 func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	databasePath := filepath.Join(t.TempDir(), "backfill-workers.db")
-	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: databasePath,
-	})
+	dsn := db.NewDSN(filepath.Join(t.TempDir(), "backfill-workers.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := db.New(ctx, db.Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 		}
 	})
 
-	queueDSN := db.SqliteDataSourceName(databasePath)
+	queueDSN := dsn.String()
 	transitionEventReportedQueue, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions{
 		ConnectionString: queueDSN,
 		QueueName:        TransitionEventReportedQueueName.String(),
@@ -152,7 +153,7 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
 	transitions := componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
-		Indexer: semantic.NewIndexer(database.WriteConn, database.ReadQuerier, workerFakeEmbedder{}),
+		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}, 1),
 	})
 
 	runtime := NewRuntime(registry)
@@ -179,8 +180,8 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 		t.Fatalf("enqueue backfill transition event: %v", err)
 	}
 
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_documents", 7)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "semantic_document_embeddings", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_semantic_documents", 7)
+	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_embeddings", 7)
 }
 
 func countWorkerRows(t *testing.T, ctx context.Context, conn *sql.DB, table string) int {

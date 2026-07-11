@@ -15,6 +15,7 @@ internal enum class SecretKey(
 ) {
     OpenRouter("com.timeboxxing.app.openrouter"),
     Ollama("com.timeboxxing.app.ollama"),
+    DatabaseKey("com.timeboxxing.app.database-key"),
 }
 
 internal enum class SecretPlatform { MacOs, Windows, Linux }

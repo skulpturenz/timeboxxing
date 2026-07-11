@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
@@ -22,12 +23,12 @@ import (
 func TestDatabaseMaintenanceStatusReportsSqliteFootprint(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "maintenance.db")
-	writeFileOfSize(t, path, 11)
-	writeFileOfSize(t, path+"-wal", 13)
-	writeFileOfSize(t, path+"-shm", 17)
+	dsn := db.NewDSN(filepath.Join(dir, "maintenance.db"))
+	writeFileOfSize(t, dsn.GetPath(), 11)
+	writeFileOfSize(t, dsn.GetPath()+"-wal", 13)
+	writeFileOfSize(t, dsn.GetPath()+"-shm", 17)
 
-	server := &Server{database: &db.Database{DataSourceName: path + "?_journal_mode=WAL"}}
+	server := &Server{database: &db.Database{DSN: dsn}}
 	status, err := server.GetDatabaseMaintenanceStatus(ctx, &settingsv1.GetDatabaseMaintenanceStatusRequest{})
 	if err != nil {
 		t.Fatalf("get status: %v", err)
@@ -60,24 +61,20 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 	dayStart := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	dayEnd := dayStart.Add(24 * time.Hour)
 	outStart := dayStart.Add(48 * time.Hour)
-	outEnd := outStart.Add(24 * time.Hour)
 
 	inEventID := createTestTransitionEvent(t, ctx, q, "In Range App", dayStart.Add(9*time.Hour), dayStart.Add(10*time.Hour))
 	outEventID := createTestTransitionEvent(t, ctx, q, "Out Range App", outStart.Add(9*time.Hour), outStart.Add(10*time.Hour))
-	if _, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{Name: "Already Orphaned App"}); err != nil {
+	if _, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{Name: "Already Orphaned App"}); err != nil {
 		t.Fatalf("upsert orphan application: %v", err)
 	}
-	createTestSemanticDocument(t, ctx, q, "event:in", sql.NullInt64{Int64: inEventID, Valid: true}, dayStart.Add(9*time.Hour), dayStart.Add(10*time.Hour))
-	createTestSemanticDocument(t, ctx, q, "summary:in", sql.NullInt64{}, dayStart.Add(11*time.Hour), dayStart.Add(12*time.Hour))
-	createTestSemanticDocument(t, ctx, q, "event:out", sql.NullInt64{Int64: outEventID, Valid: true}, outStart.Add(9*time.Hour), outStart.Add(10*time.Hour))
+	// Semantic documents cascade-delete only through their timeline; "summary:in" (no timeline) and
+	// "event:out" (out-of-range timeline) survive a prune of the in-range window.
+	createTestSemanticDocument(t, ctx, q, "event:in", sql.NullInt64{Int64: inEventID, Valid: true})
+	createTestSemanticDocument(t, ctx, q, "summary:in", sql.NullInt64{})
+	createTestSemanticDocument(t, ctx, q, "event:out", sql.NullInt64{Int64: outEventID, Valid: true})
 
-	createTestTimesheetEntry(t, ctx, q, "sheet-in", "entry-in", dayStart, dayEnd, []string{
-		fmt.Sprintf("sidecar-%d", inEventID),
-	})
-	createTestTimesheetEntry(t, ctx, q, "sheet-out", "entry-out", outStart, outEnd, []string{
-		fmt.Sprintf("sidecar-%d", inEventID),
-		fmt.Sprintf("sidecar-%d", outEventID),
-	})
+	createTestLedgerItem(t, ctx, q, "entry-in", dayStart.Add(time.Hour), []int64{inEventID})
+	createTestLedgerItem(t, ctx, q, "entry-out", outStart.Add(time.Hour), []int64{inEventID, outEventID})
 
 	response, err := server.PruneDatabaseRange(ctx, &settingsv1.PruneDatabaseRangeRequest{
 		StartedAt: timestamppb.New(dayStart),
@@ -87,26 +84,29 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 		t.Fatalf("prune: %v", err)
 	}
 
-	assertPruneCount(t, "timesheet entries", response.GetTimesheetEntriesDeleted(), 1)
-	assertPruneCount(t, "usage links", response.GetUsageLinksDeleted(), 2)
-	assertPruneCount(t, "timesheets", response.GetTimesheetsDeleted(), 1)
-	assertPruneCount(t, "transition events", response.GetTransitionEventsDeleted(), 1)
-	assertPruneCount(t, "transition metadata", response.GetTransitionMetadataDeleted(), 1)
-	assertPruneCount(t, "semantic documents", response.GetSemanticDocumentsDeleted(), 2)
-	assertPruneCount(t, "embeddings", response.GetEmbeddingsDeleted(), 2)
+	// The in-range window prunes the two foreground processes of the in-range event; the timeline,
+	// its semantic document and embedding, its metadata, the in-range ledger item, and the now-orphan
+	// application cascade away. The out-of-range event/documents and the pre-existing orphan app remain.
+	assertPruneCount(t, "ledger items", response.GetLedgerItemsDeleted(), 1)
+	assertPruneCount(t, "ledger item timeline entries", response.GetLedgerItemTimelineEntriesDeleted(), 2)
+	assertPruneCount(t, "timeline", response.GetTimelineDeleted(), 1)
+	assertPruneCount(t, "foreground processes", response.GetForegroundProcessesDeleted(), 2)
+	assertPruneCount(t, "foreground process metadata", response.GetForegroundProcessMetadataDeleted(), 1)
+	assertPruneCount(t, "timeline semantic documents", response.GetTimelineSemanticDocumentsDeleted(), 1)
+	assertPruneCount(t, "timeline embeddings", response.GetTimelineEmbeddingsDeleted(), 1)
 	assertPruneCount(t, "applications", response.GetApplicationsDeleted(), 1)
 	if response.GetSizeBytes() <= 0 {
 		t.Fatalf("expected size bytes in prune response, got %d", response.GetSizeBytes())
 	}
 
-	assertTableCount(t, ctx, database.WriteConn, "transition_events", 1)
-	assertTableCount(t, ctx, database.WriteConn, "transition_event_metadata", 1)
-	assertTableCount(t, ctx, database.WriteConn, "semantic_documents", 1)
-	assertTableCount(t, ctx, database.WriteConn, "semantic_document_embeddings", 1)
-	assertTableCount(t, ctx, database.WriteConn, "timesheet_entries", 1)
-	assertTableCount(t, ctx, database.WriteConn, "timesheets", 1)
-	assertTableCount(t, ctx, database.WriteConn, "applications", 2)
-	assertTableCount(t, ctx, database.WriteConn, "timesheet_entry_usage_blocks", 1)
+	assertTableCount(t, ctx, database.ReadConn, "foreground_processes", 2)
+	assertTableCount(t, ctx, database.ReadConn, "foreground_process_metadata", 1)
+	assertTableCount(t, ctx, database.ReadConn, "timeline", 1)
+	assertTableCount(t, ctx, database.ReadConn, "timeline_semantic_documents", 2)
+	assertTableCount(t, ctx, database.ReadConn, "timeline_embeddings", 2)
+	assertTableCount(t, ctx, database.ReadConn, "ledger_items", 1)
+	assertTableCount(t, ctx, database.ReadConn, "applications", 2)
+	assertTableCount(t, ctx, database.ReadConn, "ledger_item_timeline_entries", 1)
 }
 
 func TestVacuumDatabaseCompactsSqliteFootprint(t *testing.T) {
@@ -114,34 +114,39 @@ func TestVacuumDatabaseCompactsSqliteFootprint(t *testing.T) {
 	server, database, cleanup := newTestSettingsServer(t, ctx)
 	defer cleanup()
 
-	if _, err := database.WriteConn.ExecContext(ctx, `
+	if err := database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		if _, err := conn.ExecContext(ctx, `
 CREATE TABLE vacuum_payload (
   id INTEGER PRIMARY KEY,
   payload BLOB NOT NULL
 )`); err != nil {
-		t.Fatalf("create payload table: %v", err)
-	}
-	for range 512 {
-		if _, err := database.WriteConn.ExecContext(ctx, "INSERT INTO vacuum_payload (payload) VALUES (zeroblob(4096))"); err != nil {
-			t.Fatalf("insert payload: %v", err)
+			return fmt.Errorf("create payload table: %w", err)
 		}
-	}
-	if err := runWalCheckpointTruncate(ctx, database.WriteConn); err != nil {
-		t.Fatalf("checkpoint payload inserts: %v", err)
+		for range 512 {
+			if _, err := conn.ExecContext(ctx, "INSERT INTO vacuum_payload (payload) VALUES (zeroblob(4096))"); err != nil {
+				return fmt.Errorf("insert payload: %w", err)
+			}
+		}
+		return runWalCheckpointTruncate(ctx, conn)
+	}); err != nil {
+		t.Fatalf("seed vacuum payload: %v", err)
 	}
 
-	sizeWithRows, err := sqliteFootprintSize(database.DataSourceName)
+	sizeWithRows, err := sqliteFootprintSize(database.DSN.GetPath())
 	if err != nil {
 		t.Fatalf("measure size with rows: %v", err)
 	}
-	if _, err := database.WriteConn.ExecContext(ctx, "DELETE FROM vacuum_payload"); err != nil {
+	if err := database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		_, err := conn.ExecContext(ctx, "DELETE FROM vacuum_payload")
+		return err
+	}); err != nil {
 		t.Fatalf("delete payload: %v", err)
 	}
-	sizeAfterDelete, err := sqliteFootprintSize(database.DataSourceName)
+	sizeAfterDelete, err := sqliteFootprintSize(database.DSN.GetPath())
 	if err != nil {
 		t.Fatalf("measure size after delete: %v", err)
 	}
-	mainInfo, err := os.Stat(sqliteDatabasePath(database.DataSourceName))
+	mainInfo, err := os.Stat(sqliteDatabasePath(database.DSN.GetPath()))
 	if err != nil {
 		t.Fatalf("stat main database: %v", err)
 	}
@@ -162,7 +167,7 @@ CREATE TABLE vacuum_payload (
 	if response.GetSizeAfterBytes() >= sizeWithRows {
 		t.Fatalf("expected vacuumed footprint %d to be smaller than populated footprint %d", response.GetSizeAfterBytes(), sizeWithRows)
 	}
-	walInfo, err := os.Stat(sqliteDatabasePath(database.DataSourceName) + "-wal")
+	walInfo, err := os.Stat(sqliteDatabasePath(database.DSN.GetPath()) + "-wal")
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("stat WAL: %v", err)
 	}
@@ -174,10 +179,11 @@ CREATE TABLE vacuum_payload (
 func newTestSettingsServer(t *testing.T, ctx context.Context) (*Server, *db.Database, func()) {
 	t.Helper()
 
-	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "settings.db"),
-	})
+	dsn := db.NewDSN(filepath.Join(t.TempDir(), "settings.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := db.New(ctx, db.Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -192,44 +198,61 @@ func newTestSettingsServer(t *testing.T, ctx context.Context) (*Server, *db.Data
 	}
 }
 
-func createTestTransitionEvent(t *testing.T, ctx context.Context, q queries.Querier, appName string, startedAt time.Time, endedAt time.Time) int64 {
+// createTestTransitionEvent inserts an event into the event store (two foreground_processes boundary
+// rows tied together by a timeline row) and returns the timeline id, which plays the role of the old
+// transition-event id.
+func createTestTransitionEvent(t *testing.T, ctx context.Context, q writequeries.Querier, appName string, startedAt time.Time, endedAt time.Time) int64 {
 	t.Helper()
 
-	appID, err := q.UpsertApplication(ctx, queries.UpsertApplicationParams{
+	appID, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 		Name: appName,
 	})
 	if err != nil {
 		t.Fatalf("upsert application: %v", err)
 	}
-	eventID, err := q.CreateTransitionEvent(ctx, queries.CreateTransitionEventParams{
-		ApplicationID: sql.NullInt64{Int64: appID, Valid: true},
-		Reason:        "focus_change",
-		StartedAt:     startedAt,
-		EndedAt:       endedAt,
+	application := sql.NullInt64{Int64: appID, Valid: true}
+
+	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
+		ApplicationID: application,
+		Pid:           4242,
+		CreatedAtUtc:  startedAt.UTC(),
 	})
 	if err != nil {
-		t.Fatalf("create transition event: %v", err)
+		t.Fatalf("upsert initial foreground process: %v", err)
 	}
-	if err := q.CreateTransitionEventMetadata(ctx, queries.CreateTransitionEventMetadataParams{
-		TransitionEventID: eventID,
-		Browser:           false,
-		Idle:              false,
+	if err := q.CreateForegroundProcessMetadata(ctx, writequeries.CreateForegroundProcessMetadataParams{
+		ForegroundProcessID: initialFP,
+		Browser:             false,
+		Idle:                false,
 	}); err != nil {
-		t.Fatalf("create transition metadata: %v", err)
+		t.Fatalf("create foreground process metadata: %v", err)
 	}
-	return eventID
+	endFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
+		ApplicationID: application,
+		Pid:           4242,
+		CreatedAtUtc:  endedAt.UTC(),
+	})
+	if err != nil {
+		t.Fatalf("upsert end foreground process: %v", err)
+	}
+	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
+		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
+		EndForegroundProcessID:     sql.NullInt64{Int64: endFP, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create timeline: %v", err)
+	}
+	return timelineID
 }
 
-func createTestSemanticDocument(t *testing.T, ctx context.Context, q queries.Querier, key string, eventID sql.NullInt64, startedAt time.Time, endedAt time.Time) {
+func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequeries.Querier, key string, timelineID sql.NullInt64) {
 	t.Helper()
 
-	documentID, err := q.UpsertSemanticDocument(ctx, queries.UpsertSemanticDocumentParams{
-		DocumentKey:       key,
-		DocumentType:      "event",
-		TransitionEventID: eventID,
-		StartedAt:         sql.NullTime{Time: startedAt, Valid: true},
-		EndedAt:           sql.NullTime{Time: endedAt, Valid: true},
-		Content:           key,
+	documentID, err := q.UpsertTimelineSemanticDocument(ctx, writequeries.UpsertTimelineSemanticDocumentParams{
+		DocumentKey: key,
+		TimelineID:  timelineID,
+		Type:        sql.NullInt64{Int64: 1, Valid: true},
+		Content:     key,
 	})
 	if err != nil {
 		t.Fatalf("upsert semantic document: %v", err)
@@ -242,50 +265,42 @@ func createTestSemanticDocument(t *testing.T, ctx context.Context, q queries.Que
 	if err != nil {
 		t.Fatalf("encode embedding: %v", err)
 	}
-	if err := q.CreateSemanticDocumentEmbedding(ctx, queries.CreateSemanticDocumentEmbeddingParams{
-		SemanticDocumentID: documentID,
-		EmbeddingModel:     "test-model",
-		EmbeddingDimension: semantic.StoreEmbeddingDimension,
-		EmbeddedAt:         sql.NullTime{Time: startedAt, Valid: true},
-		Embedding:          encoded,
+	if err := q.CreateTimelineEmbedding(ctx, writequeries.CreateTimelineEmbeddingParams{
+		TimelineID:                  timelineID,
+		TimelineSemanticDocumentsID: sql.NullInt64{Int64: documentID, Valid: true},
+		EmbeddingModelID:            sql.NullInt64{Int64: 1, Valid: true},
+		Dimension:                   semantic.StoreEmbeddingDimension,
+		Embedding:                   encoded,
 	}); err != nil {
 		t.Fatalf("create semantic embedding: %v", err)
 	}
 }
 
-func createTestTimesheetEntry(t *testing.T, ctx context.Context, q queries.Querier, sheetID string, entryID string, startedAt time.Time, endedAt time.Time, usageIDs []string) {
+// createTestLedgerItem inserts a ledger item (started at startedAt) and links it to the given timeline
+// ids via ledger_item_timeline_entries (the successor to the old usage blocks).
+func createTestLedgerItem(t *testing.T, ctx context.Context, q writequeries.Querier, title string, startedAt time.Time, timelineIDs []int64) {
 	t.Helper()
 
-	now := time.Now().UTC()
-	if _, err := q.CreateTimesheet(ctx, queries.CreateTimesheetParams{
-		ID:        sheetID,
-		StartedAt: startedAt,
-		EndedAt:   endedAt,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}); err != nil {
-		t.Fatalf("create timesheet: %v", err)
+	// The ledger is not seeded; it is created lazily before the first ledger item.
+	if err := q.EnsureLedger(ctx); err != nil {
+		t.Fatalf("ensure ledger: %v", err)
 	}
-	if _, err := q.CreateTimesheetEntry(ctx, queries.CreateTimesheetEntryParams{
-		ID:              entryID,
-		TimesheetID:     sheetID,
-		Title:           entryID,
-		Notes:           "",
-		StartMinute:     60,
-		DurationMinutes: 30,
-		Billable:        true,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}); err != nil {
-		t.Fatalf("create timesheet entry: %v", err)
+	item, err := q.CreateLedgerItem(ctx, writequeries.CreateLedgerItemParams{
+		Billable:     true,
+		Title:        title,
+		Notes:        sql.NullString{},
+		StartedAtUtc: sql.NullTime{Time: startedAt.UTC(), Valid: true},
+		EndedAtUtc:   sql.NullTime{Time: startedAt.Add(30 * time.Minute).UTC(), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create ledger item: %v", err)
 	}
-	for index, usageID := range usageIDs {
-		if err := q.CreateTimesheetEntryUsageBlock(ctx, queries.CreateTimesheetEntryUsageBlockParams{
-			TimesheetEntryID: entryID,
-			UsageID:          usageID,
-			SortOrder:        int64(index),
+	for _, timelineID := range timelineIDs {
+		if err := q.CreateLedgerItemTimelineEntry(ctx, writequeries.CreateLedgerItemTimelineEntryParams{
+			LedgerItemsID: sql.NullInt64{Int64: item.ID, Valid: true},
+			TimelineID:    sql.NullInt64{Int64: timelineID, Valid: true},
 		}); err != nil {
-			t.Fatalf("create usage block: %v", err)
+			t.Fatalf("create ledger item timeline entry: %v", err)
 		}
 	}
 }

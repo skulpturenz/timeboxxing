@@ -4,7 +4,8 @@ import (
 	"sync"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
@@ -17,8 +18,9 @@ const (
 type Server struct {
 	settingsv1.UnimplementedSettingsServiceServer
 
-	querier  queries.Querier
-	database *db.Database
+	readQuerier  readqueries.Querier
+	writeQuerier writequeries.Querier
+	database     *db.Database
 
 	maintenanceMu sync.Mutex
 }
@@ -39,11 +41,11 @@ func ServerFromServices(registry *services.Services[any, any]) (*Server, bool) {
 
 func NewServer(registry *services.Services[any, any]) *Server {
 	database, _ := db.FromServices(registry)
-	var querier queries.Querier
+	server := &Server{database: database}
 	if database != nil {
-		querier = database.WriteQuerier
+		server.readQuerier = database.ReadQuerier
+		server.writeQuerier = database.WriteQuerier
 	}
-	server := &Server{querier: querier, database: database}
 	RegisterServer(registry, server)
 	return server
 }

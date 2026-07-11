@@ -1,9 +1,10 @@
 package transitions
 
 import (
+	"database/sql"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 )
 
 const subscriberBufferSize = 64
@@ -75,18 +76,16 @@ func eventMatchesFilters(event Event, filters Filters) bool {
 	return true
 }
 
-func eventFromGetTransitionEventsRow(row queries.GetTransitionEventsRow) Event {
+func eventFromGetTransitionEventsRow(row readqueries.GetTransitionEventsRow) Event {
+	// Reason is not stored; the caller derives it from adjacency (see reasonForTransitionRow).
 	event := Event{
 		ID:        row.TransitionEventID,
-		Reason:    row.Reason,
 		StartedAt: row.StartedAt.UTC(),
 		EndedAt:   row.EndedAt.UTC(),
+		PID:       int32(row.Pid),
 	}
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
-	}
-	if row.ApplicationPlatformIdentifier.Valid {
-		event.ApplicationIdentifier = row.ApplicationPlatformIdentifier.String
 	}
 	if row.ApplicationPath.Valid {
 		event.ApplicationPath = row.ApplicationPath.String
@@ -102,26 +101,22 @@ func eventFromGetTransitionEventsRow(row queries.GetTransitionEventsRow) Event {
 	}
 	if row.CdpUrl != nil {
 		event.CDPURL = *row.CdpUrl
-	}
-	if row.Pid.Valid {
-		event.PID = int32(row.Pid.Int64)
 	}
 
 	return event
 }
 
-func eventFromGetTransitionEventRow(row queries.GetTransitionEventRow) Event {
+func eventFromGetTransitionEventRow(row readqueries.GetTransitionEventRow) Event {
+	// Single-row lookup has no adjacency context, so reason is derived coarsely from the idle flag.
 	event := Event{
 		ID:        row.TransitionEventID,
-		Reason:    row.Reason,
+		Reason:    coarseReason(row.Idle),
 		StartedAt: row.StartedAt.UTC(),
 		EndedAt:   row.EndedAt.UTC(),
+		PID:       int32(row.Pid),
 	}
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
-	}
-	if row.ApplicationPlatformIdentifier.Valid {
-		event.ApplicationIdentifier = row.ApplicationPlatformIdentifier.String
 	}
 	if row.ApplicationPath.Valid {
 		event.ApplicationPath = row.ApplicationPath.String
@@ -138,9 +133,44 @@ func eventFromGetTransitionEventRow(row queries.GetTransitionEventRow) Event {
 	if row.CdpUrl != nil {
 		event.CDPURL = *row.CdpUrl
 	}
-	if row.Pid.Valid {
-		event.PID = int32(row.Pid.Int64)
-	}
 
 	return event
+}
+
+// Transition reasons are derived at read time (they are no longer stored on the event store).
+const (
+	reasonStart          = "start"
+	reasonIdle           = "idle"
+	reasonReturnFromIdle = "return_from_idle"
+	reasonTabChange      = "tab_change"
+	reasonFocusChange    = "focus_change"
+)
+
+// coarseReason derives a reason without adjacency context (single-row lookups).
+func coarseReason(idle sql.NullBool) string {
+	if idle.Valid && idle.Bool {
+		return reasonIdle
+	}
+	return reasonFocusChange
+}
+
+// reasonForTransitionRow derives the transition reason for row i of an ordered result set by
+// comparing it with the previous row: idle -> idle, coming out of idle -> return_from_idle, same
+// application as the previous entry -> tab_change, otherwise focus_change.
+func reasonForTransitionRow(rows []readqueries.GetTransitionEventsRow, i int) string {
+	cur := rows[i]
+	if cur.Idle.Valid && cur.Idle.Bool {
+		return reasonIdle
+	}
+	if i == 0 {
+		return reasonFocusChange
+	}
+	prev := rows[i-1]
+	if prev.Idle.Valid && prev.Idle.Bool {
+		return reasonReturnFromIdle
+	}
+	if cur.ApplicationID.Valid && prev.ApplicationID.Valid && cur.ApplicationID.Int64 == prev.ApplicationID.Int64 {
+		return reasonTabChange
+	}
+	return reasonFocusChange
 }

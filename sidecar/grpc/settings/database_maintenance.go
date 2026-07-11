@@ -19,7 +19,7 @@ func (s *Server) GetDatabaseMaintenanceStatus(context.Context, *settingsv1.GetDa
 		return nil, status.Error(codes.FailedPrecondition, "database is unavailable")
 	}
 
-	size, err := sqliteFootprintSize(s.database.DataSourceName)
+	size, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get database size: %v", err)
 	}
@@ -27,7 +27,7 @@ func (s *Server) GetDatabaseMaintenanceStatus(context.Context, *settingsv1.GetDa
 }
 
 func (s *Server) PruneDatabaseRange(ctx context.Context, req *settingsv1.PruneDatabaseRangeRequest) (*settingsv1.PruneDatabaseRangeResponse, error) {
-	if s.database == nil || s.database.WriteConn == nil {
+	if s.database == nil || s.database.WriteQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "database is unavailable")
 	}
 
@@ -39,73 +39,85 @@ func (s *Server) PruneDatabaseRange(ctx context.Context, req *settingsv1.PruneDa
 	s.maintenanceMu.Lock()
 	defer s.maintenanceMu.Unlock()
 
-	tx, err := s.database.WriteConn.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "begin prune transaction: %v", err)
-	}
-	defer tx.Rollback()
-
-	cleanupNeeded := true
-	defer func() {
-		if cleanupNeeded {
-			_ = dropPruneTempTables(ctx, tx)
+	// Hold the shared write lock for the whole prune transaction so it serializes against every
+	// other writer (the usage monitor, gRPC writes) rather than racing them on the write connection.
+	var counts pruneCounts
+	if err := s.database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return status.Errorf(codes.Internal, "begin prune transaction: %v", err)
 		}
-	}()
+		defer tx.Rollback()
 
-	if err := createPruneTempTables(ctx, tx, startedAt, endedAt); err != nil {
-		return nil, status.Errorf(codes.Internal, "prepare prune scope: %v", err)
+		cleanupNeeded := true
+		defer func() {
+			if cleanupNeeded {
+				_ = dropPruneTempTables(ctx, tx)
+			}
+		}()
+
+		if err := createPruneTempTables(ctx, tx, startedAt, endedAt); err != nil {
+			return status.Errorf(codes.Internal, "prepare prune scope: %v", err)
+		}
+
+		counts, err = deletePruneRows(ctx, tx)
+		if err != nil {
+			return status.Errorf(codes.Internal, "delete pruned rows: %v", err)
+		}
+
+		if err := dropPruneTempTables(ctx, tx); err != nil {
+			return status.Errorf(codes.Internal, "clean prune scope: %v", err)
+		}
+		cleanupNeeded = false
+
+		if err := tx.Commit(); err != nil {
+			return status.Errorf(codes.Internal, "commit prune transaction: %v", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	counts, err := deletePruneRows(ctx, tx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "delete pruned rows: %v", err)
-	}
-
-	if err := dropPruneTempTables(ctx, tx); err != nil {
-		return nil, status.Errorf(codes.Internal, "clean prune scope: %v", err)
-	}
-	cleanupNeeded = false
-
-	if err := tx.Commit(); err != nil {
-		return nil, status.Errorf(codes.Internal, "commit prune transaction: %v", err)
-	}
-
-	size, err := sqliteFootprintSize(s.database.DataSourceName)
+	size, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reload database size: %v", err)
 	}
 
 	return &settingsv1.PruneDatabaseRangeResponse{
-		SizeBytes:                 size,
-		TimesheetEntriesDeleted:   counts.timesheetEntriesDeleted,
-		UsageLinksDeleted:         counts.usageLinksDeleted,
-		TimesheetsDeleted:         counts.timesheetsDeleted,
-		TransitionEventsDeleted:   counts.transitionEventsDeleted,
-		TransitionMetadataDeleted: counts.transitionMetadataDeleted,
-		SemanticDocumentsDeleted:  counts.semanticDocumentsDeleted,
-		EmbeddingsDeleted:         counts.embeddingsDeleted,
-		ApplicationsDeleted:       counts.applicationsDeleted,
+		SizeBytes:                        size,
+		LedgerItemsDeleted:               counts.ledgerItemsDeleted,
+		LedgerItemTimelineEntriesDeleted: counts.ledgerItemTimelineEntriesDeleted,
+		TimelineDeleted:                  counts.timelineDeleted,
+		ForegroundProcessesDeleted:       counts.foregroundProcessesDeleted,
+		ForegroundProcessMetadataDeleted: counts.foregroundProcessMetadataDeleted,
+		TimelineSemanticDocumentsDeleted: counts.timelineSemanticDocumentsDeleted,
+		TimelineEmbeddingsDeleted:        counts.timelineEmbeddingsDeleted,
+		ApplicationsDeleted:              counts.applicationsDeleted,
 	}, nil
 }
 
 func (s *Server) VacuumDatabase(ctx context.Context, _ *settingsv1.VacuumDatabaseRequest) (*settingsv1.VacuumDatabaseResponse, error) {
-	if s.database == nil || s.database.WriteConn == nil {
+	if s.database == nil || s.database.WriteQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "database is unavailable")
 	}
 
 	s.maintenanceMu.Lock()
 	defer s.maintenanceMu.Unlock()
 
-	sizeBefore, err := sqliteFootprintSize(s.database.DataSourceName)
+	sizeBefore, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get database size before vacuum: %v", err)
 	}
 
-	if err := vacuumSQLiteDatabase(ctx, s.database.WriteConn); err != nil {
+	// VACUUM cannot run inside a transaction, so serialize it against other writers with the write
+	// lock directly rather than via WriteTx.
+	if err := s.database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		return vacuumSQLiteDatabase(ctx, conn)
+	}); err != nil {
 		return nil, status.Errorf(codes.Internal, "vacuum database: %v", err)
 	}
 
-	sizeAfter, err := sqliteFootprintSize(s.database.DataSourceName)
+	sizeAfter, err := sqliteFootprintSize(s.database.DSN.GetPath())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get database size after vacuum: %v", err)
 	}
@@ -117,14 +129,14 @@ func (s *Server) VacuumDatabase(ctx context.Context, _ *settingsv1.VacuumDatabas
 }
 
 type pruneCounts struct {
-	timesheetEntriesDeleted   int64
-	usageLinksDeleted         int64
-	timesheetsDeleted         int64
-	transitionEventsDeleted   int64
-	transitionMetadataDeleted int64
-	semanticDocumentsDeleted  int64
-	embeddingsDeleted         int64
-	applicationsDeleted       int64
+	foregroundProcessesDeleted       int64
+	foregroundProcessMetadataDeleted int64
+	timelineDeleted                  int64
+	timelineSemanticDocumentsDeleted int64
+	timelineEmbeddingsDeleted        int64
+	ledgerItemsDeleted               int64
+	ledgerItemTimelineEntriesDeleted int64
+	applicationsDeleted              int64
 }
 
 func pruneWindowFromRequest(req *settingsv1.PruneDatabaseRangeRequest) (time.Time, time.Time, error) {
@@ -154,60 +166,56 @@ func createPruneTempTables(ctx context.Context, tx *sql.Tx, startedAt time.Time,
 		query string
 		args  []any
 	}{
-		{query: "DROP TABLE IF EXISTS temp.prune_transition_events"},
+		{query: "DROP TABLE IF EXISTS temp.prune_foreground_processes"},
+		{query: "DROP TABLE IF EXISTS temp.prune_timeline"},
+		{query: "DROP TABLE IF EXISTS temp.prune_timeline_semantic_documents"},
+		{query: "DROP TABLE IF EXISTS temp.prune_ledger_items"},
 		{query: "DROP TABLE IF EXISTS temp.prune_applications"},
-		{query: "DROP TABLE IF EXISTS temp.prune_semantic_documents"},
-		{query: "DROP TABLE IF EXISTS temp.prune_timesheets"},
-		{query: "DROP TABLE IF EXISTS temp.prune_timesheet_entries"},
-		{query: "CREATE TEMP TABLE prune_transition_events (id INTEGER PRIMARY KEY)"},
+		{query: "CREATE TEMP TABLE prune_foreground_processes (id INTEGER PRIMARY KEY)"},
 		{
 			query: `
-INSERT INTO prune_transition_events (id)
+INSERT INTO prune_foreground_processes (id)
 SELECT id
-FROM transition_events
-WHERE ended_at > ? AND started_at < ?`,
+FROM foreground_processes
+WHERE created_at_utc >= ? AND created_at_utc < ?`,
 			args: []any{startedAt, endedAt},
 		},
+		// Timelines cascade-delete when either boundary foreground process is removed.
+		{query: "CREATE TEMP TABLE prune_timeline (id INTEGER PRIMARY KEY)"},
+		{
+			query: `
+INSERT INTO prune_timeline (id)
+SELECT id
+FROM timeline
+WHERE initial_foreground_process_id IN (SELECT id FROM prune_foreground_processes)
+   OR end_foreground_process_id IN (SELECT id FROM prune_foreground_processes)`,
+		},
+		{query: "CREATE TEMP TABLE prune_timeline_semantic_documents (id INTEGER PRIMARY KEY)"},
+		{
+			query: `
+INSERT INTO prune_timeline_semantic_documents (id)
+SELECT id
+FROM timeline_semantic_documents
+WHERE timeline_id IN (SELECT id FROM prune_timeline)`,
+		},
+		{query: "CREATE TEMP TABLE prune_ledger_items (id INTEGER PRIMARY KEY)"},
+		{
+			query: `
+INSERT INTO prune_ledger_items (id)
+SELECT id
+FROM ledger_items
+WHERE started_at_utc >= ? AND started_at_utc < ?`,
+			args: []any{startedAt, endedAt},
+		},
+		// Applications referenced by the pruned foreground processes (candidates for orphan cleanup).
 		{query: "CREATE TEMP TABLE prune_applications (id INTEGER PRIMARY KEY)"},
 		{
 			query: `
 INSERT INTO prune_applications (id)
 SELECT DISTINCT application_id
-FROM transition_events
-WHERE id IN (SELECT id FROM prune_transition_events)
+FROM foreground_processes
+WHERE id IN (SELECT id FROM prune_foreground_processes)
   AND application_id IS NOT NULL`,
-		},
-		{query: "CREATE TEMP TABLE prune_semantic_documents (id INTEGER PRIMARY KEY)"},
-		{
-			query: `
-INSERT INTO prune_semantic_documents (id)
-SELECT id
-FROM semantic_documents
-WHERE transition_event_id IN (SELECT id FROM prune_transition_events)
-   OR (
-     started_at IS NOT NULL
-     AND ended_at IS NOT NULL
-     AND ended_at > ?
-     AND started_at < ?
-   )`,
-			args: []any{startedAt, endedAt},
-		},
-		{query: "CREATE TEMP TABLE prune_timesheets (id TEXT PRIMARY KEY)"},
-		{
-			query: `
-INSERT INTO prune_timesheets (id)
-SELECT id
-FROM timesheets
-WHERE ended_at > ? AND started_at < ?`,
-			args: []any{startedAt, endedAt},
-		},
-		{query: "CREATE TEMP TABLE prune_timesheet_entries (id TEXT PRIMARY KEY)"},
-		{
-			query: `
-INSERT INTO prune_timesheet_entries (id)
-SELECT id
-FROM timesheet_entries
-WHERE timesheet_id IN (SELECT id FROM prune_timesheets)`,
 		},
 	}
 
@@ -223,57 +231,50 @@ func deletePruneRows(ctx context.Context, tx *sql.Tx) (pruneCounts, error) {
 	var counts pruneCounts
 	var err error
 
-	counts.embeddingsDeleted, err = execDelete(ctx, tx, `
-DELETE FROM semantic_document_embeddings
-WHERE semantic_document_id IN (SELECT id FROM prune_semantic_documents)`)
+	// Count the rows that ON DELETE CASCADE will remove before deleting the roots (RowsAffected only
+	// reports the directly deleted rows, not cascaded ones).
+	counts.foregroundProcessMetadataDeleted, err = execCount(ctx, tx, `
+SELECT COUNT(*) FROM foreground_process_metadata
+WHERE foreground_process_id IN (SELECT id FROM prune_foreground_processes)`)
+	if err != nil {
+		return counts, err
+	}
+	counts.timelineDeleted, err = execCount(ctx, tx, `SELECT COUNT(*) FROM prune_timeline`)
+	if err != nil {
+		return counts, err
+	}
+	counts.timelineSemanticDocumentsDeleted, err = execCount(ctx, tx, `SELECT COUNT(*) FROM prune_timeline_semantic_documents`)
+	if err != nil {
+		return counts, err
+	}
+	counts.timelineEmbeddingsDeleted, err = execCount(ctx, tx, `
+SELECT COUNT(*) FROM timeline_embeddings
+WHERE timeline_id IN (SELECT id FROM prune_timeline)
+   OR timeline_semantic_documents_id IN (SELECT id FROM prune_timeline_semantic_documents)`)
+	if err != nil {
+		return counts, err
+	}
+	counts.ledgerItemTimelineEntriesDeleted, err = execCount(ctx, tx, `
+SELECT COUNT(*) FROM ledger_item_timeline_entries
+WHERE timeline_id IN (SELECT id FROM prune_timeline)
+   OR ledger_items_id IN (SELECT id FROM prune_ledger_items)`)
 	if err != nil {
 		return counts, err
 	}
 
-	counts.semanticDocumentsDeleted, err = execDelete(ctx, tx, `
-DELETE FROM semantic_documents
-WHERE id IN (SELECT id FROM prune_semantic_documents)`)
+	// ledger_items cascades to project_costs and ledger_item_timeline_entries.
+	counts.ledgerItemsDeleted, err = execDelete(ctx, tx, `
+DELETE FROM ledger_items
+WHERE id IN (SELECT id FROM prune_ledger_items)`)
 	if err != nil {
 		return counts, err
 	}
 
-	counts.transitionMetadataDeleted, err = execDelete(ctx, tx, `
-DELETE FROM transition_event_metadata
-WHERE transition_event_id IN (SELECT id FROM prune_transition_events)`)
-	if err != nil {
-		return counts, err
-	}
-
-	counts.usageLinksDeleted, err = execDelete(ctx, tx, `
-DELETE FROM timesheet_entry_usage_blocks
-WHERE timesheet_entry_id IN (SELECT id FROM prune_timesheet_entries)
-   OR usage_id IN (SELECT 'sidecar-' || id FROM prune_transition_events)`)
-	if err != nil {
-		return counts, err
-	}
-
-	counts.timesheetEntriesDeleted, err = execDelete(ctx, tx, `
-DELETE FROM timesheet_entries
-WHERE id IN (SELECT id FROM prune_timesheet_entries)`)
-	if err != nil {
-		return counts, err
-	}
-
-	counts.timesheetsDeleted, err = execDelete(ctx, tx, `
-DELETE FROM timesheets
-WHERE id IN (SELECT id FROM prune_timesheets)
-  AND NOT EXISTS (
-    SELECT 1
-    FROM timesheet_entries
-    WHERE timesheet_entries.timesheet_id = timesheets.id
-  )`)
-	if err != nil {
-		return counts, err
-	}
-
-	counts.transitionEventsDeleted, err = execDelete(ctx, tx, `
-DELETE FROM transition_events
-WHERE id IN (SELECT id FROM prune_transition_events)`)
+	// foreground_processes cascades to foreground_process_metadata, timeline, and transitively to
+	// timeline_semantic_documents, timeline_embeddings and ledger_item_timeline_entries.
+	counts.foregroundProcessesDeleted, err = execDelete(ctx, tx, `
+DELETE FROM foreground_processes
+WHERE id IN (SELECT id FROM prune_foreground_processes)`)
 	if err != nil {
 		return counts, err
 	}
@@ -282,15 +283,23 @@ WHERE id IN (SELECT id FROM prune_transition_events)`)
 DELETE FROM applications
 WHERE id IN (SELECT id FROM prune_applications)
   AND NOT EXISTS (
-  SELECT 1
-  FROM transition_events
-  WHERE transition_events.application_id = applications.id
-)`)
+    SELECT 1
+    FROM foreground_processes
+    WHERE foreground_processes.application_id = applications.id
+  )`)
 	if err != nil {
 		return counts, err
 	}
 
 	return counts, nil
+}
+
+func execCount(ctx context.Context, tx *sql.Tx, query string, args ...any) (int64, error) {
+	var count int64
+	if err := tx.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func execDelete(ctx context.Context, tx *sql.Tx, query string, args ...any) (int64, error) {
@@ -307,11 +316,11 @@ func execDelete(ctx context.Context, tx *sql.Tx, query string, args ...any) (int
 
 func dropPruneTempTables(ctx context.Context, tx *sql.Tx) error {
 	for _, table := range []string{
-		"temp.prune_timesheet_entries",
-		"temp.prune_timesheets",
-		"temp.prune_semantic_documents",
 		"temp.prune_applications",
-		"temp.prune_transition_events",
+		"temp.prune_ledger_items",
+		"temp.prune_timeline_semantic_documents",
+		"temp.prune_timeline",
+		"temp.prune_foreground_processes",
 	} {
 		if _, err := tx.ExecContext(ctx, "DROP TABLE IF EXISTS "+table); err != nil {
 			return err

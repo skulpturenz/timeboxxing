@@ -6,18 +6,25 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 )
 
-type Indexer struct {
-	writeConn   *sql.DB
-	readQuerier queries.Querier
-	embedder    Embedder
-	location    *time.Location
+// writeTxRunner runs a function inside a serialized write transaction. *db.Database satisfies it.
+type writeTxRunner interface {
+	WriteTx(ctx context.Context, fn func(*writequeries.Queries) error) error
 }
 
-func NewIndexer(writeConn *sql.DB, readQuerier queries.Querier, embedder Embedder) *Indexer {
-	return &Indexer{writeConn: writeConn, readQuerier: readQuerier, embedder: embedder, location: time.Local}
+type Indexer struct {
+	writeTx          writeTxRunner
+	readQuerier      readqueries.Querier
+	embedder         Embedder
+	embeddingModelID int64
+	location         *time.Location
+}
+
+func NewIndexer(writeTx writeTxRunner, readQuerier readqueries.Querier, embedder Embedder, embeddingModelID int64) *Indexer {
+	return &Indexer{writeTx: writeTx, readQuerier: readQuerier, embedder: embedder, embeddingModelID: embeddingModelID, location: time.Local}
 }
 
 func (i *Indexer) IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error) {
@@ -53,7 +60,7 @@ func (i *Indexer) RefreshSummariesForTime(ctx context.Context, value time.Time) 
 
 	dayStart := startOfLocalDay(value, i.location)
 	dayEnd := dayStart.AddDate(0, 0, 1)
-	rows, err := i.readQuerier.ListTransitionEventDocumentSourcesForWindow(ctx, queries.ListTransitionEventDocumentSourcesForWindowParams{
+	rows, err := i.readQuerier.ListTransitionEventDocumentSourcesForWindow(ctx, readqueries.ListTransitionEventDocumentSourcesForWindowParams{
 		WindowStartedAt: dayStart.UTC(),
 		WindowEndedAt:   dayEnd.UTC(),
 	})
@@ -84,50 +91,35 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 		return 0, err
 	}
 
-	tx, err := i.writeConn.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin semantic index transaction: %w", err)
-	}
-	defer tx.Rollback()
+	var documentID int64
+	if err := i.writeTx.WriteTx(ctx, func(q *writequeries.Queries) error {
+		documentID, err = q.UpsertTimelineSemanticDocument(ctx, writequeries.UpsertTimelineSemanticDocumentParams{
+			DocumentKey: spec.Key,
+			TimelineID:  spec.TransitionEventID,
+			Type:        documentTypeID(spec.Type),
+			Content:     content,
+		})
+		if err != nil {
+			return fmt.Errorf("upsert semantic document %q: %w", spec.Key, err)
+		}
 
-	q := queries.New(tx)
+		if err := q.DeleteTimelineEmbedding(ctx, sql.NullInt64{Int64: documentID, Valid: true}); err != nil {
+			return fmt.Errorf("delete semantic document embedding %q: %w", spec.Key, err)
+		}
 
-	documentID, err := q.UpsertSemanticDocument(ctx, queries.UpsertSemanticDocumentParams{
-		DocumentKey:       spec.Key,
-		DocumentType:      spec.Type,
-		TransitionEventID: spec.TransitionEventID,
-		StartedAt:         utcNullTime(spec.StartedAt),
-		EndedAt:           utcNullTime(spec.EndedAt),
-		Content:           content,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("upsert semantic document %q: %w", spec.Key, err)
-	}
-
-	if err := q.DeleteSemanticDocumentEmbedding(ctx, documentID); err != nil {
-		return 0, fmt.Errorf("delete semantic document embedding %q: %w", spec.Key, err)
-	}
-
-	if err := q.CreateSemanticDocumentEmbedding(ctx, queries.CreateSemanticDocumentEmbeddingParams{
-		SemanticDocumentID: documentID,
-		EmbeddingModel:     i.embedder.Model(),
-		EmbeddingDimension: int64(i.embedder.Dimension()),
-		EmbeddedAt:         sql.NullTime{Time: time.Now().UTC(), Valid: true},
-		Embedding:          encoded,
+		if err := q.CreateTimelineEmbedding(ctx, writequeries.CreateTimelineEmbeddingParams{
+			TimelineID:                  spec.TransitionEventID,
+			TimelineSemanticDocumentsID: sql.NullInt64{Int64: documentID, Valid: true},
+			EmbeddingModelID:            sql.NullInt64{Int64: i.embeddingModelID, Valid: true},
+			Dimension:                   int64(i.embedder.Dimension()),
+			Embedding:                   encoded,
+		}); err != nil {
+			return fmt.Errorf("create semantic document embedding %q: %w", spec.Key, err)
+		}
+		return nil
 	}); err != nil {
-		return 0, fmt.Errorf("create semantic document embedding %q: %w", spec.Key, err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit semantic index transaction: %w", err)
+		return 0, err
 	}
 
 	return documentID, nil
-}
-
-func utcNullTime(value sql.NullTime) sql.NullTime {
-	if !value.Valid {
-		return value
-	}
-	return sql.NullTime{Time: value.Time.UTC(), Valid: true}
 }

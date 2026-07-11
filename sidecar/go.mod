@@ -5,13 +5,13 @@ go 1.26.4
 require (
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
 	github.com/dogmatiq/ferrite v1.7.0
+	github.com/getsentry/sentry-go v0.47.0
+	github.com/getsentry/sentry-go/grpc v0.47.0
+	github.com/getsentry/sentry-go/slog v0.47.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/goptics/sqliteq v0.2.3
 	github.com/goptics/varmq v1.7.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
-	github.com/getsentry/sentry-go v0.47.0
-	github.com/getsentry/sentry-go/grpc v0.47.0
-	github.com/getsentry/sentry-go/slog v0.47.0
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/negrel/assert v0.5.0
@@ -353,3 +353,5 @@ tool (
 	github.com/mitranim/gow
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 )
+
+replace github.com/mattn/go-sqlite3 => ./third_party/go-sqlite3

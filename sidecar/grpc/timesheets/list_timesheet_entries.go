@@ -2,15 +2,16 @@ package timesheets
 
 import (
 	"context"
+	"database/sql"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func (s *Server) ListTimesheetEntries(ctx context.Context, req *timesheetsv1.ListTimesheetEntriesRequest) (*timesheetsv1.ListTimesheetEntriesResponse, error) {
-	if s.querier == nil {
+	if s.readQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "timesheet store is unavailable")
 	}
 	dayStartedAt, dayEndedAt, ok := dayWindow(req.GetDayStartedAt(), req.GetDayEndedAt())
@@ -18,14 +19,14 @@ func (s *Server) ListTimesheetEntries(ctx context.Context, req *timesheetsv1.Lis
 		return nil, status.Error(codes.InvalidArgument, "timesheet day window is invalid")
 	}
 
-	rows, err := s.querier.ListTimesheetEntries(ctx, queries.ListTimesheetEntriesParams{
-		StartedAt: dayStartedAt,
-		EndedAt:   dayEndedAt,
+	rows, err := s.readQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
+		StartedAtUtc:   sql.NullTime{Time: dayStartedAt, Valid: true},
+		StartedAtUtc_2: sql.NullTime{Time: dayEndedAt, Valid: true},
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list timesheet entries: %v", err)
 	}
-	entries, err := entriesToProto(ctx, s, rows)
+	entries, err := entriesToProto(ctx, s, dayStartedAt, rows)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list timesheet entry usage: %v", err)
 	}

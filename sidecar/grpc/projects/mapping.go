@@ -3,21 +3,23 @@ package projects
 import (
 	"strings"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	projectsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1"
 )
 
-func projectToProto(row queries.Project) *projectsv1.Project {
-	return &projectsv1.Project{
+func projectToProto(row readqueries.ListProjectsRow) *projectsv1.Project {
+	project := &projectsv1.Project{
 		Id:              row.ID,
 		Name:            row.Name,
-		ColorArgb:       row.ColorArgb,
-		Client:          row.Client,
 		HourlyRateCents: row.HourlyRateCents,
 	}
+	if row.ColorArgb.Valid {
+		project.ColorArgb = row.ColorArgb.Int64
+	}
+	return project
 }
 
-func projectsToProto(rows []queries.Project) []*projectsv1.Project {
+func projectsToProto(rows []readqueries.ListProjectsRow) []*projectsv1.Project {
 	out := make([]*projectsv1.Project, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, projectToProto(row))

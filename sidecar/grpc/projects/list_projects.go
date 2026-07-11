@@ -9,11 +9,11 @@ import (
 )
 
 func (s *Server) ListProjects(ctx context.Context, req *projectsv1.ListProjectsRequest) (*projectsv1.ListProjectsResponse, error) {
-	if s.querier == nil {
+	if s.readQuerier == nil {
 		return nil, status.Error(codes.FailedPrecondition, "project store is unavailable")
 	}
 
-	rows, err := s.querier.ListProjects(ctx)
+	rows, err := s.readQuerier.ListProjects(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list projects: %v", err)
 	}

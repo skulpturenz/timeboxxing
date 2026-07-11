@@ -3,36 +3,41 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	sqlitevector "github.com/skulpturenz/timeboxxing/sidecar/db/sqlite-vector"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 )
 
 func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 	ctx := context.Background()
 	configuredPath := os.Getenv("SIDECAR_SQLITE_VECTOR_EXTENSION_PATH")
-	resolvedPath := ResolveSQLiteVectorExtensionPath(configuredPath)
-	if resolvedPath == "" {
+	if !sqliteVectorExtensionAvailable(configuredPath) {
 		t.Skip("sqlite-vector extension is not bundled for this platform and SIDECAR_SQLITE_VECTOR_EXTENSION_PATH is not set")
 	}
+	var configuredPathOption *string
+	if strings.TrimSpace(configuredPath) != "" {
+		configuredPathOption = &configuredPath
+	}
 	database, err := New(ctx, Options{
-		Engine:                    EngineSqlite,
-		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
-		SQLiteVectorExtensionPath: configuredPath,
+		DSN:                       NewDSN(filepath.Join(t.TempDir(), "test.db")),
+		SQLiteVectorExtensionPath: configuredPathOption,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
 	defer database.Close()
-	if database.SQLiteVectorExtensionPath != resolvedPath {
-		t.Fatalf("expected sqlite-vector path %q, got %q", resolvedPath, database.SQLiteVectorExtensionPath)
-	}
 
 	var version string
-	if err := database.WriteConn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
+	if err := database.WriteQuerier.conn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
 		t.Fatalf("query sqlite-vector version: %v", err)
 	}
 	if version == "" {
@@ -42,14 +47,12 @@ func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 
 func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 	ctx := context.Background()
-	extensionPath := extractBundledSQLiteVectorExtension()
-	if extensionPath == "" {
+	if !sqliteVectorExtensionAvailable("") {
 		t.Skip("sqlite-vector extension is not embedded for this platform")
 	}
+	// No configured path — the bundled extension is loaded automatically.
 	database, err := New(ctx, Options{
-		Engine:                    EngineSqlite,
-		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
-		SQLiteVectorExtensionPath: extensionPath,
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -57,7 +60,7 @@ func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 	defer database.Close()
 
 	var version string
-	if err := database.WriteConn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
+	if err := database.WriteQuerier.conn.QueryRowContext(ctx, `SELECT vector_version()`).Scan(&version); err != nil {
 		t.Fatalf("query sqlite-vector version: %v", err)
 	}
 	if version == "" {
@@ -67,12 +70,9 @@ func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 
 func TestSqliteMigrationsRunOnce(t *testing.T) {
 	ctx := context.Background()
-	dsn := filepath.Join(t.TempDir(), "test.db")
+	dsn := NewDSN(filepath.Join(t.TempDir(), "test.db"))
 
-	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
-		DataSourceName: dsn,
-	})
+	database, err := New(ctx, Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -80,40 +80,29 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 		t.Fatalf("close database: %v", err)
 	}
 
-	database, err = New(ctx, Options{
-		Engine:         EngineSqlite,
-		DataSourceName: dsn,
-	})
+	database, err = New(ctx, Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("reopen database: %v", err)
 	}
 	defer database.Close()
 
-	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 3)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_embedding_models", 1)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_semantic_models", 1)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_settings", 1)
-	assertMigrationTableVersion(t, ctx, database, "seed_migrations_transition_event_reasons", 1)
+	assertMigrationTableVersion(t, ctx, database, "schema_migrations", 20)
+	assertMigrationTableVersion(t, ctx, database, "seed_migrations_models", 1)
+	assertMigrationTableVersion(t, ctx, database, "seed_migrations_model_providers", 1)
+	assertMigrationTableVersion(t, ctx, database, "seed_migrations_application_settings", 1)
 }
 
 func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
 	defer database.Close()
 
-	if _, err := database.WriteQuerier.CreateProject(ctx, queries.CreateProjectParams{
-		ID:        "client-work",
-		Name:      "Client Work",
-		ColorArgb: 0xFF00FFEE,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}); err != nil {
+	if _, err := database.WriteQuerier.CreateProject(ctx, "Client Work"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	projects, err := database.ReadQuerier.ListProjects(ctx)
@@ -123,8 +112,12 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	if len(projects) != 1 {
 		t.Fatalf("expected 1 project, got %d", len(projects))
 	}
-	if projects[0].Client != "" {
-		t.Fatalf("expected empty client, got %q", projects[0].Client)
+	if projects[0].Name != "Client Work" {
+		t.Fatalf("expected project name Client Work, got %q", projects[0].Name)
+	}
+	// Colour/rate live in project_details now; a project created without details has neither.
+	if projects[0].ColorArgb.Valid {
+		t.Fatalf("expected no colour, got %d", projects[0].ColorArgb.Int64)
 	}
 	if projects[0].HourlyRateCents != 0 {
 		t.Fatalf("expected zero hourly rate, got %d", projects[0].HourlyRateCents)
@@ -134,50 +127,40 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
 	defer database.Close()
 
-	now := time.Now().UTC()
-	timesheet, err := database.WriteQuerier.CreateTimesheet(ctx, queries.CreateTimesheetParams{
-		ID:        "timesheet-test",
-		StartedAt: now,
-		EndedAt:   now.Add(24 * time.Hour),
-		CreatedAt: now,
-		UpdatedAt: now,
+	dayStart := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	startedAt := dayStart.Add(9 * time.Hour)
+	// The ledger is not seeded; it is created lazily before the first ledger item.
+	if err := database.WriteQuerier.EnsureLedger(ctx); err != nil {
+		t.Fatalf("ensure ledger: %v", err)
+	}
+	entry, err := database.WriteQuerier.CreateLedgerItem(ctx, writequeries.CreateLedgerItemParams{
+		Billable:     true,
+		Title:        "Design review",
+		Notes:        sql.NullString{},
+		StartedAtUtc: sql.NullTime{Time: startedAt, Valid: true},
+		EndedAtUtc:   sql.NullTime{Time: startedAt.Add(30 * time.Minute), Valid: true},
 	})
 	if err != nil {
-		t.Fatalf("create timesheet: %v", err)
+		t.Fatalf("create ledger item: %v", err)
 	}
-	entry, err := database.WriteQuerier.CreateTimesheetEntry(ctx, queries.CreateTimesheetEntryParams{
-		ID:              "entry-test",
-		TimesheetID:     timesheet.ID,
-		Title:           "Design review",
-		Notes:           "",
-		StartMinute:     9 * 60,
-		DurationMinutes: 30,
-		Billable:        true,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	})
-	if err != nil {
-		t.Fatalf("create timesheet entry: %v", err)
-	}
-	if err := database.WriteQuerier.CreateTimesheetEntryUsageBlock(ctx, queries.CreateTimesheetEntryUsageBlockParams{
-		TimesheetEntryID: entry.ID,
-		UsageID:          "sidecar-123",
-		SortOrder:        0,
+	// A ledger item links to timeline entries (usage blocks) via ledger_item_timeline_entries.
+	if err := database.WriteQuerier.CreateLedgerItemTimelineEntry(ctx, writequeries.CreateLedgerItemTimelineEntryParams{
+		LedgerItemsID: sql.NullInt64{Int64: entry.ID, Valid: true},
+		TimelineID:    sql.NullInt64{},
 	}); err != nil {
-		t.Fatalf("create usage block: %v", err)
+		t.Fatalf("create ledger item timeline entry: %v", err)
 	}
 
-	entries, err := database.ReadQuerier.ListTimesheetEntries(ctx, queries.ListTimesheetEntriesParams{
-		StartedAt: timesheet.StartedAt,
-		EndedAt:   timesheet.EndedAt,
+	entries, err := database.ReadQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
+		StartedAtUtc:   sql.NullTime{Time: dayStart, Valid: true},
+		StartedAtUtc_2: sql.NullTime{Time: dayStart.Add(24 * time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("list timesheet entries: %v", err)
@@ -187,18 +170,19 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	}
 }
 
-func TestSqliteUsesWALAndSingleWriterPool(t *testing.T) {
+func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 	ctx := context.Background()
-	database, err := New(ctx, Options{
-		Engine:         EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
-	})
+	dsn := NewDSN(filepath.Join(t.TempDir(), "test.db"))
+	dsn.SetJournalMode(enumsjournalmode.WAL)
+	dsn.EnableFK()
+	dsn.SetBusyTimeout(5 * time.Second)
+	database, err := New(ctx, Options{DSN: dsn})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
 	}
 	defer database.Close()
 
-	if database.WriteConn == nil {
+	if database.WriteQuerier.conn == nil {
 		t.Fatal("expected writer connection")
 	}
 	if database.ReadConn == nil {
@@ -210,19 +194,76 @@ func TestSqliteUsesWALAndSingleWriterPool(t *testing.T) {
 	if database.ReadQuerier == nil {
 		t.Fatal("expected reader querier")
 	}
-	if database.WriteConn == database.ReadConn {
+	if database.WriteQuerier.conn == database.ReadConn {
 		t.Fatal("expected separate writer and reader connection pools")
 	}
-	if got := database.WriteConn.Stats().MaxOpenConnections; got != 1 {
-		t.Fatalf("expected one writer connection, got %d", got)
-	}
 
-	assertJournalMode(t, ctx, database.WriteConn, "writer")
+	assertJournalMode(t, ctx, database.WriteQuerier.conn, "writer")
 	assertJournalMode(t, ctx, database.ReadConn, "reader")
-	assertBusyTimeout(t, ctx, database.WriteConn, "writer")
+	assertBusyTimeout(t, ctx, database.WriteQuerier.conn, "writer")
 	assertBusyTimeout(t, ctx, database.ReadConn, "reader")
-	assertForeignKeys(t, ctx, database.WriteConn, "writer")
+	assertForeignKeys(t, ctx, database.WriteQuerier.conn, "writer")
 	assertForeignKeys(t, ctx, database.ReadConn, "reader")
+}
+
+func TestSqliteSerializesConcurrentWrites(t *testing.T) {
+	ctx := context.Background()
+	database, err := New(ctx, Options{
+		DSN: NewDSN(filepath.Join(t.TempDir(), "test.db")),
+	})
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	defer database.Close()
+
+	// With the writer connection pool no longer capped at 1, the write mutex is what keeps SQLite
+	// from ever seeing two concurrent writers. Hammer both write paths (the serial querier and
+	// WriteTx) from many goroutines and assert none of them observe SQLITE_BUSY or any other error.
+	const writers = 16
+	const perWriter = 25
+	var wg sync.WaitGroup
+	errs := make(chan error, writers*perWriter)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < perWriter; i++ {
+				if i%2 == 0 {
+					if _, err := database.WriteQuerier.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+						Name: fmt.Sprintf("app-%d-%d", w, i),
+					}); err != nil {
+						errs <- err
+					}
+					continue
+				}
+				if err := database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
+					_, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+						Name: fmt.Sprintf("app-tx-%d-%d", w, i),
+					})
+					return err
+				}); err != nil {
+					errs <- err
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent write failed: %v", err)
+	}
+}
+
+// sqliteVectorExtensionAvailable reports whether the sqlite-vector extension can be loaded — from the
+// configured path when set, otherwise from the bundle embedded in the binary. Tests skip when it is
+// unavailable for the current platform.
+func sqliteVectorExtensionAvailable(configuredPath string) bool {
+	options := sqlitevector.Options{}
+	if strings.TrimSpace(configuredPath) != "" {
+		options.Path = &configuredPath
+	}
+	_, _, err := options.Load()
+	return err == nil
 }
 
 func assertMigrationTableVersion(t *testing.T, ctx context.Context, database *Database, table string, expectedVersion int64) {
@@ -230,7 +271,7 @@ func assertMigrationTableVersion(t *testing.T, ctx context.Context, database *Da
 
 	var version int64
 	var dirty bool
-	if err := database.WriteConn.QueryRowContext(ctx, "SELECT version, dirty FROM "+table).Scan(&version, &dirty); err != nil {
+	if err := database.WriteQuerier.conn.QueryRowContext(ctx, "SELECT version, dirty FROM "+table).Scan(&version, &dirty); err != nil {
 		t.Fatalf("query %s: %v", table, err)
 	}
 	if version != expectedVersion {

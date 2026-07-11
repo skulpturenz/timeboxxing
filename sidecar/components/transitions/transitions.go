@@ -1,17 +1,23 @@
 package transitions
 
 import (
-	"database/sql"
+	"context"
 	"sync"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
+// writeTxRunner runs a function inside a serialized write transaction. *db.Database satisfies it.
+type writeTxRunner interface {
+	WriteTx(ctx context.Context, fn func(*writequeries.Queries) error) error
+}
+
 type Service struct {
-	readQuerier queries.Querier
-	writeConn   *sql.DB
+	readQuerier readqueries.Querier
+	writeTx     writeTxRunner
 
 	mu               sync.Mutex
 	nextSubscriberID int64
@@ -39,7 +45,7 @@ func NewService(registry *services.Services[any, any]) *Service {
 	}
 	if database != nil {
 		service.readQuerier = database.ReadQuerier
-		service.writeConn = database.WriteConn
+		service.writeTx = database.WriteQuerier
 	}
 	RegisterService(registry, service)
 	return service

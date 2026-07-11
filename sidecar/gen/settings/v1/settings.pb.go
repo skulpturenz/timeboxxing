@@ -108,11 +108,10 @@ func (*ListModelOptionsRequest) Descriptor() ([]byte, []int) {
 }
 
 type ListModelOptionsResponse struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	EmbeddingModels []*ModelOption         `protobuf:"bytes,1,rep,name=embedding_models,json=embeddingModels,proto3" json:"embedding_models,omitempty"`
-	SemanticModels  []*ModelOption         `protobuf:"bytes,2,rep,name=semantic_models,json=semanticModels,proto3" json:"semantic_models,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Models        []*ModelOption         `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListModelOptionsResponse) Reset() {
@@ -145,16 +144,9 @@ func (*ListModelOptionsResponse) Descriptor() ([]byte, []int) {
 	return file_settings_v1_settings_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ListModelOptionsResponse) GetEmbeddingModels() []*ModelOption {
+func (x *ListModelOptionsResponse) GetModels() []*ModelOption {
 	if x != nil {
-		return x.EmbeddingModels
-	}
-	return nil
-}
-
-func (x *ListModelOptionsResponse) GetSemanticModels() []*ModelOption {
-	if x != nil {
-		return x.SemanticModels
+		return x.Models
 	}
 	return nil
 }
@@ -165,6 +157,8 @@ type ModelOption struct {
 	OpenrouterSlug string                 `protobuf:"bytes,2,opt,name=openrouter_slug,json=openrouterSlug,proto3" json:"openrouter_slug,omitempty"`
 	OllamaSlug     string                 `protobuf:"bytes,3,opt,name=ollama_slug,json=ollamaSlug,proto3" json:"ollama_slug,omitempty"`
 	Label          string                 `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	Semantic       bool                   `protobuf:"varint,5,opt,name=semantic,proto3" json:"semantic,omitempty"`
+	Embedding      bool                   `protobuf:"varint,6,opt,name=embedding,proto3" json:"embedding,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -227,6 +221,20 @@ func (x *ModelOption) GetLabel() string {
 	return ""
 }
 
+func (x *ModelOption) GetSemantic() bool {
+	if x != nil {
+		return x.Semantic
+	}
+	return false
+}
+
+func (x *ModelOption) GetEmbedding() bool {
+	if x != nil {
+		return x.Embedding
+	}
+	return false
+}
+
 type GetAiSettingsRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	OpenrouterSecretExists bool                   `protobuf:"varint,1,opt,name=openrouter_secret_exists,json=openrouterSecretExists,proto3" json:"openrouter_secret_exists,omitempty"`
@@ -282,8 +290,7 @@ func (x *GetAiSettingsRequest) GetOllamaSecretExists() bool {
 type SaveAiSettingsRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	Provider               AiProvider             `protobuf:"varint,1,opt,name=provider,proto3,enum=settings.v1.AiProvider" json:"provider,omitempty"`
-	OpenrouterBaseUrl      string                 `protobuf:"bytes,2,opt,name=openrouter_base_url,json=openrouterBaseUrl,proto3" json:"openrouter_base_url,omitempty"`
-	OllamaBaseUrl          string                 `protobuf:"bytes,3,opt,name=ollama_base_url,json=ollamaBaseUrl,proto3" json:"ollama_base_url,omitempty"`
+	ModelProviderBaseUrl   string                 `protobuf:"bytes,2,opt,name=model_provider_base_url,json=modelProviderBaseUrl,proto3" json:"model_provider_base_url,omitempty"`
 	EmbeddingModelId       int64                  `protobuf:"varint,4,opt,name=embedding_model_id,json=embeddingModelId,proto3" json:"embedding_model_id,omitempty"`
 	SemanticModelId        int64                  `protobuf:"varint,5,opt,name=semantic_model_id,json=semanticModelId,proto3" json:"semantic_model_id,omitempty"`
 	OpenrouterSecretExists bool                   `protobuf:"varint,6,opt,name=openrouter_secret_exists,json=openrouterSecretExists,proto3" json:"openrouter_secret_exists,omitempty"`
@@ -329,16 +336,9 @@ func (x *SaveAiSettingsRequest) GetProvider() AiProvider {
 	return AiProvider_AI_PROVIDER_UNSPECIFIED
 }
 
-func (x *SaveAiSettingsRequest) GetOpenrouterBaseUrl() string {
+func (x *SaveAiSettingsRequest) GetModelProviderBaseUrl() string {
 	if x != nil {
-		return x.OpenrouterBaseUrl
-	}
-	return ""
-}
-
-func (x *SaveAiSettingsRequest) GetOllamaBaseUrl() string {
-	if x != nil {
-		return x.OllamaBaseUrl
+		return x.ModelProviderBaseUrl
 	}
 	return ""
 }
@@ -374,8 +374,7 @@ func (x *SaveAiSettingsRequest) GetOllamaSecretExists() bool {
 type AiSettings struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	Provider               AiProvider             `protobuf:"varint,1,opt,name=provider,proto3,enum=settings.v1.AiProvider" json:"provider,omitempty"`
-	OpenrouterBaseUrl      string                 `protobuf:"bytes,2,opt,name=openrouter_base_url,json=openrouterBaseUrl,proto3" json:"openrouter_base_url,omitempty"`
-	OllamaBaseUrl          string                 `protobuf:"bytes,3,opt,name=ollama_base_url,json=ollamaBaseUrl,proto3" json:"ollama_base_url,omitempty"`
+	ModelProviderBaseUrl   string                 `protobuf:"bytes,2,opt,name=model_provider_base_url,json=modelProviderBaseUrl,proto3" json:"model_provider_base_url,omitempty"`
 	EmbeddingModelId       int64                  `protobuf:"varint,4,opt,name=embedding_model_id,json=embeddingModelId,proto3" json:"embedding_model_id,omitempty"`
 	SemanticModelId        int64                  `protobuf:"varint,5,opt,name=semantic_model_id,json=semanticModelId,proto3" json:"semantic_model_id,omitempty"`
 	OpenrouterSecretExists bool                   `protobuf:"varint,6,opt,name=openrouter_secret_exists,json=openrouterSecretExists,proto3" json:"openrouter_secret_exists,omitempty"`
@@ -421,16 +420,9 @@ func (x *AiSettings) GetProvider() AiProvider {
 	return AiProvider_AI_PROVIDER_UNSPECIFIED
 }
 
-func (x *AiSettings) GetOpenrouterBaseUrl() string {
+func (x *AiSettings) GetModelProviderBaseUrl() string {
 	if x != nil {
-		return x.OpenrouterBaseUrl
-	}
-	return ""
-}
-
-func (x *AiSettings) GetOllamaBaseUrl() string {
-	if x != nil {
-		return x.OllamaBaseUrl
+		return x.ModelProviderBaseUrl
 	}
 	return ""
 }
@@ -596,18 +588,18 @@ func (x *PruneDatabaseRangeRequest) GetEndedAt() *timestamppb.Timestamp {
 }
 
 type PruneDatabaseRangeResponse struct {
-	state                     protoimpl.MessageState `protogen:"open.v1"`
-	SizeBytes                 int64                  `protobuf:"varint,1,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	TimesheetEntriesDeleted   int64                  `protobuf:"varint,2,opt,name=timesheet_entries_deleted,json=timesheetEntriesDeleted,proto3" json:"timesheet_entries_deleted,omitempty"`
-	UsageLinksDeleted         int64                  `protobuf:"varint,3,opt,name=usage_links_deleted,json=usageLinksDeleted,proto3" json:"usage_links_deleted,omitempty"`
-	TimesheetsDeleted         int64                  `protobuf:"varint,4,opt,name=timesheets_deleted,json=timesheetsDeleted,proto3" json:"timesheets_deleted,omitempty"`
-	TransitionEventsDeleted   int64                  `protobuf:"varint,5,opt,name=transition_events_deleted,json=transitionEventsDeleted,proto3" json:"transition_events_deleted,omitempty"`
-	TransitionMetadataDeleted int64                  `protobuf:"varint,6,opt,name=transition_metadata_deleted,json=transitionMetadataDeleted,proto3" json:"transition_metadata_deleted,omitempty"`
-	SemanticDocumentsDeleted  int64                  `protobuf:"varint,7,opt,name=semantic_documents_deleted,json=semanticDocumentsDeleted,proto3" json:"semantic_documents_deleted,omitempty"`
-	EmbeddingsDeleted         int64                  `protobuf:"varint,8,opt,name=embeddings_deleted,json=embeddingsDeleted,proto3" json:"embeddings_deleted,omitempty"`
-	ApplicationsDeleted       int64                  `protobuf:"varint,9,opt,name=applications_deleted,json=applicationsDeleted,proto3" json:"applications_deleted,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	state                            protoimpl.MessageState `protogen:"open.v1"`
+	SizeBytes                        int64                  `protobuf:"varint,1,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	LedgerItemsDeleted               int64                  `protobuf:"varint,2,opt,name=ledger_items_deleted,json=ledgerItemsDeleted,proto3" json:"ledger_items_deleted,omitempty"`
+	LedgerItemTimelineEntriesDeleted int64                  `protobuf:"varint,3,opt,name=ledger_item_timeline_entries_deleted,json=ledgerItemTimelineEntriesDeleted,proto3" json:"ledger_item_timeline_entries_deleted,omitempty"`
+	TimelineDeleted                  int64                  `protobuf:"varint,4,opt,name=timeline_deleted,json=timelineDeleted,proto3" json:"timeline_deleted,omitempty"`
+	ForegroundProcessesDeleted       int64                  `protobuf:"varint,5,opt,name=foreground_processes_deleted,json=foregroundProcessesDeleted,proto3" json:"foreground_processes_deleted,omitempty"`
+	ForegroundProcessMetadataDeleted int64                  `protobuf:"varint,6,opt,name=foreground_process_metadata_deleted,json=foregroundProcessMetadataDeleted,proto3" json:"foreground_process_metadata_deleted,omitempty"`
+	TimelineSemanticDocumentsDeleted int64                  `protobuf:"varint,7,opt,name=timeline_semantic_documents_deleted,json=timelineSemanticDocumentsDeleted,proto3" json:"timeline_semantic_documents_deleted,omitempty"`
+	TimelineEmbeddingsDeleted        int64                  `protobuf:"varint,8,opt,name=timeline_embeddings_deleted,json=timelineEmbeddingsDeleted,proto3" json:"timeline_embeddings_deleted,omitempty"`
+	ApplicationsDeleted              int64                  `protobuf:"varint,9,opt,name=applications_deleted,json=applicationsDeleted,proto3" json:"applications_deleted,omitempty"`
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
 }
 
 func (x *PruneDatabaseRangeResponse) Reset() {
@@ -647,51 +639,51 @@ func (x *PruneDatabaseRangeResponse) GetSizeBytes() int64 {
 	return 0
 }
 
-func (x *PruneDatabaseRangeResponse) GetTimesheetEntriesDeleted() int64 {
+func (x *PruneDatabaseRangeResponse) GetLedgerItemsDeleted() int64 {
 	if x != nil {
-		return x.TimesheetEntriesDeleted
+		return x.LedgerItemsDeleted
 	}
 	return 0
 }
 
-func (x *PruneDatabaseRangeResponse) GetUsageLinksDeleted() int64 {
+func (x *PruneDatabaseRangeResponse) GetLedgerItemTimelineEntriesDeleted() int64 {
 	if x != nil {
-		return x.UsageLinksDeleted
+		return x.LedgerItemTimelineEntriesDeleted
 	}
 	return 0
 }
 
-func (x *PruneDatabaseRangeResponse) GetTimesheetsDeleted() int64 {
+func (x *PruneDatabaseRangeResponse) GetTimelineDeleted() int64 {
 	if x != nil {
-		return x.TimesheetsDeleted
+		return x.TimelineDeleted
 	}
 	return 0
 }
 
-func (x *PruneDatabaseRangeResponse) GetTransitionEventsDeleted() int64 {
+func (x *PruneDatabaseRangeResponse) GetForegroundProcessesDeleted() int64 {
 	if x != nil {
-		return x.TransitionEventsDeleted
+		return x.ForegroundProcessesDeleted
 	}
 	return 0
 }
 
-func (x *PruneDatabaseRangeResponse) GetTransitionMetadataDeleted() int64 {
+func (x *PruneDatabaseRangeResponse) GetForegroundProcessMetadataDeleted() int64 {
 	if x != nil {
-		return x.TransitionMetadataDeleted
+		return x.ForegroundProcessMetadataDeleted
 	}
 	return 0
 }
 
-func (x *PruneDatabaseRangeResponse) GetSemanticDocumentsDeleted() int64 {
+func (x *PruneDatabaseRangeResponse) GetTimelineSemanticDocumentsDeleted() int64 {
 	if x != nil {
-		return x.SemanticDocumentsDeleted
+		return x.TimelineSemanticDocumentsDeleted
 	}
 	return 0
 }
 
-func (x *PruneDatabaseRangeResponse) GetEmbeddingsDeleted() int64 {
+func (x *PruneDatabaseRangeResponse) GetTimelineEmbeddingsDeleted() int64 {
 	if x != nil {
-		return x.EmbeddingsDeleted
+		return x.TimelineEmbeddingsDeleted
 	}
 	return 0
 }
@@ -796,32 +788,31 @@ var File_settings_v1_settings_proto protoreflect.FileDescriptor
 const file_settings_v1_settings_proto_rawDesc = "" +
 	"\n" +
 	"\x1asettings/v1/settings.proto\x12\vsettings.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x19\n" +
-	"\x17ListModelOptionsRequest\"\xa2\x01\n" +
-	"\x18ListModelOptionsResponse\x12C\n" +
-	"\x10embedding_models\x18\x01 \x03(\v2\x18.settings.v1.ModelOptionR\x0fembeddingModels\x12A\n" +
-	"\x0fsemantic_models\x18\x02 \x03(\v2\x18.settings.v1.ModelOptionR\x0esemanticModels\"}\n" +
+	"\x17ListModelOptionsRequest\"L\n" +
+	"\x18ListModelOptionsResponse\x120\n" +
+	"\x06models\x18\x01 \x03(\v2\x18.settings.v1.ModelOptionR\x06models\"\xb7\x01\n" +
 	"\vModelOption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12'\n" +
 	"\x0fopenrouter_slug\x18\x02 \x01(\tR\x0eopenrouterSlug\x12\x1f\n" +
 	"\vollama_slug\x18\x03 \x01(\tR\n" +
 	"ollamaSlug\x12\x14\n" +
-	"\x05label\x18\x04 \x01(\tR\x05label\"\x82\x01\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\x12\x1a\n" +
+	"\bsemantic\x18\x05 \x01(\bR\bsemantic\x12\x1c\n" +
+	"\tembedding\x18\x06 \x01(\bR\tembedding\"\x82\x01\n" +
 	"\x14GetAiSettingsRequest\x128\n" +
 	"\x18openrouter_secret_exists\x18\x01 \x01(\bR\x16openrouterSecretExists\x120\n" +
-	"\x14ollama_secret_exists\x18\x02 \x01(\bR\x12ollamaSecretExists\"\xea\x02\n" +
+	"\x14ollama_secret_exists\x18\x02 \x01(\bR\x12ollamaSecretExists\"\xc9\x02\n" +
 	"\x15SaveAiSettingsRequest\x123\n" +
-	"\bprovider\x18\x01 \x01(\x0e2\x17.settings.v1.AiProviderR\bprovider\x12.\n" +
-	"\x13openrouter_base_url\x18\x02 \x01(\tR\x11openrouterBaseUrl\x12&\n" +
-	"\x0follama_base_url\x18\x03 \x01(\tR\rollamaBaseUrl\x12,\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x17.settings.v1.AiProviderR\bprovider\x125\n" +
+	"\x17model_provider_base_url\x18\x02 \x01(\tR\x14modelProviderBaseUrl\x12,\n" +
 	"\x12embedding_model_id\x18\x04 \x01(\x03R\x10embeddingModelId\x12*\n" +
 	"\x11semantic_model_id\x18\x05 \x01(\x03R\x0fsemanticModelId\x128\n" +
 	"\x18openrouter_secret_exists\x18\x06 \x01(\bR\x16openrouterSecretExists\x120\n" +
-	"\x14ollama_secret_exists\x18\a \x01(\bR\x12ollamaSecretExists\"\xdf\x02\n" +
+	"\x14ollama_secret_exists\x18\a \x01(\bR\x12ollamaSecretExists\"\xbe\x02\n" +
 	"\n" +
 	"AiSettings\x123\n" +
-	"\bprovider\x18\x01 \x01(\x0e2\x17.settings.v1.AiProviderR\bprovider\x12.\n" +
-	"\x13openrouter_base_url\x18\x02 \x01(\tR\x11openrouterBaseUrl\x12&\n" +
-	"\x0follama_base_url\x18\x03 \x01(\tR\rollamaBaseUrl\x12,\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x17.settings.v1.AiProviderR\bprovider\x125\n" +
+	"\x17model_provider_base_url\x18\x02 \x01(\tR\x14modelProviderBaseUrl\x12,\n" +
 	"\x12embedding_model_id\x18\x04 \x01(\x03R\x10embeddingModelId\x12*\n" +
 	"\x11semantic_model_id\x18\x05 \x01(\x03R\x0fsemanticModelId\x128\n" +
 	"\x18openrouter_secret_exists\x18\x06 \x01(\bR\x16openrouterSecretExists\x120\n" +
@@ -833,17 +824,17 @@ const file_settings_v1_settings_proto_rawDesc = "" +
 	"\x19PruneDatabaseRangeRequest\x129\n" +
 	"\n" +
 	"started_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xf2\x03\n" +
+	"\bended_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xbb\x04\n" +
 	"\x1aPruneDatabaseRangeResponse\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x01 \x01(\x03R\tsizeBytes\x12:\n" +
-	"\x19timesheet_entries_deleted\x18\x02 \x01(\x03R\x17timesheetEntriesDeleted\x12.\n" +
-	"\x13usage_links_deleted\x18\x03 \x01(\x03R\x11usageLinksDeleted\x12-\n" +
-	"\x12timesheets_deleted\x18\x04 \x01(\x03R\x11timesheetsDeleted\x12:\n" +
-	"\x19transition_events_deleted\x18\x05 \x01(\x03R\x17transitionEventsDeleted\x12>\n" +
-	"\x1btransition_metadata_deleted\x18\x06 \x01(\x03R\x19transitionMetadataDeleted\x12<\n" +
-	"\x1asemantic_documents_deleted\x18\a \x01(\x03R\x18semanticDocumentsDeleted\x12-\n" +
-	"\x12embeddings_deleted\x18\b \x01(\x03R\x11embeddingsDeleted\x121\n" +
+	"size_bytes\x18\x01 \x01(\x03R\tsizeBytes\x120\n" +
+	"\x14ledger_items_deleted\x18\x02 \x01(\x03R\x12ledgerItemsDeleted\x12N\n" +
+	"$ledger_item_timeline_entries_deleted\x18\x03 \x01(\x03R ledgerItemTimelineEntriesDeleted\x12)\n" +
+	"\x10timeline_deleted\x18\x04 \x01(\x03R\x0ftimelineDeleted\x12@\n" +
+	"\x1cforeground_processes_deleted\x18\x05 \x01(\x03R\x1aforegroundProcessesDeleted\x12M\n" +
+	"#foreground_process_metadata_deleted\x18\x06 \x01(\x03R foregroundProcessMetadataDeleted\x12M\n" +
+	"#timeline_semantic_documents_deleted\x18\a \x01(\x03R timelineSemanticDocumentsDeleted\x12>\n" +
+	"\x1btimeline_embeddings_deleted\x18\b \x01(\x03R\x19timelineEmbeddingsDeleted\x121\n" +
 	"\x14applications_deleted\x18\t \x01(\x03R\x13applicationsDeleted\"\x17\n" +
 	"\x15VacuumDatabaseRequest\"n\n" +
 	"\x16VacuumDatabaseResponse\x12*\n" +
@@ -896,29 +887,28 @@ var file_settings_v1_settings_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
 }
 var file_settings_v1_settings_proto_depIdxs = []int32{
-	3,  // 0: settings.v1.ListModelOptionsResponse.embedding_models:type_name -> settings.v1.ModelOption
-	3,  // 1: settings.v1.ListModelOptionsResponse.semantic_models:type_name -> settings.v1.ModelOption
-	0,  // 2: settings.v1.SaveAiSettingsRequest.provider:type_name -> settings.v1.AiProvider
-	0,  // 3: settings.v1.AiSettings.provider:type_name -> settings.v1.AiProvider
-	13, // 4: settings.v1.PruneDatabaseRangeRequest.started_at:type_name -> google.protobuf.Timestamp
-	13, // 5: settings.v1.PruneDatabaseRangeRequest.ended_at:type_name -> google.protobuf.Timestamp
-	1,  // 6: settings.v1.SettingsService.ListModelOptions:input_type -> settings.v1.ListModelOptionsRequest
-	4,  // 7: settings.v1.SettingsService.GetAiSettings:input_type -> settings.v1.GetAiSettingsRequest
-	5,  // 8: settings.v1.SettingsService.SaveAiSettings:input_type -> settings.v1.SaveAiSettingsRequest
-	7,  // 9: settings.v1.SettingsService.GetDatabaseMaintenanceStatus:input_type -> settings.v1.GetDatabaseMaintenanceStatusRequest
-	9,  // 10: settings.v1.SettingsService.PruneDatabaseRange:input_type -> settings.v1.PruneDatabaseRangeRequest
-	11, // 11: settings.v1.SettingsService.VacuumDatabase:input_type -> settings.v1.VacuumDatabaseRequest
-	2,  // 12: settings.v1.SettingsService.ListModelOptions:output_type -> settings.v1.ListModelOptionsResponse
-	6,  // 13: settings.v1.SettingsService.GetAiSettings:output_type -> settings.v1.AiSettings
-	6,  // 14: settings.v1.SettingsService.SaveAiSettings:output_type -> settings.v1.AiSettings
-	8,  // 15: settings.v1.SettingsService.GetDatabaseMaintenanceStatus:output_type -> settings.v1.DatabaseMaintenanceStatus
-	10, // 16: settings.v1.SettingsService.PruneDatabaseRange:output_type -> settings.v1.PruneDatabaseRangeResponse
-	12, // 17: settings.v1.SettingsService.VacuumDatabase:output_type -> settings.v1.VacuumDatabaseResponse
-	12, // [12:18] is the sub-list for method output_type
-	6,  // [6:12] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	3,  // 0: settings.v1.ListModelOptionsResponse.models:type_name -> settings.v1.ModelOption
+	0,  // 1: settings.v1.SaveAiSettingsRequest.provider:type_name -> settings.v1.AiProvider
+	0,  // 2: settings.v1.AiSettings.provider:type_name -> settings.v1.AiProvider
+	13, // 3: settings.v1.PruneDatabaseRangeRequest.started_at:type_name -> google.protobuf.Timestamp
+	13, // 4: settings.v1.PruneDatabaseRangeRequest.ended_at:type_name -> google.protobuf.Timestamp
+	1,  // 5: settings.v1.SettingsService.ListModelOptions:input_type -> settings.v1.ListModelOptionsRequest
+	4,  // 6: settings.v1.SettingsService.GetAiSettings:input_type -> settings.v1.GetAiSettingsRequest
+	5,  // 7: settings.v1.SettingsService.SaveAiSettings:input_type -> settings.v1.SaveAiSettingsRequest
+	7,  // 8: settings.v1.SettingsService.GetDatabaseMaintenanceStatus:input_type -> settings.v1.GetDatabaseMaintenanceStatusRequest
+	9,  // 9: settings.v1.SettingsService.PruneDatabaseRange:input_type -> settings.v1.PruneDatabaseRangeRequest
+	11, // 10: settings.v1.SettingsService.VacuumDatabase:input_type -> settings.v1.VacuumDatabaseRequest
+	2,  // 11: settings.v1.SettingsService.ListModelOptions:output_type -> settings.v1.ListModelOptionsResponse
+	6,  // 12: settings.v1.SettingsService.GetAiSettings:output_type -> settings.v1.AiSettings
+	6,  // 13: settings.v1.SettingsService.SaveAiSettings:output_type -> settings.v1.AiSettings
+	8,  // 14: settings.v1.SettingsService.GetDatabaseMaintenanceStatus:output_type -> settings.v1.DatabaseMaintenanceStatus
+	10, // 15: settings.v1.SettingsService.PruneDatabaseRange:output_type -> settings.v1.PruneDatabaseRangeResponse
+	12, // 16: settings.v1.SettingsService.VacuumDatabase:output_type -> settings.v1.VacuumDatabaseResponse
+	11, // [11:17] is the sub-list for method output_type
+	5,  // [5:11] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_settings_v1_settings_proto_init() }

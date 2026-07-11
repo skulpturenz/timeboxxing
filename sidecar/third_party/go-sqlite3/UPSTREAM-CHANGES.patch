@@ -1,0 +1,889 @@
+diff --git a/README.md b/README.md
+index 4fd3911..1eb7c3b 100644
+--- a/README.md
++++ b/README.md
+@@ -41,9 +41,11 @@ This package follows the official [Golang Release Policy](https://golang.org/doc
+   - [macOS](#mac-osx)
+   - [Windows](#windows)
+   - [Errors](#errors)
+-- [User Authentication](#user-authentication)
+-  - [Compile](#compile)
++- [Encryption](#encryption)
+   - [Usage](#usage-1)
++- [User Authentication](#user-authentication)
++  - [Compile](#compile-1)
++  - [Usage](#usage-2)
+     - [Create protected database](#create-protected-database)
+     - [Password Encoding](#password-encoding)
+       - [Available Encoders](#available-encoders)
+@@ -106,12 +108,21 @@ Boolean values can be one of:
+ | Auto Vacuum | `_auto_vacuum` \| `_vacuum` | <ul><li>`0` \| `none`</li><li>`1` \| `full`</li><li>`2` \| `incremental`</li></ul> | For more information see [PRAGMA auto_vacuum](https://www.sqlite.org/pragma.html#pragma_auto_vacuum) |
+ | Busy Timeout | `_busy_timeout` \| `_timeout` | `int` | Specify value for sqlite3_busy_timeout. For more information see [PRAGMA busy_timeout](https://www.sqlite.org/pragma.html#pragma_busy_timeout) |
+ | Case Sensitive LIKE | `_case_sensitive_like` \| `_cslike` | `boolean` | For more information see [PRAGMA case_sensitive_like](https://www.sqlite.org/pragma.html#pragma_case_sensitive_like) |
++| Cipher | `_cipher` | `string` | Selects the cipher to be used for encrypting the database, for more information see [PRAGMA cipher](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-cipher) |
+ | Defer Foreign Keys | `_defer_foreign_keys` \| `_defer_fk` | `boolean` | For more information see [PRAGMA defer_foreign_keys](https://www.sqlite.org/pragma.html#pragma_defer_foreign_keys) |
+ | Foreign Keys | `_foreign_keys` \| `_fk` | `boolean` | For more information see [PRAGMA foreign_keys](https://www.sqlite.org/pragma.html#pragma_foreign_keys) |
++| Check HMAC | `_hmac_check` | `boolean` | Selects whether the HMAC should be validated on read operations for encryption schemes using HMACs, for more information see [PRAGMA hmac_check](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_check) |
++| Use HMAC | `_hmac_use` | `boolean` | Enable or disable the use of per-page HMACs for the cipher scheme SQLCipher, for more information see [PRAGMA hmac_use](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_use) |
+ | Ignore CHECK Constraints | `_ignore_check_constraints` | `boolean` | For more information see [PRAGMA ignore_check_constraints](https://www.sqlite.org/pragma.html#pragma_ignore_check_constraints) |
+ | Immutable | `immutable` | `boolean` | For more information see [Immutable](https://www.sqlite.org/c3ref/open.html) |
+ | Journal Mode | `_journal_mode` \| `_journal` | <ul><li>DELETE</li><li>TRUNCATE</li><li>PERSIST</li><li>MEMORY</li><li>WAL</li><li>OFF</li></ul> | For more information see [PRAGMA journal_mode](https://www.sqlite.org/pragma.html#pragma_journal_mode) |
++| KDF iterations | `_kdf_iter` | `int` | Specifies the number of iterations used for key derivation, for more information see [PRAGMA kdf_iter](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-kdf_iter) |
++| Encryption key | `_key` | `string` | Sets the database encryption key, for more information see [PRAGMA key](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key) |
++| Legacy | `_legacy` | `int` | Defines the legacy mode for a cipher scheme, for more information see [PRAGMA legacy](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy) |
++| Legacy page size | `_legacy_page_size` | `int` | Specifies the database page size to be used in legacy mode for a cipher scheme, for more information see [PRAGMA legacy_page_size](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy_page_size) |
+ | Locking Mode | `_locking_mode` \| `_locking` | <ul><li>NORMAL</li><li>EXCLUSIVE</li></ul> | For more information see [PRAGMA locking_mode](https://www.sqlite.org/pragma.html#pragma_locking_mode) |
++| MC Legacy WAL | `_mc_legacy_wal` | `boolean` | Selects whether the legacy mode for the WAL journal encryption should be used, for more information see [PRAGMA mc_legacy_wal](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-mc_legacy_wal) |
++| Plaintext header size | `_plaintext_header_size` | `int` | Allocates a portion of the database header which will not be encrypted to allow identification as an SQLite database, for more information see [PRAGMA plaintext_header_size](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-plaintext_header_size) |
+ | Mode | `mode` | <ul><li>ro</li><li>rw</li><li>rwc</li><li>memory</li></ul> | Access Mode of the database. For more information see [SQLite Open](https://www.sqlite.org/c3ref/open.html) |
+ | Mutex Locking | `_mutex` | <ul><li>no</li><li>full</li></ul> | Specify mutex mode. |
+ | Query Only | `_query_only` | `boolean` | For more information see [PRAGMA query_only](https://www.sqlite.org/pragma.html#pragma_query_only) |
+@@ -350,6 +361,13 @@ For example the TDM-GCC Toolchain can be found [here](https://jmeubank.github.io
+     go install github.com/mattn/go-sqlite3
+     ```
+ 
++# Encryption
++
++## Usage
++
++Pass your encryption key via the `_key` argument in the connection string.
++See the [SQLite3MultipleCiphers documentation](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key) for more details.
++
+ # User Authentication
+ 
+ ***This is deprecated***
+@@ -592,7 +610,7 @@ sqlite3-binding.c, sqlite3-binding.h, sqlite3ext.h
+ 
+ The -binding suffix was added to avoid build failures under gccgo.
+ 
+-In this repository, those files are an amalgamation of code that was copied from SQLite3. The license of that code is the same as the license of SQLite3.
++In this repository, those files are an amalgamation of code that was copied from SQLite3 and SQLite3MultipleCiphers. The license of that code is the same as the licenses of SQLite3 and SQLite3MultipleCiphers.
+ 
+ # Author
+ 
+diff --git a/sqlite3.go b/sqlite3.go
+index 656d2dc..24b6fc3 100644
+--- a/sqlite3.go
++++ b/sqlite3.go
+@@ -21,8 +21,10 @@ package sqlite3
+ #cgo CFLAGS: -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+ #cgo CFLAGS: -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT
+ #cgo CFLAGS: -Wno-deprecated-declarations
++#cgo darwin LDFLAGS: -framework Security
+ #cgo openbsd CFLAGS: -I/usr/local/include
+ #cgo openbsd LDFLAGS: -L/usr/local/lib
++#cgo amd64 CFLAGS: -maes -msse4.1
+ #ifndef USE_LIBSQLITE3
+ #include "sqlite3-binding.h"
+ #else
+@@ -1142,12 +1144,25 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
+ //	  Default or disabled the LIKE operation is case-insensitive.
+ //	  When enabling this options behaviour of LIKE will become case-sensitive.
+ //
++//	_cipher=X
++//	  Selects the cipher to be used for encrypting the database.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-cipher
++//
+ //	_defer_foreign_keys=Boolean | _defer_fk=Boolean
+ //	  Defer Foreign Keys until outermost transaction is committed.
+ //
+ //	_foreign_keys=Boolean | _fk=Boolean
+ //	  Enable or disable enforcement of foreign keys.
+ //
++//	_hmac_check=Boolean
++//	  Selects whether the HMAC should be validated on read operations for encryption
++//	  schemes using HMACs.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_check
++//
++//	_hmac_use=Boolean
++//	  Enable or disable the use of per-page HMACs for the cipher scheme SQLCipher.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_use
++//
+ //	_ignore_check_constraints=Boolean
+ //	  This pragma enables or disables the enforcement of CHECK constraints.
+ //	  The default setting is off, meaning that CHECK constraints are enforced by default.
+@@ -1156,11 +1171,36 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
+ //	  Set journal mode for the databases associated with the current connection.
+ //	  https://www.sqlite.org/pragma.html#pragma_journal_mode
+ //
++//	_kdf_iter=X
++//	  Specifies the number of iterations used for key derivation.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#kdf_iter
++//
++//	_key=X
++//	  Sets the database encryption key.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key
++//
++//	_legacy=X
++//	  Defines the legacy mode for a cipher scheme.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy
++//
++//	_legacy_page_size=X
++//	  Specifies the database page size to be used in legacy mode for a cipher scheme.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy_page_size
++//
+ //	_locking_mode=X | _locking=X
+ //	  Sets the database connection locking-mode.
+ //	  The locking-mode is either NORMAL or EXCLUSIVE.
+ //	  https://www.sqlite.org/pragma.html#pragma_locking_mode
+ //
++//	_mc_legacy_wal=Boolean
++//	  Selects whether the legacy mode for the WAL journal encryption should be used.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-mc_legacy_wal
++//
++//	_plaintext_header_size=X
++//	  Allocates a portion of the database header which will not be encrypted to allow
++//	  identification as an SQLite database.
++//	  https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-plaintext_header_size
++//
+ //	_query_only=Boolean
+ //	  The query_only pragma prevents all changes to database files when enabled.
+ //
+@@ -1200,11 +1240,20 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+ 	autoVacuum := -1
+ 	busyTimeout := 5000
+ 	caseSensitiveLike := -1
++	var cipher string
+ 	deferForeignKeys := -1
+ 	foreignKeys := -1
++	hmacCheck := -1
++	hmacUse := -1
+ 	ignoreCheckConstraints := -1
+ 	var journalMode string
++	kdfIter := -1
++	var key string
++	legacy := -1
++	legacyPageSize := -1
+ 	lockingMode := "NORMAL"
++	mcLegacyWAL := -1
++	plaintextHeaderSize := -1
+ 	queryOnly := -1
+ 	recursiveTriggers := -1
+ 	secureDelete := "DEFAULT"
+@@ -1342,6 +1391,19 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+ 			}
+ 		}
+ 
++		// Cipher (_cipher)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-cipher
++		//
++		if val := params.Get("_cipher"); val != "" {
++			switch strings.ToLower(val) {
++			case "aes128cbc", "aes256cbc", "chacha20", "sqlcipher", "rc4":
++				cipher = strings.ToLower(val)
++			default:
++				return nil, fmt.Errorf("Invalid _cipher: %v, expecting value of 'aes128cbc aes256cbc chacha20 sqlcipher rc4'", val)
++			}
++		}
++
+ 		// Defer Foreign Keys (_defer_foreign_keys | _defer_fk)
+ 		//
+ 		// https://www.sqlite.org/pragma.html#pragma_defer_foreign_keys
+@@ -1386,6 +1448,36 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+ 			}
+ 		}
+ 
++		// Check HMAC (_hmac_check)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_check
++		//
++		if val := params.Get("_hmac_check"); val != "" {
++			switch strings.ToLower(val) {
++			case "0", "no", "false", "off":
++				hmacCheck = 0
++			case "1", "yes", "true", "on":
++				hmacCheck = 1
++			default:
++				return nil, fmt.Errorf("Invalid _hmac_check: %v, expecting boolean value of '0 1 false true no yes off on'", val)
++			}
++		}
++
++		// Use HMAC (_hmac_use)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_use
++		//
++		if val := params.Get("_hmac_use"); val != "" {
++			switch strings.ToLower(val) {
++			case "0", "no", "false", "off":
++				hmacUse = 0
++			case "1", "yes", "true", "on":
++				hmacUse = 1
++			default:
++				return nil, fmt.Errorf("Invalid _hmac_use: %v, expecting boolean value of '0 1 false true no yes off on'", val)
++			}
++		}
++
+ 		// Ignore CHECK Constrains (_ignore_check_constraints)
+ 		//
+ 		// https://www.sqlite.org/pragma.html#pragma_ignore_check_constraints
+@@ -1427,6 +1519,64 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+ 			}
+ 		}
+ 
++		// KDF iterations (_kdf_iter)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-kdf_iter
++		//
++		if val := params.Get("_kdf_iter"); val != "" {
++			iv, err := strconv.ParseInt(val, 10, 64)
++			if err != nil {
++				return nil, fmt.Errorf("Invalid _kdf_iter: %v: %v", val, err)
++			}
++			kdfIter = int(iv)
++		}
++
++		// Encryption Key (_key)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key
++		//
++		if val := params.Get("_key"); val != "" {
++			switch {
++			case strings.Contains(val, `'`) && strings.Contains(val, `"`):
++				return nil, errors.New("Invalid key provided, cannot contain both ' and \"")
++			case strings.Contains(val, `'`):
++				key = fmt.Sprintf(`"%s"`, val)
++			default:
++				key = fmt.Sprintf(`'%s'`, val)
++			}
++		}
++
++		// Legacy (_legacy)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy
++		//
++		if val := params.Get("_legacy"); val != "" {
++			switch strings.ToLower(val) {
++			case "0", "no", "false", "off":
++				legacy = 0
++			case "1", "yes", "true", "on":
++				legacy = 1
++			default:
++				iv, err := strconv.ParseInt(val, 10, 64)
++				if err != nil {
++					return nil, fmt.Errorf("Invalid _legacy: %v: %v", val, err)
++				}
++				legacy = int(iv)
++			}
++		}
++
++		// Legacy Page Size (_legacy_page_size)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy_page_size
++		//
++		if val := params.Get("_legacy_page_size"); val != "" {
++			iv, err := strconv.ParseInt(val, 10, 64)
++			if err != nil {
++				return nil, fmt.Errorf("Invalid _legacy_page_size: %v: %v", val, err)
++			}
++			legacyPageSize = int(iv)
++		}
++
+ 		// Locking Mode (_locking)
+ 		//
+ 		// https://www.sqlite.org/pragma.html#pragma_locking_mode
+@@ -1447,6 +1597,33 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+ 			}
+ 		}
+ 
++		// Legacy mode for the WAL journal encryption (_mc_legacy_wal)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-mc_legacy_wal
++		//
++		if val := params.Get("_mc_legacy_wal"); val != "" {
++			switch strings.ToLower(val) {
++			case "0", "no", "false", "off":
++				mcLegacyWAL = 0
++			case "1", "yes", "true", "on":
++				mcLegacyWAL = 1
++			default:
++				return nil, fmt.Errorf("Invalid _mc_legacy_wal: %v, expecting boolean value of '0 1 false true no yes off on'", val)
++			}
++		}
++
++		// Plaintext Header Size (_plaintext_header_size)
++		//
++		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-plaintext_header_size
++		//
++		if val := params.Get("_plaintext_header_size"); val != "" {
++			iv, err := strconv.ParseInt(val, 10, 64)
++			if err != nil {
++				return nil, fmt.Errorf("Invalid _plaintext_header_size: %v: %v", val, err)
++			}
++			plaintextHeaderSize = int(iv)
++		}
++
+ 		// Query Only (_query_only)
+ 		//
+ 		// https://www.sqlite.org/pragma.html#pragma_query_only
+@@ -1605,6 +1782,78 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
+ 		return nil
+ 	}
+ 
++	// Cipher
++	if cipher != "" {
++		if err := exec(fmt.Sprintf("PRAGMA cipher = %s;", cipher)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// Legacy
++	if legacy > -1 {
++		if err := exec(fmt.Sprintf("PRAGMA legacy = %d;", legacy)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// Check HMAC
++	if hmacCheck > -1 {
++		if err := exec(fmt.Sprintf("PRAGMA hmac_check = %d;", hmacCheck)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// Use HMAC
++	if hmacUse > -1 {
++		if err := exec(fmt.Sprintf("PRAGMA hmac_use = %d;", hmacUse)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// KDF Iter
++	if kdfIter > -1 {
++		if err := exec(fmt.Sprintf("PRAGMA kdf_iter = %d;", kdfIter)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// Legacy Page Size
++	if legacyPageSize > -1 {
++		if err := exec(fmt.Sprintf("PRAGMA legacy_page_size = %d;", legacyPageSize)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// Legacy mode for the WAL journal encryption
++	if mcLegacyWAL > -1 {
++		if err := exec(fmt.Sprintf("PRAGMA mc_legacy_wal = %d;", mcLegacyWAL)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// Plaintext Header Size
++	if plaintextHeaderSize > -1 {
++		if err := exec(fmt.Sprintf("PRAGMA plaintext_header_size = %d;", plaintextHeaderSize)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
++	// Encryption key
++	if key != "" {
++		if err := exec(fmt.Sprintf("PRAGMA key = %s;", key)); err != nil {
++			C.sqlite3_close_v2(db)
++			return nil, err
++		}
++	}
++
+ 	// Busy timeout
+ 	if err := exec(fmt.Sprintf("PRAGMA busy_timeout = %d;", busyTimeout)); err != nil {
+ 		C.sqlite3_close_v2(db)
+diff --git a/sqlite3_cipher_test.go b/sqlite3_cipher_test.go
+new file mode 100644
+index 0000000..b352b1b
+--- /dev/null
++++ b/sqlite3_cipher_test.go
+@@ -0,0 +1,112 @@
++// Copyright (C) 2023 Jonathan Giannuzzi <jonathan@giannuzzi.me>.
++//
++// Use of this source code is governed by an MIT-style
++// license that can be found in the LICENSE file.
++
++//go:build cgo && !libsqlite3
++// +build cgo,!libsqlite3
++
++package sqlite3
++
++import (
++	"database/sql"
++	"os"
++	"testing"
++)
++
++func TestCipher(t *testing.T) {
++	ciphers := []string{
++		"",
++		"aes128cbc",
++		"aes256cbc",
++		"chacha20",
++		"sqlcipher",
++		"rc4",
++	}
++	keys := []string{
++		// Passphrase with Key Derivation
++		"passphrase",
++		// Passphrase with Key Derivation starting with a digit
++		"1passphrase",
++		// Raw Key Data (Without Key Derivation)
++		"x'2DD29CA851E7B56E4697B0E1F08507293D761A05CE4D1B628663F411A8086D99'",
++		// Raw Key Data with Explicit Salt (Without Key Derivation)
++		"x'98483C6EB40B6C31A448C22A66DED3B5E5E8D5119CAC8327B655C8B5C483648101010101010101010101010101010101'",
++	}
++	for _, cipher := range ciphers {
++		for _, key := range keys {
++			fname := TempFilename(t)
++			uri := "file:" + fname + "?_key=" + key
++			if cipher != "" {
++				uri += "&_cipher=" + cipher
++			}
++			db, err := sql.Open("sqlite3", uri)
++			if err != nil {
++				os.Remove(fname)
++				t.Errorf("sql.Open(\"sqlite3\", %q): %v", uri, err)
++				continue
++			}
++
++			_, err = db.Exec("CREATE TABLE test (id int)")
++			if err != nil {
++				db.Close()
++				os.Remove(fname)
++				t.Errorf("failed creating test table for %q: %v", uri, err)
++				continue
++			}
++			_, err = db.Exec("INSERT INTO test VALUES (1)")
++			db.Close()
++			if err != nil {
++				os.Remove(fname)
++				t.Errorf("failed inserting value into test table for %q: %v", uri, err)
++				continue
++			}
++
++			db, err = sql.Open("sqlite3", "file:"+fname)
++			if err != nil {
++				os.Remove(fname)
++				t.Errorf("sql.Open(\"sqlite3\", %q): %v", "file:"+fname, err)
++				continue
++			}
++			_, err = db.Exec("SELECT id FROM test")
++			db.Close()
++			if err == nil {
++				os.Remove(fname)
++				t.Errorf("didn't expect to be able to access the encrypted database %q without a passphrase", fname)
++				continue
++			}
++
++			badUri := "file:" + fname + "?_key=bogus"
++			if cipher != "" {
++				badUri += "&_cipher=" + cipher
++			}
++			db, err = sql.Open("sqlite3", badUri)
++			if err != nil {
++				os.Remove(fname)
++				t.Errorf("sql.Open(\"sqlite3\", %q): %v", badUri, err)
++				continue
++			}
++			_, err = db.Exec("SELECT id FROM test")
++			db.Close()
++			if err == nil {
++				os.Remove(fname)
++				t.Errorf("didn't expect to be able to access the encrypted database %q with a bogus passphrase", fname)
++				continue
++			}
++
++			db, err = sql.Open("sqlite3", uri)
++			if err != nil {
++				os.Remove(fname)
++				t.Errorf("sql.Open(\"sqlite3\", %q): %v", uri, err)
++				continue
++			}
++			_, err = db.Exec("SELECT id FROM test")
++			db.Close()
++			os.Remove(fname)
++			if err != nil {
++				t.Errorf("unable to query test table for %q: %v", uri, err)
++				continue
++			}
++		}
++	}
++}
+diff --git a/upgrade/go.mod b/upgrade/go.mod
+new file mode 100644
+index 0000000..5a4c809
+--- /dev/null
++++ b/upgrade/go.mod
+@@ -0,0 +1,13 @@
++module github.com/mattn/go-sqlite3/upgrade
++
++go 1.19
++
++require github.com/google/go-github/v50 v50.2.0
++
++require (
++	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
++	github.com/cloudflare/circl v1.1.0 // indirect
++	github.com/google/go-querystring v1.1.0 // indirect
++	golang.org/x/crypto v0.7.0 // indirect
++	golang.org/x/oauth2 v0.6.0 // indirect
++)
+diff --git a/upgrade/go.sum b/upgrade/go.sum
+new file mode 100644
+index 0000000..3c71233
+--- /dev/null
++++ b/upgrade/go.sum
+@@ -0,0 +1,69 @@
++cloud.google.com/go/compute/metadata v0.2.0/go.mod h1:zFmK7XCadkQkj6TtorcaGlCW1hT1fIilQDwofLpJ20k=
++github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 h1:wPbRQzjjwFc0ih8puEVAOFGELsn1zoIIYdxvML7mDxA=
++github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8/go.mod h1:I0gYDMZ6Z5GRU7l58bNFSkPTFN6Yl12dsUlAZ8xy98g=
++github.com/bwesterb/go-ristretto v1.2.0/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7NFEuV9ekS419A0=
++github.com/cloudflare/circl v1.1.0 h1:bZgT/A+cikZnKIwn7xL2OBj012Bmvho/o6RpRvv3GKY=
++github.com/cloudflare/circl v1.1.0/go.mod h1:prBCrKB9DV4poKZY1l9zBXg2QJY7mvgRvtMxxK7fi4I=
++github.com/golang/protobuf v1.3.1/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
++github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
++github.com/golang/protobuf v1.5.2 h1:ROPKBNFfQgOUMifHyP+KYbvpjbdoFNs+aK7DXlji0Tw=
++github.com/golang/protobuf v1.5.2/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
++github.com/google/go-cmp v0.5.2/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
++github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
++github.com/google/go-cmp v0.5.8/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
++github.com/google/go-cmp v0.5.9 h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=
++github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
++github.com/google/go-github/v50 v50.2.0 h1:j2FyongEHlO9nxXLc+LP3wuBSVU9mVxfpdYUexMpIfk=
++github.com/google/go-github/v50 v50.2.0/go.mod h1:VBY8FB6yPIjrtKhozXv4FQupxKLS6H4m6xFZlT43q8Q=
++github.com/google/go-querystring v1.1.0 h1:AnCroh3fv4ZBgVIf1Iwtovgjaw/GiKJo8M8yD/fhyJ8=
++github.com/google/go-querystring v1.1.0/go.mod h1:Kcdr2DB4koayq7X8pmAG4sNG59So17icRSOU623lUBU=
++github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
++golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
++golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
++golang.org/x/crypto v0.7.0 h1:AvwMYaRytfdeVt3u6mLaxYtErKYjxA2OXjJ1HHq6t3A=
++golang.org/x/crypto v0.7.0/go.mod h1:pYwdfH91IfpZVANVyUOhSIPZaFoJGxTFbZhFTx+dXZU=
++golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91VN4djpZkiMVwK6gcyfeH4XE8wZrZaV4=
++golang.org/x/mod v0.8.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
++golang.org/x/net v0.0.0-20190603091049-60506f45cf65/go.mod h1:HSz+uSET+XFnRR8LxR5pz3Of3rY3CfYBVs4xY44aLks=
++golang.org/x/net v0.0.0-20190620200207-3b0461eec859/go.mod h1:z5CRVTTTmAJ677TzLLGU+0bjPO0LkuOLi4/5GtJWs/s=
++golang.org/x/net v0.0.0-20210226172049-e18ecbb05110/go.mod h1:m0MpNAwzfU5UDzcl9v0D8zg8gWTRqZa9RBIspLL5mdg=
++golang.org/x/net v0.0.0-20220722155237-a158d28d115b/go.mod h1:XRhObCWvk6IyKnWLug+ECip1KBveYUHfp+8e9klMJ9c=
++golang.org/x/net v0.6.0/go.mod h1:2Tu9+aMcznHK/AK1HMvgo6xiTLG5rD5rZLDS+rp2Bjs=
++golang.org/x/net v0.8.0 h1:Zrh2ngAOFYneWTAIAPethzeaQLuHwhuBkuV6ZiRnUaQ=
++golang.org/x/net v0.8.0/go.mod h1:QVkue5JL9kW//ek3r6jTKnTFis1tRmNAW2P1shuFdJc=
++golang.org/x/oauth2 v0.6.0 h1:Lh8GPgSKBfWSwFvtuWOfeI3aAAnbXTSutYxJiOJFgIw=
++golang.org/x/oauth2 v0.6.0/go.mod h1:ycmewcwgD4Rpr3eZJLSB4Kyyljb3qDh40vJ8STE5HKw=
++golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
++golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
++golang.org/x/sync v0.1.0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
++golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
++golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
++golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.5.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/sys v0.6.0 h1:MVltZSvRTcU2ljQOhs94SXPftV6DCNnZViHeQps87pQ=
++golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
++golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
++golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
++golang.org/x/term v0.5.0/go.mod h1:jMB1sMXY+tzblOD4FWmEbocvup2/aLOaQEp7JmGp78k=
++golang.org/x/term v0.6.0/go.mod h1:m6U89DPEgQRMq3DNkDClhWw02AUbt2daBVO4cn4Hv9U=
++golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
++golang.org/x/text v0.3.2/go.mod h1:bEr9sfX3Q8Zfm5fL9x+3itogRgK3+ptLWKqgva+5dAk=
++golang.org/x/text v0.3.3/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
++golang.org/x/text v0.3.7/go.mod h1:u+2+/6zg+i71rQMx5EYifcz6MCKuco9NR6JIITiCfzQ=
++golang.org/x/text v0.7.0/go.mod h1:mrYo+phRRbMaCq/xk9113O4dZlRixOauAjOtrjsXDZ8=
++golang.org/x/text v0.8.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
++golang.org/x/tools v0.0.0-20180917221912-90fa682c2a6e/go.mod h1:n7NCudcB/nEzxVGmLbDWY5pfWTLqBcC2KZ6jyYvM4mQ=
++golang.org/x/tools v0.0.0-20191119224855-298f0cb1881e/go.mod h1:b+2E5dAYhXwXZwtnZ6UAqBI28+e2cm9otk0dWdXHAEo=
++golang.org/x/tools v0.1.12/go.mod h1:hNGJHUnrk76NpqgfD5Aqm5Crs+Hm0VOH/i9J2+nxYbc=
++golang.org/x/tools v0.6.0/go.mod h1:Xwgl3UAJ/d3gWutnCtw505GrjyAbvKui8lOU390QaIU=
++golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
++golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
++google.golang.org/appengine v1.6.7 h1:FZR1q0exgwxzPzp/aF+VccGrSfxfPpkBqjIIEq3ru6c=
++google.golang.org/appengine v1.6.7/go.mod h1:8WjMMxjGQR8xUklV/ARdw2HLXBOI7O7uCIDZVag1xfc=
++google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
++google.golang.org/protobuf v1.26.0/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
++google.golang.org/protobuf v1.28.0 h1:w43yiav+6bVFTBQFZX0r7ipe9JQ1QsbMgHwbBziscLw=
++google.golang.org/protobuf v1.28.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
+diff --git a/upgrade/upgrade.go b/upgrade/upgrade.go
+index 352d4fe..a31b16e 100644
+--- a/upgrade/upgrade.go
++++ b/upgrade/upgrade.go
+@@ -7,151 +7,92 @@ import (
+ 	"archive/zip"
+ 	"bufio"
+ 	"bytes"
+-	"errors"
++	"context"
+ 	"fmt"
+ 	"io"
+-	"io/ioutil"
+ 	"log"
+ 	"net/http"
+ 	"os"
+ 	"path"
+ 	"path/filepath"
+-	"runtime"
+ 	"strings"
++
++	"github.com/google/go-github/v50/github"
+ )
+ 
+-func download(prefix string) (url string, content []byte, err error) {
+-	resp, err := http.Get("https://www.sqlite.org/download.html")
++func download() (content []byte, err error) {
++	ctx := context.Background()
++	client := github.NewClientWithEnvProxy()
++	release, _, err := client.Repositories.GetLatestRelease(ctx, "utelle", "SQLite3MultipleCiphers")
+ 	if err != nil {
+-		return "", nil, err
++		return nil, err
+ 	}
+-	defer resp.Body.Close()
+ 
+-	b, err := ioutil.ReadAll(resp.Body)
+-	if err != nil {
+-		return "", nil, err
+-	}
+-	html := string(b)
+-	start := strings.Index(html, `<!-- Download product data for scripts to read`)
+-	if start == -1 {
+-		return "", nil, errors.New("Unable to find download section on sqlite.org")
+-	}
+-	html = html[start:]
+-	end := strings.Index(html, `-->`)
+-	if end == -1 {
+-		return "", nil, errors.New("Unable to find download section on sqlite.org")
+-	}
+-	html = html[:end]
+-	for _, line := range strings.Split(html, "\n") {
+-		if strings.Contains(line, prefix) {
+-			if tok := strings.Split(line, ","); len(tok) >= 5 {
+-				url = fmt.Sprintf("https://www.sqlite.org/%s", tok[2])
+-				break
+-			}
++	var asset *github.ReleaseAsset
++	for _, a := range release.Assets {
++		if strings.HasSuffix(*a.Name, "-amalgamation.zip") {
++			asset = a
+ 		}
+ 	}
+ 
+-	if url == "" {
+-		return "", nil, fmt.Errorf("Unable to find prefix '%s' on sqlite.org", prefix)
++	if asset == nil {
++		return nil, fmt.Errorf("no amalgamation found in latest SQLite3MultipleCiphers release (%s)", *release.HTMLURL)
+ 	}
+ 
++	url := asset.GetBrowserDownloadURL()
++
+ 	fmt.Printf("Downloading %v\n", url)
+-	resp, err = http.Get(url)
++	resp, err := http.Get(url)
+ 	if err != nil {
+-		return "", nil, err
++		return nil, err
+ 	}
+ 
+ 	// Ready Body Content
+-	content, err = ioutil.ReadAll(resp.Body)
++	content, err = io.ReadAll(resp.Body)
+ 	defer resp.Body.Close()
+ 	if err != nil {
+-		return "", nil, err
+-	}
+-
+-	return url, content, nil
+-}
+-
+-func mergeFile(src string, dst string) error {
+-	defer func() error {
+-		fmt.Printf("Removing: %s\n", src)
+-		err := os.Remove(src)
+-
+-		if err != nil {
+-			return err
+-		}
+-
+-		return nil
+-	}()
+-
+-	// Open destination
+-	fdst, err := os.OpenFile(dst, os.O_APPEND|os.O_WRONLY, 0666)
+-	if err != nil {
+-		return err
+-	}
+-	defer fdst.Close()
+-
+-	// Read source content
+-	content, err := ioutil.ReadFile(src)
+-	if err != nil {
+-		return err
+-	}
+-
+-	// Add Additional newline
+-	if _, err := fdst.WriteString("\n"); err != nil {
+-		return err
+-	}
+-
+-	fmt.Printf("Merging: %s into %s\n", src, dst)
+-	if _, err = fdst.Write(content); err != nil {
+-		return err
++		return nil, err
+ 	}
+ 
+-	return nil
++	return content, nil
+ }
+ 
+ func main() {
+ 	fmt.Println("Go-SQLite3 Upgrade Tool")
+ 
+-	_, file, _, ok := runtime.Caller(0)
+-	if !ok {
+-		log.Fatal("could not get current file info")
++	wd, err := os.Getwd()
++	if err != nil {
++		log.Fatal(err)
++	}
++	if filepath.Base(wd) != "upgrade" {
++		log.Printf("Current directory is %q but should run in upgrade directory", wd)
++		os.Exit(1)
+ 	}
+-	basedir := filepath.Dir(filepath.Dir(file))
+ 
+ 	// Download Amalgamation
+-	_, amalgamation, err := download("sqlite-amalgamation-")
++	amalgamation, err := download()
+ 	if err != nil {
+-		log.Fatalf("Failed to download: sqlite-amalgamation; %s", err)
++		log.Fatalf("Failed to download: sqlite3mc-amalgamation; %s", err)
+ 	}
+ 
+-	// Download Source
+-	//_, source, err := download("sqlite-src-")
+-	//if err != nil {
+-	//	log.Fatalf("Failed to download: sqlite-src; %s", err)
+-	//}
+-
+ 	// Create Amalgamation Zip Reader
+ 	rAmalgamation, err := zip.NewReader(bytes.NewReader(amalgamation), int64(len(amalgamation)))
+ 	if err != nil {
+ 		log.Fatal(err)
+ 	}
+ 
+-	// Create Source Zip Reader
+-	//rSource, err := zip.NewReader(bytes.NewReader(source), int64(len(source)))
+-	//if err != nil {
+-	//	log.Fatal(err)
+-	//}
+-
+ 	// Extract Amalgamation
+ 	for _, zf := range rAmalgamation.File {
+ 		var f *os.File
++		ext := false
+ 		switch path.Base(zf.Name) {
+-		case "sqlite3.c":
+-			f, err = os.Create(filepath.Join(basedir, "sqlite3-binding.c"))
+-		case "sqlite3.h":
+-			f, err = os.Create(filepath.Join(basedir, "sqlite3-binding.h"))
++		case "sqlite3mc_amalgamation.c":
++			f, err = os.Create("../sqlite3-binding.c")
++		case "sqlite3mc_amalgamation.h":
++			f, err = os.Create("../sqlite3-binding.h")
+ 		case "sqlite3ext.h":
+-			f, err = os.Create(filepath.Join(basedir, "sqlite3ext.h"))
++			ext = true
++			f, err = os.Create("../sqlite3ext.h")
+ 		default:
+ 			continue
+ 		}
+@@ -169,28 +110,32 @@ func main() {
+ 			f.Close()
+ 			log.Fatal(err)
+ 		}
+-		scanner := bufio.NewScanner(zr)
+-		for scanner.Scan() {
+-			text := scanner.Text()
+-			if text == `#include "sqlite3.h"` {
+-				text = `#include "sqlite3-binding.h"
++		if ext {
++			scanner := bufio.NewScanner(zr)
++			for scanner.Scan() {
++				text := scanner.Text()
++				if text == `#include "sqlite3.h"` {
++					text = `#include "sqlite3-binding.h"
+ #ifdef __clang__
+ #define assert(condition) ((void)0)
+ #endif
+ `
++				}
++				_, err = fmt.Fprintln(f, text)
++				if err != nil {
++					break
++				}
+ 			}
+-			_, err = fmt.Fprintln(f, text)
+-			if err != nil {
+-				break
+-			}
++			err = scanner.Err()
++		} else {
++			_, err = io.Copy(f, zr)
+ 		}
+-		err = scanner.Err()
+ 		if err != nil {
+ 			zr.Close()
+ 			f.Close()
+ 			log.Fatal(err)
+ 		}
+-		_, err = io.WriteString(f, "#else // USE_LIBSQLITE3\n // If users really want to link against the system sqlite3 we\n// need to make this file a noop.\n #endif")
++		_, err = io.WriteString(f, "#endif // !USE_LIBSQLITE3\n")
+ 		if err != nil {
+ 			zr.Close()
+ 			f.Close()
+@@ -201,42 +146,5 @@ func main() {
+ 		fmt.Printf("Extracted: %v\n", filepath.Base(f.Name()))
+ 	}
+ 
+-	//Extract Source
+-	//for _, zf := range rSource.File {
+-	//	var f *os.File
+-	//	switch path.Base(zf.Name) {
+-	//	case "userauth.c":
+-	//		f, err = os.Create("../userauth.c")
+-	//	case "sqlite3userauth.h":
+-	//		f, err = os.Create("../userauth.h")
+-	//	default:
+-	//		continue
+-	//	}
+-	//	if err != nil {
+-	//		log.Fatal(err)
+-	//	}
+-	//	zr, err := zf.Open()
+-	//	if err != nil {
+-	//		log.Fatal(err)
+-	//	}
+-
+-	//	_, err = io.Copy(f, zr)
+-	//	if err != nil {
+-	//		log.Fatal(err)
+-	//	}
+-
+-	//	zr.Close()
+-	//	f.Close()
+-	//	fmt.Printf("extracted %v\n", filepath.Base(f.Name()))
+-	//}
+-
+-	// Merge SQLite User Authentication into amalgamation
+-	//if err := mergeFile("../userauth.c", "../sqlite3-binding.c"); err != nil {
+-	//	log.Fatal(err)
+-	//}
+-	//if err := mergeFile("../userauth.h", "../sqlite3-binding.h"); err != nil {
+-	//	log.Fatal(err)
+-	//}
+-
+ 	os.Exit(0)
+ }

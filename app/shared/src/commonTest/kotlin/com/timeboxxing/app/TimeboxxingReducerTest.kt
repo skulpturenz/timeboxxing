@@ -121,8 +121,8 @@ class TimeboxxingReducerTest {
                 DatabasePruneResult(
                     status = DatabaseMaintenanceStatus(sizeBytes = 1024),
                     counts = DatabasePruneCounts(
-                        timesheetEntriesDeleted = 1,
-                        usageLinksDeleted = 2,
+                        ledgerItemsDeleted = 1,
+                        ledgerItemTimelineEntriesDeleted = 2,
                     ),
                 ),
             ),
@@ -147,7 +147,7 @@ class TimeboxxingReducerTest {
             vacuuming,
             TimeboxxingAction.DatabaseVacuumSucceeded(
                 result = DatabaseVacuumResult(sizeBeforeBytes = 4096, sizeAfterBytes = 1024),
-                prunedCounts = DatabasePruneCounts(timesheetEntriesDeleted = 1, usageLinksDeleted = 2),
+                prunedCounts = DatabasePruneCounts(ledgerItemsDeleted = 1, ledgerItemTimelineEntriesDeleted = 2),
             ),
         )
 

@@ -2,18 +2,24 @@ package projects
 
 import (
 	"context"
-	"time"
+	"database/sql"
+	"errors"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/db/queries"
+	"github.com/mattn/go-sqlite3"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	projectsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-const maxProjectColorArgb = int64(0xFFFFFFFF)
+const (
+	maxProjectColorArgb = int64(0xFFFFFFFF)
+	// costingTypeHourlyID matches the project_costing_types seed (db/seeds/project_costing_types).
+	costingTypeHourlyID = 1
+)
 
 func (s *Server) CreateProject(ctx context.Context, req *projectsv1.CreateProjectRequest) (*projectsv1.Project, error) {
-	if s.querier == nil {
+	if s.writeTx == nil {
 		return nil, status.Error(codes.FailedPrecondition, "project store is unavailable")
 	}
 
@@ -26,28 +32,52 @@ func (s *Server) CreateProject(ctx context.Context, req *projectsv1.CreateProjec
 		return nil, status.Error(codes.InvalidArgument, "project colour is invalid")
 	}
 
-	count, err := s.querier.CountProjectsByName(ctx, name)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "check project name: %v", err)
-	}
-	if count > 0 {
-		return nil, status.Error(codes.AlreadyExists, "A project with this name already exists.")
+	// Resolve the palette colour to its project_colors id. Colours outside the seeded palette leave
+	// project_colors_id NULL (the colour is simply not persisted).
+	colorID := sql.NullInt64{}
+	if s.readQuerier != nil {
+		id, err := s.readQuerier.GetProjectColorIDByColor(ctx, colorARGB)
+		switch {
+		case err == nil:
+			colorID = sql.NullInt64{Int64: id, Valid: true}
+		case errors.Is(err, sql.ErrNoRows):
+			// leave NULL
+		default:
+			return nil, status.Errorf(codes.Internal, "resolve project colour: %v", err)
+		}
 	}
 
-	id, err := uniqueProjectID(ctx, s.querier, name)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "generate project id: %v", err)
-	}
-	now := time.Now().UTC()
-	project, err := s.querier.CreateProject(ctx, queries.CreateProjectParams{
-		ID:        id,
-		Name:      name,
-		ColorArgb: colorARGB,
-		CreatedAt: now,
-		UpdatedAt: now,
-	})
-	if err != nil {
+	// The id is assigned by SQLite (rowid). A duplicate name trips the name UNIQUE constraint.
+	var projectID int64
+	if err := s.writeTx.WriteTx(ctx, func(q *writequeries.Queries) error {
+		id, err := q.CreateProject(ctx, name)
+		if err != nil {
+			return err
+		}
+		projectID = id
+		return q.CreateProjectDetails(ctx, writequeries.CreateProjectDetailsParams{
+			ProjectsID:      sql.NullInt64{Int64: id, Valid: true},
+			ProjectColorsID: colorID,
+			CostingTypeID:   sql.NullInt64{Int64: costingTypeHourlyID, Valid: true},
+			Rate:            sql.NullInt64{},
+		})
+	}); err != nil {
+		if isUniqueConstraintErr(err) {
+			return nil, status.Error(codes.AlreadyExists, "A project with this name already exists.")
+		}
 		return nil, status.Errorf(codes.Internal, "create project: %v", err)
 	}
-	return projectToProto(project), nil
+
+	return &projectsv1.Project{
+		Id:              projectID,
+		Name:            name,
+		ColorArgb:       colorARGB,
+		Client:          "",
+		HourlyRateCents: 0,
+	}, nil
+}
+
+func isUniqueConstraintErr(err error) bool {
+	var sqliteErr sqlite3.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique
 }

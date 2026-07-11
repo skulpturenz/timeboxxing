@@ -85,7 +85,7 @@ class GrpcTimesheetRepository(
                     CreateTimesheetEntryRequest.newBuilder()
                         .setDayStartedAt(timestampFromEpochMillis(day.startedAtEpochMillis))
                         .setDayEndedAt(timestampFromEpochMillis(day.endedAtEpochMillis))
-                        .setProjectId(draft.projectId)
+                        .setProjectId(draft.projectId.toLongOrNull() ?: 0L)
                         .setTitle(draft.title)
                         .setNotes(draft.notes)
                         .setStartMinute(draft.startMinute)
@@ -107,7 +107,7 @@ class GrpcTimesheetRepository(
         try {
             stub
                 .withDeadlineAfter(10, TimeUnit.SECONDS)
-                .deleteTimesheetEntry(DeleteTimesheetEntryRequest.newBuilder().setId(entryId).build())
+                .deleteTimesheetEntry(DeleteTimesheetEntryRequest.newBuilder().setId(entryId.toLongOrNull() ?: 0L).build())
         } catch (error: StatusRuntimeException) {
             throw IllegalStateException(error.toTimesheetErrorMessage(), error)
         } catch (error: StatusException) {
@@ -150,8 +150,8 @@ private fun com.google.protobuf.Timestamp.toEpochMillis(): Long =
 
 private fun TimesheetEntryProto.toTimeEntry(): TimeEntry =
     TimeEntry(
-        id = id,
-        projectId = projectId,
+        id = id.toString(),
+        projectId = if (projectId == 0L) "" else projectId.toString(),
         title = title,
         notes = notes,
         startMinute = startMinute,
