@@ -58,7 +58,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	databaseKey, _ := envs.ResolvedDatabaseKey()
 	database, err := db.New(ctx, db.Options{
 		Engine:                    envs.DB_ENGINE.Value(),
-		DataSourceName:            envs.DB_DSN.Value(),
+		DSN:                       envs.DB_DSN.Value(),
 		SQLiteVectorExtensionPath: sqliteVectorExtensionPath,
 		EncryptionKey:             databaseKey,
 	})
@@ -106,7 +106,7 @@ func buildQueues(ctx context.Context, registry *services.Services[any, any]) err
 		// Reuse the exact keyed DSN the writer/reader use so the queue connection is encrypted
 		// identically — sqliteq opens the same file via a hardcoded sql.Open("sqlite3", ...).
 		if database, ok := db.FromServices(registry); ok {
-			queueDSN = database.DataSourceName
+			queueDSN = database.DSN
 		} else {
 			queueDSN = db.SqliteDataSourceName(queueDSN)
 		}

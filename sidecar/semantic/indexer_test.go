@@ -157,7 +157,7 @@ func newSemanticTestDatabaseWithSQLiteVector(t *testing.T, ctx context.Context, 
 	t.Helper()
 	database, err := db.New(ctx, db.Options{
 		Engine:                    db.EngineSqlite,
-		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
+		DSN:                       filepath.Join(t.TempDir(), "test.db"),
 		SQLiteVectorExtensionPath: extensionPath,
 	})
 	if err != nil {

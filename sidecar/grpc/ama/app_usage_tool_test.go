@@ -280,8 +280,8 @@ type amaUsageEventParams struct {
 func newAppUsageToolRunnerTestServices(t *testing.T, ctx context.Context) (*AppUsageToolRunner, *componentTransitions.Service) {
 	t.Helper()
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine: db.EngineSqlite,
+		DSN:    filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
 		t.Fatalf("create test database: %v", err)

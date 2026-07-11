@@ -41,8 +41,8 @@ func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
 
 	databasePath := filepath.Join(t.TempDir(), "workers.db")
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: databasePath,
+		Engine: db.EngineSqlite,
+		DSN:    databasePath,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -120,8 +120,8 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 
 	databasePath := filepath.Join(t.TempDir(), "backfill-workers.db")
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: databasePath,
+		Engine: db.EngineSqlite,
+		DSN:    databasePath,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)

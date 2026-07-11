@@ -27,7 +27,7 @@ func TestDatabaseMaintenanceStatusReportsSqliteFootprint(t *testing.T) {
 	writeFileOfSize(t, path+"-wal", 13)
 	writeFileOfSize(t, path+"-shm", 17)
 
-	server := &Server{database: &db.Database{DataSourceName: path + "?_journal_mode=WAL"}}
+	server := &Server{database: &db.Database{DSN: path + "?_journal_mode=WAL"}}
 	status, err := server.GetDatabaseMaintenanceStatus(ctx, &settingsv1.GetDatabaseMaintenanceStatusRequest{})
 	if err != nil {
 		t.Fatalf("get status: %v", err)
@@ -132,7 +132,7 @@ CREATE TABLE vacuum_payload (
 		t.Fatalf("seed vacuum payload: %v", err)
 	}
 
-	sizeWithRows, err := sqliteFootprintSize(database.DataSourceName)
+	sizeWithRows, err := sqliteFootprintSize(database.DSN)
 	if err != nil {
 		t.Fatalf("measure size with rows: %v", err)
 	}
@@ -142,11 +142,11 @@ CREATE TABLE vacuum_payload (
 	}); err != nil {
 		t.Fatalf("delete payload: %v", err)
 	}
-	sizeAfterDelete, err := sqliteFootprintSize(database.DataSourceName)
+	sizeAfterDelete, err := sqliteFootprintSize(database.DSN)
 	if err != nil {
 		t.Fatalf("measure size after delete: %v", err)
 	}
-	mainInfo, err := os.Stat(sqliteDatabasePath(database.DataSourceName))
+	mainInfo, err := os.Stat(sqliteDatabasePath(database.DSN))
 	if err != nil {
 		t.Fatalf("stat main database: %v", err)
 	}
@@ -167,7 +167,7 @@ CREATE TABLE vacuum_payload (
 	if response.GetSizeAfterBytes() >= sizeWithRows {
 		t.Fatalf("expected vacuumed footprint %d to be smaller than populated footprint %d", response.GetSizeAfterBytes(), sizeWithRows)
 	}
-	walInfo, err := os.Stat(sqliteDatabasePath(database.DataSourceName) + "-wal")
+	walInfo, err := os.Stat(sqliteDatabasePath(database.DSN) + "-wal")
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("stat WAL: %v", err)
 	}
@@ -180,8 +180,8 @@ func newTestSettingsServer(t *testing.T, ctx context.Context) (*Server, *db.Data
 	t.Helper()
 
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "settings.db"),
+		Engine: db.EngineSqlite,
+		DSN:    filepath.Join(t.TempDir(), "settings.db"),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)

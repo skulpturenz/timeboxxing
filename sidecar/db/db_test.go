@@ -24,7 +24,7 @@ func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 	}
 	database, err := New(ctx, Options{
 		Engine:                    enumsdbengine.Sqlite,
-		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
+		DSN:                       filepath.Join(t.TempDir(), "test.db"),
 		SQLiteVectorExtensionPath: configuredPath,
 	})
 	if err != nil {
@@ -52,7 +52,7 @@ func TestSQLiteVectorExtensionIsLoadedFromEmbeddedBundle(t *testing.T) {
 	}
 	database, err := New(ctx, Options{
 		Engine:                    enumsdbengine.Sqlite,
-		DataSourceName:            filepath.Join(t.TempDir(), "test.db"),
+		DSN:                       filepath.Join(t.TempDir(), "test.db"),
 		SQLiteVectorExtensionPath: extensionPath,
 	})
 	if err != nil {
@@ -74,8 +74,8 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "test.db")
 
 	database, err := New(ctx, Options{
-		Engine:         enumsdbengine.Sqlite,
-		DataSourceName: dsn,
+		Engine: enumsdbengine.Sqlite,
+		DSN:    dsn,
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -85,8 +85,8 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 	}
 
 	database, err = New(ctx, Options{
-		Engine:         enumsdbengine.Sqlite,
-		DataSourceName: dsn,
+		Engine: enumsdbengine.Sqlite,
+		DSN:    dsn,
 	})
 	if err != nil {
 		t.Fatalf("reopen database: %v", err)
@@ -103,8 +103,8 @@ func TestSqliteMigrationsRunOnce(t *testing.T) {
 func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         enumsdbengine.Sqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine: enumsdbengine.Sqlite,
+		DSN:    filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -138,8 +138,8 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         enumsdbengine.Sqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine: enumsdbengine.Sqlite,
+		DSN:    filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -194,8 +194,8 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         enumsdbengine.Sqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine: enumsdbengine.Sqlite,
+		DSN:    filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)
@@ -229,8 +229,8 @@ func TestSqliteUsesWALAndSeparatePools(t *testing.T) {
 func TestSqliteSerializesConcurrentWrites(t *testing.T) {
 	ctx := context.Background()
 	database, err := New(ctx, Options{
-		Engine:         enumsdbengine.Sqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine: enumsdbengine.Sqlite,
+		DSN:    filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
 		t.Fatalf("create database: %v", err)

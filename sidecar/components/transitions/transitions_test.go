@@ -143,8 +143,8 @@ func newTestService(t *testing.T, ctx context.Context) (*Service, *db.Database) 
 func newTestDatabase(t *testing.T, ctx context.Context) *db.Database {
 	t.Helper()
 	database, err := db.New(ctx, db.Options{
-		Engine:         db.EngineSqlite,
-		DataSourceName: filepath.Join(t.TempDir(), "test.db"),
+		Engine: db.EngineSqlite,
+		DSN:    filepath.Join(t.TempDir(), "test.db"),
 	})
 	if err != nil {
 		t.Fatalf("create test database: %v", err)
