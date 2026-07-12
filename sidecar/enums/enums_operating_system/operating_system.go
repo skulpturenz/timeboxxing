@@ -13,6 +13,10 @@ const (
 	Windows
 )
 
+func (os OperatingSystem) String() string {
+	return []string{"unknown", "macos", "windows"}[os]
+}
+
 func Parse(s string) (OperatingSystem, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "macos":
@@ -22,15 +26,4 @@ func Parse(s string) (OperatingSystem, error) {
 	}
 
 	return Unknown, fmt.Errorf("unrecognized operating system: %s", s)
-}
-
-func (os OperatingSystem) String() string {
-	switch os {
-	case MacOS:
-		return "macos"
-	case Windows:
-		return "windows"
-	default:
-		return ""
-	}
 }

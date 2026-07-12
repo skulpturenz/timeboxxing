@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// ReleaseChannel values match the release_channels seed ids (db/seeds/release_channels).
 type ReleaseChannel int
 
 const (
@@ -16,16 +15,7 @@ const (
 )
 
 func (channel ReleaseChannel) String() string {
-	switch channel {
-	case Stable:
-		return "Stable"
-	case Beta:
-		return "Beta"
-	case Alpha:
-		return "Alpha"
-	default:
-		return ""
-	}
+	return []string{"unknown", "stable", "beta", "alpha"}[channel]
 }
 
 func Parse(s string) (ReleaseChannel, error) {

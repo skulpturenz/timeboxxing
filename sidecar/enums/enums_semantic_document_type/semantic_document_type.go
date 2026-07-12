@@ -16,18 +16,7 @@ const (
 )
 
 func (documentType SemanticDocumentType) String() string {
-	switch documentType {
-	case Event:
-		return "event"
-	case DaySummary:
-		return "day_summary"
-	case AppDaySummary:
-		return "app_day_summary"
-	case TimeBlockSummary:
-		return "time_block_summary"
-	default:
-		return "unknown"
-	}
+	return []string{"unknown", "event", "day_summary", "app_day_summary", "time_block_summary"}[documentType]
 }
 
 func Parse(s string) (SemanticDocumentType, error) {
