@@ -4,52 +4,37 @@ package idle
 
 import (
 	"context"
-	"fmt"
-	"sync"
-	"time"
-
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/screensaver"
-	"github.com/BurntSushi/xgb/xproto"
+	"os"
+	"strings"
 )
 
-type linuxIdleDetector struct {
-	mu   sync.Mutex
-	conn *xgb.Conn
-	root xproto.Drawable
-}
-
-// New returns the Linux IdleDetector using the X11 MIT-SCREEN-SAVER extension.
-// Falls back to a no-op detector when X11 is unavailable (e.g. pure Wayland).
+// New returns the Linux IdleDetector, selecting an implementation for the
+// current session: ext-idle-notify-v1 on Wayland, the X11 MIT-SCREEN-SAVER
+// extension otherwise. Falls back to a no-op detector when neither is available
+// so the rest of the app keeps working.
 func New(ctx context.Context) (IdleDetector, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	conn, err := xgb.NewConn()
-	if err != nil {
-		// No X11 display — return a no-op so the rest of the app still works.
-		return Nop(), nil
+
+	if isWaylandSession() {
+		if d := newWaylandIdleDetector(); d != nil {
+			return d, nil
+		}
+		// Wayland session without ext-idle-notify: XWayland's screensaver
+		// extension may still work, otherwise degrade to no-op below.
 	}
-	if err := screensaver.Init(conn); err != nil {
-		conn.Close()
-		return Nop(), nil
+
+	if d := newX11IdleDetector(); d != nil {
+		return d, nil
 	}
-	setup := xproto.Setup(conn)
-	root := xproto.Drawable(setup.DefaultScreen(conn).Root)
-	return &linuxIdleDetector{conn: conn, root: root}, nil
+	return Nop(), nil
 }
 
-func (d *linuxIdleDetector) SecondsSinceLastInput(ctx context.Context) (float64, error) {
-	if err := ctx.Err(); err != nil {
-		return 0, err
+// isWaylandSession reports whether the process runs under a Wayland compositor.
+func isWaylandSession() bool {
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		return true
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	info, err := screensaver.QueryInfo(d.conn, d.root).Reply()
-	if err != nil {
-		return 0, fmt.Errorf("screensaver.QueryInfo: %w", err)
-	}
-	idleMs := time.Duration(info.MsSinceUserInput) * time.Millisecond
-	return idleMs.Seconds(), nil
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("XDG_SESSION_TYPE")), "wayland")
 }

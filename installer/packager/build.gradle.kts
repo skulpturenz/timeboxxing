@@ -34,6 +34,7 @@ dependencies {
 val diagnosticsProductionTaskNames = setOf(
     "packageDmg",
     "packageExe",
+    "packageDeb",
     "packageDistributionForCurrentOS",
     "createDistributable",
     "runDistributable",
@@ -207,7 +208,7 @@ compose.desktop {
         mainClass = "com.timeboxxing.app.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Exe)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Exe, TargetFormat.Deb)
             packageName = "Timeboxxing"
             packageVersion = packageVersionProvider.get()
             description = "Timeboxxing desktop app"
@@ -240,6 +241,16 @@ compose.desktop {
                 // duplicating it. Never regenerate this value.
                 upgradeUuid = "3bbf34bc-ad83-4284-a0f6-67c6c654c2c1"
             }
+
+            linux {
+                // Without a shortcut/menu entry jpackage installs the app under /opt but adds no
+                // launcher, so it can only be started from the shell. These add a .desktop entry.
+                packageName = "timeboxxing"       // .deb package name (lowercased per Debian policy)
+                menuGroup = "Timeboxxing"
+                shortcut = true
+                appCategory = "Utility"
+                debMaintainer = "engineering@skulpture.nz"
+            }
         }
     }
 }
@@ -251,6 +262,7 @@ tasks.matching {
         "packageDistributionForCurrentOS",
         "packageDmg",
         "packageExe",
+        "packageDeb",
         "prepareAppResources",
     )
 }.configureEach {
@@ -315,14 +327,87 @@ val macAppImageSidecar =
     layout.buildDirectory.file("compose/binaries/main/app/Timeboxxing.app/Contents/app/resources/sidecar/timeboxxing-sidecar")
 val macAppImageDir = layout.buildDirectory.dir("compose/binaries/main/app/Timeboxxing.app")
 
+val isLinux = System.getProperty("os.name").lowercase().contains("linux")
+// jpackage strips the exec bit off the bundled sidecar (same reason the macOS step exists). This
+// path is the sidecar inside the createDistributable app-image, used by runDistributable and by
+// anyone running the app image directly. NOTE: packageDeb does NOT reuse this app image (it invokes
+// jpackage --type deb itself), so the .deb is fixed separately by repacking it below.
+val linuxAppImageSidecar =
+    layout.buildDirectory.file("compose/binaries/main/app/Timeboxxing/lib/app/resources/sidecar/timeboxxing-sidecar")
+
 fun runCommand(vararg command: String): Int {
     val process = ProcessBuilder(*command).redirectErrorStream(true).start()
     process.inputStream.bufferedReader().forEachLine { logger.lifecycle(it) }
     return process.waitFor()
 }
 
+// Note: jpackage already encodes the arch in the .deb filename (e.g.
+// timeboxxing_2.0.999_amd64.deb), so no addArchToInstaller hook is wired for deb.
+
+// jpackage --type deb strips the exec bit off the bundled sidecar (it lands as 0644 in the package),
+// and the .deb installs into a root-owned /opt where the app cannot chmod it at runtime — so the app
+// would fail to spawn the sidecar. It also computes Depends only from ELF NEEDED entries, missing the
+// runtime tools the app shells out to (secret-tool from libsecret-tools, for the Linux secret store).
+// Repack the produced .deb to (1) restore the exec bit and (2) add those runtime dependencies.
+// Requires dpkg-deb on the build host (present on Debian/Ubuntu Linux runners).
+val extraDebDepends = listOf("libsecret-tools")
+tasks.matching { it.name == "packageDeb" }.configureEach {
+    doLast {
+        if (!isLinux) {
+            return@doLast
+        }
+        val debDir = layout.buildDirectory.dir("compose/binaries/main/deb").get().asFile
+        val deb = debDir.listFiles { f -> f.isFile && f.name.endsWith(".deb") }?.firstOrNull()
+            ?: throw GradleException("packageDeb produced no .deb in $debDir")
+
+        val work = layout.buildDirectory.dir("deb-exec-fix").get().asFile
+        work.deleteRecursively()
+        work.mkdirs()
+
+        if (runCommand("dpkg-deb", "-R", deb.absolutePath, work.absolutePath) != 0) {
+            throw GradleException("dpkg-deb -R failed for $deb")
+        }
+        val sidecar = work.resolve("opt/timeboxxing/lib/app/resources/sidecar/timeboxxing-sidecar")
+        if (!sidecar.isFile) {
+            throw GradleException("Bundled sidecar not found in .deb at $sidecar")
+        }
+        if (!sidecar.setExecutable(true, false)) {
+            throw GradleException("Failed to set the executable bit on $sidecar")
+        }
+
+        // Add runtime tool dependencies to the control file's Depends field.
+        val control = work.resolve("DEBIAN/control")
+        val lines = control.readLines().toMutableList()
+        val dependsIndex = lines.indexOfFirst { it.startsWith("Depends:") }
+        if (dependsIndex >= 0) {
+            val existing = lines[dependsIndex].removePrefix("Depends:").split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val merged = (existing + extraDebDepends.filter { dep -> existing.none { it == dep || it.startsWith("$dep ") } })
+            lines[dependsIndex] = "Depends: " + merged.joinToString(", ")
+        } else {
+            lines.add("Depends: " + extraDebDepends.joinToString(", "))
+        }
+        control.writeText(lines.joinToString("\n") + "\n")
+
+        if (runCommand("dpkg-deb", "--build", "--root-owner-group", work.absolutePath, deb.absolutePath) != 0) {
+            throw GradleException("dpkg-deb --build failed for $deb")
+        }
+        logger.lifecycle("Repacked ${deb.name} with executable sidecar bit and Depends: ${extraDebDepends.joinToString(", ")}")
+    }
+}
+
 tasks.matching { it.name == "createDistributable" }.configureEach {
     doLast {
+        if (isLinux) {
+            val sidecar = linuxAppImageSidecar.get().asFile
+            if (!sidecar.isFile) {
+                throw GradleException("Bundled sidecar not found at $sidecar")
+            }
+            if (!sidecar.setExecutable(true, false)) {
+                throw GradleException("Failed to set the executable bit on $sidecar")
+            }
+            return@doLast
+        }
+
         if (!isMacOs) {
             return@doLast
         }

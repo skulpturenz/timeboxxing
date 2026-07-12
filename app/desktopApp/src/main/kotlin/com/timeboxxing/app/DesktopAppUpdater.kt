@@ -32,6 +32,9 @@ import kotlin.system.exitProcess
  * helper process that waits for this app to exit, then relaunches. macOS replaces the `.app` bundle
  * from a `.dmg`; Windows swaps the installed jpackage app image from an app-image `.zip` (no
  * installer is run — see [WindowsUpdateScript]), sidestepping Windows Installer's upgrade machinery.
+ * Linux reinstalls the downloaded `.deb` through the system package manager via `pkexec` (a polkit
+ * prompt — the install lives in root-owned `/opt`, so a silent in-place swap is not possible), then
+ * relaunches (see [LinuxUpdateScript]).
  *
  * Update checks are disabled for local/dev builds (see [updatesSupported]) so a developer build does
  * not spuriously report the newest published release as an available update.
@@ -177,6 +180,7 @@ internal class DesktopAppUpdater(
         when (currentPlatform()) {
             Platform.MacOs -> installMacOs(installer)
             Platform.Windows -> installWindows(installer, version)
+            Platform.Linux -> installLinux(installer)
             Platform.Unsupported -> throw IOException("Updates are not supported on this platform.")
         }
         onBeforeExit()
@@ -229,6 +233,23 @@ internal class DesktopAppUpdater(
         )
     }
 
+    private fun installLinux(deb: Path) {
+        val pid = ProcessHandle.current().pid().toString()
+        // jpackage sets jpackage.app-path to the launcher (/opt/timeboxxing/bin/Timeboxxing).
+        val relaunch = System.getProperty("jpackage.app-path") ?: "/opt/timeboxxing/bin/Timeboxxing"
+        val script = writeTempScript(
+            name = "timeboxxing-update.sh",
+            content = LinuxUpdateScript,
+        )
+        spawnDetached(
+            "/bin/bash",
+            script.absolutePathString(),
+            pid,
+            deb.absolutePathString(),
+            relaunch,
+        )
+    }
+
     /** Resolves the running `.app` bundle by walking up from the jpackage launcher path. */
     private fun currentMacAppBundle(): Path {
         val appPath = System.getProperty("jpackage.app-path")
@@ -274,6 +295,7 @@ internal class DesktopAppUpdater(
         val suffix = when (platform) {
             Platform.MacOs -> "-macOS-$archLabel.dmg"
             Platform.Windows -> "-Windows-$archLabel-app-image.zip"
+            Platform.Linux -> "-Linux-$archLabel.deb"
             Platform.Unsupported -> return null
         }
         val assets = (this["assets"] as? JsonArray) ?: return null
@@ -286,13 +308,14 @@ internal class DesktopAppUpdater(
     private fun JsonObject.string(key: String): String? =
         (this[key] as? JsonPrimitive)?.contentOrNull
 
-    private enum class Platform { MacOs, Windows, Unsupported }
+    private enum class Platform { MacOs, Windows, Linux, Unsupported }
 
     private fun currentPlatform(): Platform {
         val os = System.getProperty("os.name").orEmpty().lowercase()
         return when {
             os.startsWith("mac") -> Platform.MacOs
             os.contains("windows") -> Platform.Windows
+            os.contains("linux") -> Platform.Linux
             else -> Platform.Unsupported
         }
     }
@@ -433,6 +456,34 @@ internal class DesktopAppUpdater(
 
             Start-Sleep -Seconds 2
             Start-Process -FilePath ${'$'}Relaunch
+        """.trimIndent() + "\n"
+
+        // Waits for this app to exit, then reinstalls the downloaded .deb. The package installs
+        // system-wide into root-owned /opt, so the update must run as root — pkexec shows a polkit
+        // prompt and runs apt-get, which upgrades the package and pulls any new dependencies. On
+        // success the app is relaunched; otherwise the .deb is opened in the graphical package
+        // installer for the user to complete manually (no auto-relaunch in that case).
+        val LinuxUpdateScript = """
+            #!/bin/bash
+            APP_PID="${'$'}1"
+            DEB="${'$'}2"
+            RELAUNCH="${'$'}3"
+
+            while kill -0 "${'$'}APP_PID" 2>/dev/null; do sleep 0.5; done
+
+            installed=0
+            if command -v pkexec >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+              if pkexec apt-get install -y --allow-downgrades "${'$'}DEB"; then
+                installed=1
+              fi
+            fi
+
+            if [ "${'$'}installed" -eq 1 ]; then
+              setsid "${'$'}RELAUNCH" >/dev/null 2>&1 < /dev/null &
+            else
+              # Fall back to the graphical installer; the user completes and relaunches manually.
+              command -v xdg-open >/dev/null 2>&1 && xdg-open "${'$'}DEB" >/dev/null 2>&1 || true
+            fi
         """.trimIndent() + "\n"
     }
 }

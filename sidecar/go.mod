@@ -8,6 +8,7 @@ require (
 	github.com/getsentry/sentry-go v0.47.0
 	github.com/getsentry/sentry-go/grpc v0.47.0
 	github.com/getsentry/sentry-go/slog v0.47.0
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/goptics/sqliteq v0.2.3
 	github.com/goptics/varmq v1.7.1
@@ -15,6 +16,7 @@ require (
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/negrel/assert v0.5.0
+	github.com/neurlang/wayland v0.4.3
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/sys v0.45.0
 	google.golang.org/grpc v1.81.1
@@ -278,6 +280,7 @@ require (
 	github.com/xdg-go/scram v1.1.1 // indirect
 	github.com/xdg-go/stringprep v1.0.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yalue/native_endian v1.0.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect

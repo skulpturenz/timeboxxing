@@ -41,7 +41,7 @@ func Start(ctx context.Context, logger *slog.Logger, cfg Config) (*Handle, error
 	}
 	cfg = resolveConfig(cfg)
 
-	tracker, err := platform.New(ctx, platform.Config{})
+	tracker, err := platform.New(ctx, platform.Config{Logger: logger})
 	if err != nil {
 		return nil, fmt.Errorf("create platform tracker: %w", err)
 	}

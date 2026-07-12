@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -125,6 +126,10 @@ type Config struct {
 	PreferAX bool
 	// macOS: trigger the system permission dialog at startup.
 	PromptPermissions bool
+	// Logger is used by platform backends to surface setup hints (e.g. the
+	// Linux/GNOME Shell extension enable instructions). When nil, backends fall
+	// back to slog.Default().
+	Logger *slog.Logger
 }
 
 // Tracker is the platform abstraction for active window detection.

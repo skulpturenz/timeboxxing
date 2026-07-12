@@ -1,0 +1,7 @@
+{
+  "uuid": "timeboxxing-focus@skulpture.nz",
+  "name": "Timeboxxing Focus Bridge",
+  "description": "Exposes the focused window's application id, title and PID over D-Bus so the Timeboxxing time tracker can detect the foreground application under GNOME/Wayland, where no standard Wayland protocol provides focus information.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "url": "https://github.com/skulpturenz/timeboxxing"
+}

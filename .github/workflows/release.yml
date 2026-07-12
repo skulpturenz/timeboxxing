@@ -179,6 +179,9 @@ jobs:
           - os: windows-2025
             artifact-name: timeboxxing-windows
             arch: x86_64
+          - os: ubuntu-latest
+            artifact-name: timeboxxing-linux-x86_64
+            arch: x86_64
     env:
       CGO_ENABLED: "1"
       GO_BINARY: go
@@ -233,6 +236,12 @@ jobs:
         # in-app updater downloads and swaps over the install directory.
         run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe :packager:packageWindowsAppImageZip "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:RELEASE_VERSION"
 
+      - name: Package Linux installer
+        if: runner.os == 'Linux'
+        working-directory: app
+        # packageDeb = the .deb the in-app updater downloads and reinstalls via the package manager.
+        run: ./gradlew --no-daemon -p ../installer :packager:packageDeb -Ptimeboxxing.javaEnv="${JAVA_ENV}" -Ptimeboxxing.packageVersion="${PACKAGE_VERSION}" -Ptimeboxxing.appVersion="${RELEASE_VERSION}"
+
       - name: Dump packaging logs on failure
         if: failure()
         shell: bash
@@ -271,6 +280,20 @@ jobs:
             throw "No Windows app-image zip found."
           }
           Copy-Item $zip.FullName "release-assets\Timeboxxing-$($env:RELEASE_TAG)-Windows-${{ matrix.arch }}-app-image.zip"
+
+      - name: Collect Linux installer
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p release-assets
+          # The asset name must end with "-Linux-<arch>.deb" so DesktopAppUpdater.assetDownloadUrl
+          # matches it (arch is x86_64/aarch64, matching the updater's archLabel).
+          artifact="$(find installer/packager/build/compose/binaries/main/deb -type f -name "*.deb" | head -n 1)"
+          if [ -z "${artifact}" ]; then
+            echo "No DEB artifact found." >&2
+            exit 1
+          fi
+
+          cp "${artifact}" "release-assets/Timeboxxing-${RELEASE_TAG}-Linux-${{ matrix.arch }}.deb"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7

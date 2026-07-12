@@ -23,6 +23,7 @@ jobs:
         os:
           - macos-15
           - windows-2025
+          - ubuntu-latest
     env:
       CGO_ENABLED: "1"
       GO_BINARY: go
@@ -81,6 +82,11 @@ jobs:
         # in-app updater downloads and swaps over the install directory.
         run: .\gradlew.bat --no-daemon -p ..\installer :packager:packageExe :packager:packageWindowsAppImageZip "-Ptimeboxxing.javaEnv=$env:JAVA_ENV" "-Ptimeboxxing.packageVersion=$env:PACKAGE_VERSION" "-Ptimeboxxing.appVersion=$env:APP_VERSION"
 
+      - name: Package Linux installer
+        if: runner.os == 'Linux'
+        working-directory: app
+        run: ./gradlew --no-daemon -p ../installer :packager:packageDeb -Ptimeboxxing.javaEnv="${JAVA_ENV}" -Ptimeboxxing.packageVersion="${PACKAGE_VERSION}" -Ptimeboxxing.appVersion="${APP_VERSION}"
+
       - name: Dump packaging logs on failure
         if: failure()
         shell: bash
@@ -105,5 +111,14 @@ jobs:
           path: |
             installer/packager/build/compose/binaries/main/exe/*.exe
             installer/packager/build/compose/binaries/main/app-image/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Linux installer
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-linux
+          path: installer/packager/build/compose/binaries/main/deb/*.deb
           if-no-files-found: error
           retention-days: 14

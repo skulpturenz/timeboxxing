@@ -4,44 +4,42 @@ package platform
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
 )
 
-type linuxTracker struct {
-	cfg  Config
-	mu   sync.Mutex
-	conn *xgb.Conn
-
-	// Cached X11 atoms – interned once after connection.
-	root        xproto.Window
-	atomActive  xproto.Atom // _NET_ACTIVE_WINDOW
-	atomWMName  xproto.Atom // _NET_WM_NAME (UTF-8)
-	atomWMNameL xproto.Atom // WM_NAME (legacy Latin-1)
-	atomWMClass xproto.Atom // WM_CLASS
-	atomWMPID   xproto.Atom // _NET_WM_PID
-	atomUTF8    xproto.Atom // UTF8_STRING
-	atomsReady  bool
+// linuxBackend is the internal abstraction each Linux windowing backend
+// (X11, wlr, KDE plasma, GNOME) implements. The exported linuxTracker wraps the
+// selected backend and applies the shared ctx/timestamp/finalize handling.
+type linuxBackend interface {
+	// poll returns the current foreground window. Event-driven Wayland
+	// backends return a cached snapshot; the X11 backend queries synchronously.
+	poll(now time.Time) (WindowInfo, error)
+	permissions() []PermissionStatus
+	close()
 }
 
-// New returns the Linux Tracker implementation.
+type linuxTracker struct {
+	cfg     Config
+	backend linuxBackend
+}
+
+// New returns the Linux Tracker implementation, selecting a windowing backend
+// appropriate for the current session (X11 or a supported Wayland compositor).
 func New(ctx context.Context, cfg Config) (Tracker, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	t := &linuxTracker{cfg: cfg}
-	// Attempt an initial connection; non-fatal if it fails (will retry on first Poll).
-	_ = t.ensureConn()
-	return t, nil
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	backend := selectLinuxBackend(ctx, cfg, logger)
+	return &linuxTracker{cfg: cfg, backend: backend}, nil
 }
 
 func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
@@ -49,169 +47,92 @@ func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
 		return WindowInfo{}, err
 	}
 	now := time.Now()
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if err := t.ensureConn(); err != nil {
-		return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone},
-			fmt.Errorf("X11 connection unavailable: %w", err)
-	}
-
-	winID, err := t.getActiveWindowID()
+	info, err := t.backend.poll(now)
 	if err != nil {
-		t.conn = nil // force reconnect on next poll
-		return t.waylandFallback(now), nil
-	}
-
-	title := t.getWindowTitle(winID)
-	windowClass := t.getWindowClass(winID)
-	pid := t.getWindowPID(winID)
-
-	appName, appPath := "", ""
-	if pid > 0 {
-		appName = procComm(pid)
-		appPath = procExe(pid)
-	}
-	identity := normalizeLinuxAppIdentity(appName, appPath, windowClass, title)
-
-	info := WindowInfo{
-		AppName:       identity.AppName,
-		AppIdentifier: identity.AppIdentifier,
-		AppPath:       identity.AppPath,
-		PID:           int32(pid),
-		WindowTitle:   title,
-		TitleSource:   TitleSourceWindowAPI,
-		Timestamp:     now,
+		return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, err
 	}
 	info, _ = FinalizeWindowInfo(info)
 	return info, nil
 }
 
 func (t *linuxTracker) Permissions() []PermissionStatus {
-	// X11 window tracking requires no special permissions.
-	return []PermissionStatus{
-		{Name: "X11 Display", Granted: os.Getenv("DISPLAY") != "", HowToGrant: "set the DISPLAY environment variable (e.g. DISPLAY=:0)"},
-	}
+	return t.backend.permissions()
 }
 
-// ensureConn opens (or re-opens) the X11 connection and interns atoms.
-// Must be called with t.mu held.
-func (t *linuxTracker) ensureConn() error {
-	if t.conn != nil {
-		return nil
-	}
-	conn, err := xgb.NewConn()
-	if err != nil {
-		return err
-	}
-	t.conn = conn
-	t.atomsReady = false
-	setup := xproto.Setup(conn)
-	t.root = setup.DefaultScreen(conn).Root
-	return t.internAtoms()
-}
-
-func (t *linuxTracker) internAtoms() error {
-	type atomReq struct {
-		name string
-		dest *xproto.Atom
-	}
-	reqs := []atomReq{
-		{"_NET_ACTIVE_WINDOW", &t.atomActive},
-		{"_NET_WM_NAME", &t.atomWMName},
-		{"WM_NAME", &t.atomWMNameL},
-		{"WM_CLASS", &t.atomWMClass},
-		{"_NET_WM_PID", &t.atomWMPID},
-		{"UTF8_STRING", &t.atomUTF8},
-	}
-	// Send all intern-atom requests first, then collect replies (pipeline).
-	cookies := make([]xproto.InternAtomCookie, len(reqs))
-	for i, r := range reqs {
-		cookies[i] = xproto.InternAtom(t.conn, true, uint16(len(r.name)), r.name)
-	}
-	for i, r := range reqs {
-		reply, err := cookies[i].Reply()
-		if err != nil {
-			return fmt.Errorf("intern atom %s: %w", r.name, err)
+// selectLinuxBackend picks the best available backend for the current session.
+// Wayland sessions are tried first with the compositor's toplevel protocols;
+// X11 (including XWayland) uses EWMH; anything else degrades gracefully.
+func selectLinuxBackend(ctx context.Context, cfg Config, logger *slog.Logger) linuxBackend {
+	if isWaylandSession() {
+		if b := newWaylandForegroundBackend(cfg, logger); b != nil {
+			return b
 		}
-		*r.dest = reply.Atom
+		if desktopIsGNOME() {
+			logger.InfoContext(ctx, "using GNOME Shell extension backend for Wayland foreground tracking")
+			return newGnomeBackend(cfg, logger)
+		}
+		// Some GNOME/obscure compositors expose no focus protocol. Try XWayland
+		// (which only sees X11 clients) before giving up entirely.
+		if os.Getenv("DISPLAY") != "" {
+			if b := newX11Backend(); b != nil {
+				logger.WarnContext(ctx, "no native Wayland focus protocol available; falling back to XWayland (native Wayland windows will not be tracked)")
+				return b
+			}
+		}
+		logger.WarnContext(ctx, "no supported Wayland window protocol and no X11 fallback; foreground tracking disabled",
+			"desktop", os.Getenv("XDG_CURRENT_DESKTOP"))
+		return newDegradedBackend("this Wayland compositor exposes no supported active-window protocol")
 	}
-	t.atomsReady = true
-	return nil
+
+	if b := newX11Backend(); b != nil {
+		return b
+	}
+	logger.WarnContext(ctx, "no X11 display reachable; foreground tracking disabled")
+	return newDegradedBackend("no X11 display reachable (set DISPLAY, or start a supported Wayland compositor)")
 }
 
-func (t *linuxTracker) getActiveWindowID() (xproto.Window, error) {
-	reply, err := xproto.GetProperty(
-		t.conn, false, t.root, t.atomActive,
-		xproto.GetPropertyTypeAny, 0, 1,
-	).Reply()
-	if err != nil {
-		return 0, err
+// isWaylandSession reports whether the process is running under a Wayland
+// compositor, preferring native Wayland over XWayland when both are present.
+func isWaylandSession() bool {
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		return true
 	}
-	if len(reply.Value) < 4 {
-		return 0, fmt.Errorf("_NET_ACTIVE_WINDOW: short reply")
-	}
-	return xproto.Window(binary.LittleEndian.Uint32(reply.Value)), nil
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("XDG_SESSION_TYPE")), "wayland")
 }
 
-func (t *linuxTracker) getWindowTitle(win xproto.Window) string {
-	// Try _NET_WM_NAME (UTF-8) first.
-	reply, err := xproto.GetProperty(
-		t.conn, false, win, t.atomWMName,
-		t.atomUTF8, 0, (1<<32)-1,
-	).Reply()
-	if err == nil && len(reply.Value) > 0 {
-		return string(reply.Value)
+// desktopIsGNOME reports whether the current desktop is GNOME (or a GNOME-based
+// shell), which requires the companion Shell extension for focus tracking.
+func desktopIsGNOME() bool {
+	for _, key := range []string{"XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"} {
+		if strings.Contains(strings.ToLower(os.Getenv(key)), "gnome") {
+			return true
+		}
 	}
-	// Fallback to legacy WM_NAME (Latin-1 / compound text).
-	reply, err = xproto.GetProperty(
-		t.conn, false, win, t.atomWMNameL,
-		xproto.GetPropertyTypeAny, 0, (1<<32)-1,
-	).Reply()
-	if err == nil && len(reply.Value) > 0 {
-		// Strip non-printable bytes and return as string.
-		return sanitiseLatin1(reply.Value)
-	}
-	return ""
+	return false
 }
 
-func (t *linuxTracker) getWindowClass(win xproto.Window) string {
-	reply, err := xproto.GetProperty(
-		t.conn, false, win, t.atomWMClass,
-		xproto.GetPropertyTypeAny, 0, (1<<32)-1,
-	).Reply()
-	if err != nil || len(reply.Value) == 0 {
-		return ""
-	}
-	return parseWMClass(reply.Value)
+// degradedBackend is used when no window protocol is available. It never
+// reports a foreground window but keeps the app running and surfaces the reason
+// through Permissions().
+type degradedBackend struct {
+	reason string
 }
 
-func (t *linuxTracker) getWindowPID(win xproto.Window) uint32 {
-	reply, err := xproto.GetProperty(
-		t.conn, false, win, t.atomWMPID,
-		xproto.GetPropertyTypeAny, 0, 1,
-	).Reply()
-	if err != nil || len(reply.Value) < 4 {
-		return 0
-	}
-	return binary.LittleEndian.Uint32(reply.Value)
+func newDegradedBackend(reason string) *degradedBackend { return &degradedBackend{reason: reason} }
+
+func (d *degradedBackend) poll(now time.Time) (WindowInfo, error) {
+	return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, nil
 }
 
-// waylandFallback tries xdotool when X11 is unavailable.
-func (t *linuxTracker) waylandFallback(now time.Time) WindowInfo {
-	out, err := exec.Command("xdotool", "getactivewindow", "getwindowname").Output()
-	info := WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}
-	if err != nil {
-		return info
+func (d *degradedBackend) permissions() []PermissionStatus {
+	return []PermissionStatus{
+		{Name: "Active-window protocol", Granted: false, HowToGrant: d.reason},
 	}
-	title := strings.TrimSpace(string(out))
-	info.WindowTitle = title
-	info.AppName = title
-	info.AppIdentifier = title
-	info.TitleSource = TitleSourceWindowAPI
-	info, _ = FinalizeWindowInfo(info)
-	return info
 }
+
+func (d *degradedBackend) close() {}
+
+// --- shared Linux app-identity helpers (used by every backend) ---
 
 type linuxAppIdentity struct {
 	AppName       string
