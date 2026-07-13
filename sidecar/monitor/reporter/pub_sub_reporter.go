@@ -88,6 +88,9 @@ func (p *PubSubReporter) publish(incoming sessionnew.ForegroundProcess) {
 	for _, ch := range p.subscribers {
 		select {
 		case ch <- incoming:
+		// monitor: drops old
+		// reporter: drops incoming
+		// consider: if incoming keeps changing then it's noise
 		default:
 			slog.Error("dropped") // TODO
 		}

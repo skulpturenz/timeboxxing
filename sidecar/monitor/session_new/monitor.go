@@ -77,7 +77,7 @@ func New(options MonitorOptions) *Monitor {
 }
 
 func (m *Monitor) Poll(ctx context.Context, tracker platform.Tracker) {
-	ticker := time.NewTicker(200 * time.Millisecond)
+	ticker := time.NewTicker(m.pollInterval * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
