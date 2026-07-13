@@ -13,6 +13,7 @@ require (
 	github.com/goptics/sqliteq v0.2.3
 	github.com/goptics/varmq v1.7.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
+	github.com/jonoton/go-ringbuffer v1.6.0
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/negrel/assert v0.5.0
