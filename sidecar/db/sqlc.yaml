@@ -18,6 +18,18 @@ sql:
             go_type:
               type: string
               pointer: true
+          - column: foreground_process_metadata.latitude
+            go_type:
+              type: float64
+              pointer: true
+          - column: foreground_process_metadata.longitude
+            go_type:
+              type: float64
+              pointer: true
+          - column: foreground_process_metadata.public_ip
+            go_type:
+              type: string
+              pointer: true
   - engine: sqlite
     schema: schema
     queries: write_queries
@@ -33,6 +45,18 @@ sql:
               type: string
               pointer: true
           - column: foreground_process_metadata.cdp_url
+            go_type:
+              type: string
+              pointer: true
+          - column: foreground_process_metadata.latitude
+            go_type:
+              type: float64
+              pointer: true
+          - column: foreground_process_metadata.longitude
+            go_type:
+              type: float64
+              pointer: true
+          - column: foreground_process_metadata.public_ip
             go_type:
               type: string
               pointer: true

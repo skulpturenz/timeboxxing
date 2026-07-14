@@ -26,6 +26,14 @@ type WindowInfo struct {
 	WindowTitle   string
 	TitleSource   TitleSource
 	Timestamp     time.Time
+	// Latitude and Longitude carry the user's current location when the OS
+	// exposes it (macOS/Windows). Nil when unavailable (no fix yet, permission
+	// denied, or unsupported platform) — distinct from a literal 0,0.
+	Latitude  *float64
+	Longitude *float64
+	// PublicIP is the machine's current public IP address, resolved via an
+	// external echo service. Nil until the first successful lookup.
+	PublicIP *string
 }
 
 const UnknownAppName = "Unknown app"

@@ -5,5 +5,8 @@ CREATE TABLE IF NOT EXISTS foreground_process_metadata (
   idle BOOLEAN NOT NULL DEFAULT 0,
   tab TEXT,
   cdp_url TEXT,
+  latitude REAL,
+  longitude REAL,
+  public_ip TEXT,
   CONSTRAINT unique_foreground_process_id UNIQUE (foreground_process_id)
 );

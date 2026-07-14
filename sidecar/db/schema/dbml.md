@@ -26,6 +26,9 @@ TABLE foreground_process_metadata {
   idle boolean [default: FALSE]
   tab TEXT
   cdp_url TEXT // chrome dev tools protocol
+  latitude REAL
+  longitude REAL
+  public_ip TEXT
 
   indexes {
     foreground_process_id [unique, name: 'unique_foreground_process_id']

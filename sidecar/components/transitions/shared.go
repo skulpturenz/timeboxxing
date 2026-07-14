@@ -53,6 +53,9 @@ type RecordTransitionEventParams struct {
 	Tab                   *string
 	Idle                  bool
 	CDPURL                *string
+	Latitude              *float64
+	Longitude             *float64
+	PublicIP              *string
 }
 
 type Subscription struct {
