@@ -11,10 +11,11 @@ const (
 	Unknown OperatingSystem = iota
 	MacOS
 	Windows
+	Linux
 )
 
 func (os OperatingSystem) String() string {
-	return []string{"unknown", "macos", "windows"}[os]
+	return []string{"unknown", "macos", "windows", "linux"}[os]
 }
 
 func Parse(s string) (OperatingSystem, error) {
@@ -23,6 +24,8 @@ func Parse(s string) (OperatingSystem, error) {
 		return MacOS, nil
 	case "windows":
 		return Windows, nil
+	case "linux":
+		return Linux, nil
 	}
 
 	return Unknown, fmt.Errorf("unrecognized operating system: %s", s)
