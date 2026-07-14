@@ -8,5 +8,5 @@ import (
 
 type Reporter interface {
 	From(ctx context.Context, stream *ringbuffer.RingBuffer[ForegroundProcess]) Reporter
-	Publish(incoming ForegroundProcess)
+	Subscribe(id string) <-chan ForegroundProcess
 }
