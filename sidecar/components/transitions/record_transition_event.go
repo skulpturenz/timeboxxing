@@ -57,6 +57,9 @@ func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransi
 			Idle:                params.Idle,
 			Tab:                 params.Tab,
 			CdpUrl:              params.CDPURL,
+			Latitude:            params.Latitude,
+			Longitude:           params.Longitude,
+			PublicIp:            params.PublicIP,
 		}); err != nil {
 			return fmt.Errorf("create foreground process metadata: %w", err)
 		}

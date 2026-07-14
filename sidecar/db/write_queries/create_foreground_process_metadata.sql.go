@@ -10,8 +10,8 @@ import (
 )
 
 const createForegroundProcessMetadata = `-- name: CreateForegroundProcessMetadata :exec
-INSERT INTO foreground_process_metadata (foreground_process_id, browser, idle, tab, cdp_url)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO foreground_process_metadata (foreground_process_id, browser, idle, tab, cdp_url, latitude, longitude, public_ip)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(foreground_process_id) DO NOTHING
 `
 
@@ -21,6 +21,9 @@ type CreateForegroundProcessMetadataParams struct {
 	Idle                bool
 	Tab                 *string
 	CdpUrl              *string
+	Latitude            *float64
+	Longitude           *float64
+	PublicIp            *string
 }
 
 func (q *Queries) CreateForegroundProcessMetadata(ctx context.Context, arg CreateForegroundProcessMetadataParams) error {
@@ -30,6 +33,9 @@ func (q *Queries) CreateForegroundProcessMetadata(ctx context.Context, arg Creat
 		arg.Idle,
 		arg.Tab,
 		arg.CdpUrl,
+		arg.Latitude,
+		arg.Longitude,
+		arg.PublicIp,
 	)
 	return err
 }

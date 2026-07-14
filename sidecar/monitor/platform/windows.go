@@ -69,6 +69,9 @@ func New(ctx context.Context, cfg Config) (Tracker, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// Kick off the background WinRT location provider; Poll reads its cache
+	// non-blockingly. No-op beyond the first call.
+	startWindowsLocation()
 	return &windowsTracker{cfg: cfg}, nil
 }
 
@@ -117,7 +120,7 @@ func (t *windowsTracker) Poll(ctx context.Context) (WindowInfo, error) {
 		Timestamp:     now,
 	}
 	info, _ = FinalizeWindowInfo(info)
-	return info, nil
+	return attachEnvironment(info), nil
 }
 
 func queryFullProcessImageName(processHandle uintptr) string {
@@ -168,8 +171,14 @@ func windowsRuntimeExecutableName(exe string) (string, bool) {
 }
 
 func (t *windowsTracker) Permissions() []PermissionStatus {
-	// GetForegroundWindow requires no special permissions on Windows.
+	// GetForegroundWindow requires no special permissions on Windows; location
+	// does (WinRT Geolocator access grant).
 	return []PermissionStatus{
 		{Name: "None required", Granted: true, HowToGrant: ""},
+		{
+			Name:       "Location Services",
+			Granted:    windowsLocationGranted(),
+			HowToGrant: "Settings → Privacy & security → Location → enable location access for this app",
+		},
 	}
 }
