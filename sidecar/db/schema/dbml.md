@@ -139,6 +139,19 @@ Table applications {
   }
 }
 
+Table application_categories {
+  id BIGINT [pk] // auto increment
+  category_id BIGINT
+  code TEXT [NOT NULL]
+  label TEXT [NOT NULL]
+}
+
+Table application_application_categories_map {
+  id BIGINT [pk] // auto increment
+  application_id BIGINT [NOT NULL]
+  application_categories_id BIGINT [NOT NULL]
+}
+
 Table operating_systems {
   id SMALLINT [pk] // auto increment
   code TEXT [NOT NULL]
@@ -212,4 +225,6 @@ Ref: ledger_item_timeline_entries.timeline_id > timeline.id [delete: cascade]
 Ref: project_costs.ledger_items_id > ledger_items.id [delete: cascade]
 Ref: project_costs.projects_id > projects.id [delete: cascade]
 Ref: project_details.projects_id - projects.id [delete: cascade]
+Ref: application_application_categories_map.application_id > applications.id [delete: cascade]
+Ref: application_application_categories_map.application_categories_id > application_categories.id [delete: cascade]
 ```

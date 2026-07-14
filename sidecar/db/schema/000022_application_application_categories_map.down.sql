@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS application_application_categories_map;
