@@ -11,13 +11,19 @@ import (
 
 type PubSubReporter struct {
 	mu          sync.Mutex
-	subscribers []chan sessionnew.ForegroundProcess
+	subscribers []*subscriber
 	closed      bool
-	current     *sessionnew.ForegroundProcess
+}
+
+type subscriber struct {
+	id        string
+	ch        chan<- sessionnew.ForegroundProcess
+	current   *sessionnew.ForegroundProcess
+	dropCount int
 }
 
 func From(ctx context.Context, stream *ringbuffer.RingBuffer[sessionnew.ForegroundProcess]) (*PubSubReporter, func()) {
-	subscribers := []chan sessionnew.ForegroundProcess{}
+	subscribers := []*subscriber{}
 
 	reporter := PubSubReporter{
 		subscribers: subscribers,
@@ -33,8 +39,8 @@ func From(ctx context.Context, stream *ringbuffer.RingBuffer[sessionnew.Foregrou
 
 		reporter.closed = true
 
-		for _, ch := range reporter.subscribers {
-			close(ch)
+		for _, s := range reporter.subscribers {
+			close(s.ch)
 		}
 	}
 
@@ -42,7 +48,6 @@ func From(ctx context.Context, stream *ringbuffer.RingBuffer[sessionnew.Foregrou
 		for {
 			select {
 			case <-ctx.Done():
-				stream.Stop()
 				cleanup()
 				return
 			case item := <-stream.GetChan():
@@ -54,7 +59,7 @@ func From(ctx context.Context, stream *ringbuffer.RingBuffer[sessionnew.Foregrou
 	return &reporter, cleanup
 }
 
-func (p *PubSubReporter) Subscribe() <-chan sessionnew.ForegroundProcess {
+func (p *PubSubReporter) Subscribe(id string) <-chan sessionnew.ForegroundProcess {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -65,7 +70,10 @@ func (p *PubSubReporter) Subscribe() <-chan sessionnew.ForegroundProcess {
 	// channel size: there can only be 1 foreground process at a time
 	// order: can be processed out of order, we have timestamps
 	c := make(chan sessionnew.ForegroundProcess, 1)
-	p.subscribers = append(p.subscribers, c)
+	p.subscribers = append(p.subscribers, &subscriber{
+		id: id,
+		ch: c,
+	})
 
 	return c
 }
@@ -78,20 +86,21 @@ func (p *PubSubReporter) publish(incoming sessionnew.ForegroundProcess) {
 		return
 	}
 
-	isPublished := isDuplicate(p.current, incoming)
-	current := incoming
-	p.current = &current
-	if isPublished {
-		return
-	}
+	for _, s := range p.subscribers {
+		shouldSkip := isReported(s.current, incoming)
+		current := incoming
+		s.current = &current
+		if shouldSkip {
+			continue
+		}
 
-	for _, ch := range p.subscribers {
 		select {
-		case ch <- incoming:
+		case s.ch <- incoming:
 		// monitor: drops old
 		// reporter: drops incoming
 		// consider: if incoming keeps changing then it's noise
 		default:
+			s.dropCount += 1
 			slog.Error("dropped") // TODO
 		}
 	}

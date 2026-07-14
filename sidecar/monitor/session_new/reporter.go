@@ -1,6 +1,12 @@
 package sessionnew
 
+import (
+	"context"
+
+	"github.com/jonoton/go-ringbuffer"
+)
+
 type Reporter interface {
-	Subscribe() <-chan ForegroundProcess
+	From(ctx context.Context, stream *ringbuffer.RingBuffer[ForegroundProcess]) Reporter
 	Publish(incoming ForegroundProcess)
 }

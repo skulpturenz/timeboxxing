@@ -2,7 +2,7 @@ package reporter
 
 import sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 
-func isDuplicate(current *sessionnew.ForegroundProcess, incoming sessionnew.ForegroundProcess) bool {
+func isReported(current *sessionnew.ForegroundProcess, incoming sessionnew.ForegroundProcess) bool {
 	if current == nil {
 		return false
 	}
