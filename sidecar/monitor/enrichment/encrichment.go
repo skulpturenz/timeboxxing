@@ -1,4 +1,4 @@
-package encrichment
+package enrichment
 
 import (
 	"context"
@@ -20,5 +20,17 @@ func Pipe(enrichers ...Enricher) Enricher {
 		}
 
 		return acc, some
+	}
+}
+
+func Or(enrichers ...Enricher) Enricher {
+	return func(ctx context.Context, foregroundProcess sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+		for _, fn := range enrichers {
+			if enriched, ok := fn(ctx, foregroundProcess); ok {
+				return enriched, ok
+			}
+		}
+
+		return foregroundProcess, false
 	}
 }

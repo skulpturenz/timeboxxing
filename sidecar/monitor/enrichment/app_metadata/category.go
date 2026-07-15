@@ -1,4 +1,4 @@
-package app_metadata
+package appmetadata
 
 import "strings"
 
@@ -47,30 +47,30 @@ func CategoryLabel(code string) string {
 // Keys are stored without the "public.app-category." prefix (stripped before
 // lookup). See https://developer.apple.com/documentation/bundleresources/information-property-list/lsapplicationcategorytype
 var appleCategoryCodes = map[string]string{
-	"developer-tools":   CategoryDevelopment,
-	"productivity":      CategoryProductivity,
-	"business":          CategoryBusiness,
-	"finance":           CategoryBusiness,
-	"graphics-design":   CategoryGraphicsDesign,
-	"photography":       CategoryGraphicsDesign,
-	"video":             CategoryMedia,
-	"music":             CategoryMedia,
-	"entertainment":     CategoryMedia,
-	"utilities":         CategoryUtilities,
-	"social-networking": CategorySocial,
-	"education":         CategoryEducation,
-	"reference":         CategoryEducation,
-	"medical":           CategoryOther,
-	"news":              CategoryOther,
-	"lifestyle":         CategoryOther,
-	"travel":            CategoryOther,
-	"weather":           CategoryOther,
-	"sports":            CategoryOther,
+	"developer-tools":    CategoryDevelopment,
+	"productivity":       CategoryProductivity,
+	"business":           CategoryBusiness,
+	"finance":            CategoryBusiness,
+	"graphics-design":    CategoryGraphicsDesign,
+	"photography":        CategoryGraphicsDesign,
+	"video":              CategoryMedia,
+	"music":              CategoryMedia,
+	"entertainment":      CategoryMedia,
+	"utilities":          CategoryUtilities,
+	"social-networking":  CategorySocial,
+	"education":          CategoryEducation,
+	"reference":          CategoryEducation,
+	"medical":            CategoryOther,
+	"news":               CategoryOther,
+	"lifestyle":          CategoryOther,
+	"travel":             CategoryOther,
+	"weather":            CategoryOther,
+	"sports":             CategoryOther,
 	"healthcare-fitness": CategoryOther,
-	"food-and-drink":    CategoryOther,
-	"shopping":          CategoryOther,
-	"navigation":        CategoryOther,
-	"books":             CategoryEducation,
+	"food-and-drink":     CategoryOther,
+	"shopping":           CategoryOther,
+	"navigation":         CategoryOther,
+	"books":              CategoryEducation,
 }
 
 // CategoryFromApple maps an LSApplicationCategoryType value to a normalized
@@ -113,14 +113,14 @@ var freedesktopMainCategories = map[string]string{
 // Network entry or otherwise carry a strong signal; checked before the main
 // table so e.g. Network;InstantMessaging resolves to communication.
 var freedesktopExtraCategories = map[string]string{
-	"webbrowser":      CategoryWebBrowsing,
+	"webbrowser":       CategoryWebBrowsing,
 	"instantmessaging": CategoryCommunication,
-	"chat":            CategoryCommunication,
-	"email":           CategoryCommunication,
-	"telephony":       CategoryCommunication,
-	"videoconference": CategoryCommunication,
-	"news":            CategoryOther,
-	"ide":             CategoryDevelopment,
+	"chat":             CategoryCommunication,
+	"email":            CategoryCommunication,
+	"telephony":        CategoryCommunication,
+	"videoconference":  CategoryCommunication,
+	"news":             CategoryOther,
+	"ide":              CategoryDevelopment,
 }
 
 // CategoryFromFreedesktop maps a `Categories=` value (semicolon-separated

@@ -1,4 +1,4 @@
-package app_metadata
+package appmetadata
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 // KeyMetadata is the well-known key under which enrichers stash the typed
 // Metadata payload inside ForegroundProcess.Enrichments. Consumers read it
 // with GetMetadata instead of poking the map[string]any directly.
-const KeyMetadata = "app_metadata"
+const KeyMetadata = "appmetadata"
 
 // Enrichment source tags, recorded on Metadata.Source so downstream code can
 // tell where a field came from (local OS metadata vs a network feed).

@@ -1,4 +1,4 @@
-package app_metadata
+package appmetadata
 
 import (
 	"context"

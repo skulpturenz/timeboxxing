@@ -1,4 +1,4 @@
-package app_metadata
+package appmetadata
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/encrichment"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
@@ -154,7 +154,7 @@ func TestFold_MergesLocalThenFeed(t *testing.T) {
 		return setMetadata(fp, Metadata{FriendlyName: "WRONG", Description: "desc", CategoryCode: CategoryMedia, Source: SourceFlathub})
 	}
 
-	out, ok := encrichment.Fold(local, feed)(context.Background(), fpWithID("org.videolan.VLC"))
+	out, ok := enrichment.Pipe(local, feed)(context.Background(), fpWithID("org.videolan.VLC"))
 	if !ok {
 		t.Fatal("expected combined enrichment")
 	}

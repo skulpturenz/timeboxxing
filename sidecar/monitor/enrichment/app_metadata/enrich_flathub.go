@@ -1,4 +1,4 @@
-package app_metadata
+package appmetadata
 
 import (
 	"context"
@@ -26,7 +26,7 @@ type flathubAppstream struct {
 // (fill-if-empty), so it is a fallback. When enabled is false it is a no-op.
 // Compose it after the local enricher and wrap with Memoized:
 //
-//	encrichment.Fold(Memoized(LocalMetadata), Memoized(Flathub(cfg.Feeds)))
+//	enrichment.Pipe(Memoized(LocalMetadata), Memoized(Flathub(cfg.Feeds)))
 func Flathub(enabled bool) Enricher {
 	if !enabled {
 		return noopEnricher

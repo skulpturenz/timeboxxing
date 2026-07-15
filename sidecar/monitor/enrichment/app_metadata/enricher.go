@@ -1,18 +1,18 @@
-package app_metadata
+package appmetadata
 
 import (
 	"context"
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/memo"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/encrichment"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
 // Enricher is the parent package's enricher type, re-exported so this package's
-// enrichers can be typed and composed (with encrichment.Fold) without importing
-// encrichment at every call site.
-type Enricher = encrichment.Enricher
+// enrichers can be typed and composed (with enrichment.Pipe) without importing
+// enrichment at every call site.
+type Enricher = enrichment.Enricher
 
 // App metadata changes rarely, so memoize it for a good while rather than
 // re-parsing a bundle/exe (or re-hitting a feed) on every ~200ms poll.

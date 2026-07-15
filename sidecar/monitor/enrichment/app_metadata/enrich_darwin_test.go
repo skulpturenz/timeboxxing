@@ -1,6 +1,6 @@
 //go:build darwin
 
-package app_metadata
+package appmetadata
 
 import (
 	"context"
@@ -62,10 +62,10 @@ func TestDarwinLocalMetadata_RealBundle(t *testing.T) {
 
 func TestBundleRoot(t *testing.T) {
 	cases := map[string]string{
-		"/Applications/Foo.app":                        "/Applications/Foo.app",
-		"/Applications/Foo.app/Contents/MacOS/foo":     "/Applications/Foo.app",
-		"/usr/local/bin/somebinary":                    "",
-		"":                                             "",
+		"/Applications/Foo.app":                    "/Applications/Foo.app",
+		"/Applications/Foo.app/Contents/MacOS/foo": "/Applications/Foo.app",
+		"/usr/local/bin/somebinary":                "",
+		"":                                         "",
 	}
 	for in, want := range cases {
 		if got := bundleRoot(in); got != want {

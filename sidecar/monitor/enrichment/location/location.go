@@ -9,7 +9,7 @@ package location
 import (
 	"context"
 
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/encrichment"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
@@ -69,7 +69,7 @@ func Permissions(provider LocationProvider) []Permission {
 // dimension. It is NOT memoized: the values are ambient and read straight from
 // each provider's cache on every poll. Returns (fp, false) when neither provider
 // has anything to contribute.
-func Enrich(location LocationProvider, publicIP PublicIPProvider) encrichment.Enricher {
+func Enrich(location LocationProvider, publicIP PublicIPProvider) enrichment.Enricher {
 	return func(_ context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
 		env := Environment{}
 		changed := false
@@ -98,7 +98,7 @@ func Enrich(location LocationProvider, publicIP PublicIPProvider) encrichment.En
 
 // Default composes Enrich with the platform's default location provider and a
 // fresh public-IP provider. This is the enricher most callers want.
-func Default() encrichment.Enricher {
+func Default() enrichment.Enricher {
 	return Enrich(DefaultLocationProvider(), NewPublicIPProvider())
 }
 

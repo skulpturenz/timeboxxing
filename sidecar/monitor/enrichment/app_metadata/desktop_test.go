@@ -1,4 +1,4 @@
-package app_metadata
+package appmetadata
 
 import (
 	"path/filepath"
@@ -72,14 +72,14 @@ func TestExecBase(t *testing.T) {
 
 func TestCategoryFromFreedesktop(t *testing.T) {
 	cases := map[string]string{
-		"AudioVideo;Player;":            CategoryMedia,
-		"Development;IDE;":              CategoryDevelopment,
-		"Network;WebBrowser;":          CategoryWebBrowsing,
-		"Network;InstantMessaging;":    CategoryCommunication, // refining token wins over Network
-		"Office;":                      CategoryProductivity,
-		"Game;":                        CategoryGames,
-		"Settings;System;":             CategorySystem,
-		"NonsenseCategory;":            "",
+		"AudioVideo;Player;":        CategoryMedia,
+		"Development;IDE;":          CategoryDevelopment,
+		"Network;WebBrowser;":       CategoryWebBrowsing,
+		"Network;InstantMessaging;": CategoryCommunication, // refining token wins over Network
+		"Office;":                   CategoryProductivity,
+		"Game;":                     CategoryGames,
+		"Settings;System;":          CategorySystem,
+		"NonsenseCategory;":         "",
 	}
 	for cats, want := range cases {
 		if got, _ := CategoryFromFreedesktop(cats); got != want {
@@ -90,13 +90,13 @@ func TestCategoryFromFreedesktop(t *testing.T) {
 
 func TestCategoryFromApple(t *testing.T) {
 	cases := map[string]string{
-		"public.app-category.developer-tools": CategoryDevelopment,
-		"public.app-category.productivity":    CategoryProductivity,
-		"public.app-category.games":           CategoryGames,
-		"public.app-category.action-games":    CategoryGames,
+		"public.app-category.developer-tools":   CategoryDevelopment,
+		"public.app-category.productivity":      CategoryProductivity,
+		"public.app-category.games":             CategoryGames,
+		"public.app-category.action-games":      CategoryGames,
 		"public.app-category.social-networking": CategorySocial,
-		"public.app-category.unknown-thing":   "",
-		"":                                    "",
+		"public.app-category.unknown-thing":     "",
+		"":                                      "",
 	}
 	for uti, want := range cases {
 		if got, _ := CategoryFromApple(uti); got != want {
