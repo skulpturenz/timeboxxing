@@ -38,7 +38,7 @@ func (m *Memoize) Do(key string, fn func() (any, error)) (any, error, bool) {
 
 	v, err, _ := m.group.Do(key, func() (any, error) {
 		v, err := fn()
-		if err != nil {
+		if err == nil {
 			m.cache.Set(key, v, cache.DefaultExpiration)
 		}
 
