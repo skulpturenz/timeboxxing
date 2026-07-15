@@ -13,6 +13,7 @@ require (
 	github.com/goptics/sqliteq v0.2.3
 	github.com/goptics/varmq v1.7.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
+	github.com/jackmordaunt/icns/v2 v2.2.7
 	github.com/jonoton/go-ringbuffer v1.6.0
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-sqlite3 v1.14.28
@@ -24,6 +25,7 @@ require (
 	golang.org/x/sys v0.45.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
+	howett.net/plist v1.0.1
 )
 
 require (
@@ -234,6 +236,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/neo4j/neo4j-go-driver v1.8.1-0.20200803113522-b626aa943eba // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
