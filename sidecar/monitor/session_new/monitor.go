@@ -18,6 +18,7 @@ type ForegroundProcess struct {
 	TitleSource   *platform.TitleSource
 	Timestamp     time.Time
 	Idle          bool
+	Enrichments   map[string]any
 }
 
 type MonitorOptions struct {
@@ -116,6 +117,7 @@ func (m *Monitor) tick(ctx context.Context, tracker platform.Tracker) {
 	windowTitle := windowInfo.WindowTitle
 	titleSource := windowInfo.TitleSource
 	timestamp := windowInfo.Timestamp
+	encrichments := map[string]any{}
 
 	item := ForegroundProcess{
 		AppName:       &appName,
@@ -126,6 +128,7 @@ func (m *Monitor) tick(ctx context.Context, tracker platform.Tracker) {
 		TitleSource:   &titleSource,
 		Timestamp:     timestamp,
 		Idle:          false,
+		Enrichments:   encrichments,
 	}
 
 	m.Stream.Add(item)
