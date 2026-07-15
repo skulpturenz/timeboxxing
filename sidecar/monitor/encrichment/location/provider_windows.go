@@ -1,6 +1,6 @@
 //go:build windows
 
-package platform
+package location
 
 import (
 	"log/slog"
@@ -15,17 +15,15 @@ import (
 
 // Windows location capture via the WinRT Windows.Devices.Geolocation.Geolocator.
 //
-// This file stays consistent with windows.go's cgo-free style: it drives WinRT
-// through raw COM vtable calls over golang.org/x/sys/windows syscalls, rather
-// than a cgo C++/WinRT wrapper. A dedicated OS-thread goroutine initializes the
-// multithreaded apartment, activates a Geolocator, requests location access, and
-// polls the position on a long interval, caching each fix under a lock. Poll()
-// reads the cache non-blockingly.
+// Driven through raw COM vtable calls over golang.org/x/sys/windows syscalls
+// (cgo-free). A dedicated OS-thread goroutine initializes the multithreaded
+// apartment, activates a Geolocator, requests location access, and polls the
+// position on a long interval, caching each fix under a lock. Location()/
+// Permission() read the cache non-blockingly.
 //
 // NOTE: the IIDs and vtable indices below are canonical Windows SDK values but
-// have not been runtime-verified on a Windows host in this change — a wrong
-// constant makes a COM call fail and degrades the provider to nil location
-// (never a crash). Validate on Windows per the plan's verification section.
+// have not been runtime-verified on a Windows host — a wrong constant makes a
+// COM call fail and degrades the provider to "no fix" (never a crash).
 
 var (
 	combase                    = windows.NewLazySystemDLL("combase.dll")
@@ -70,49 +68,41 @@ var (
 
 var ptrSize = int(unsafe.Sizeof(uintptr(0)))
 
+// windowsLocationProvider caches the latest WinRT Geolocator fix and access
+// grant. Satisfies LocationProvider.
 type windowsLocationProvider struct {
 	mu       sync.RWMutex
 	lat, lon float64
 	hasFix   bool
 	granted  bool
-
-	start sync.Once
 }
 
-var defaultWindowsLocation windowsLocationProvider
-
-// startWindowsLocation launches the background provider once. Safe to call
-// repeatedly.
-func startWindowsLocation() {
-	defaultWindowsLocation.start.Do(func() {
-		go defaultWindowsLocation.run()
-	})
+// DefaultLocationProvider starts the background WinRT location provider and
+// returns a provider that reads its cache non-blockingly.
+func DefaultLocationProvider() LocationProvider {
+	p := &windowsLocationProvider{}
+	go p.run()
+	return p
 }
 
-// windowsLocation returns the cached fix (nil pointers when none), never
-// blocking on the sensor.
-func windowsLocation() (lat, lon *float64) {
-	defaultWindowsLocation.mu.RLock()
-	defer defaultWindowsLocation.mu.RUnlock()
-	if !defaultWindowsLocation.hasFix {
-		return nil, nil
+func (p *windowsLocationProvider) Location() (float64, float64, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if !p.hasFix {
+		return 0, 0, false
 	}
-	la, lo := defaultWindowsLocation.lat, defaultWindowsLocation.lon
-	return &la, &lo
+	return p.lat, p.lon, true
 }
 
-func windowsLocationGranted() bool {
-	defaultWindowsLocation.mu.RLock()
-	defer defaultWindowsLocation.mu.RUnlock()
-	return defaultWindowsLocation.granted
-}
-
-// attachEnvironment enriches a foreground sample with the current location (from
-// the WinRT cache) and public IP. Both stay nil when unavailable.
-func attachEnvironment(info WindowInfo) WindowInfo {
-	info.Latitude, info.Longitude = windowsLocation()
-	info.PublicIP = currentPublicIP()
-	return info
+func (p *windowsLocationProvider) Permission() (Permission, bool) {
+	p.mu.RLock()
+	granted := p.granted
+	p.mu.RUnlock()
+	return Permission{
+		Name:       "Location Services",
+		Granted:    granted,
+		HowToGrant: "Settings → Privacy & security → Location → enable location access for this app",
+	}, true
 }
 
 // comCall invokes vtable slot `index` on a COM interface pointer `this`.

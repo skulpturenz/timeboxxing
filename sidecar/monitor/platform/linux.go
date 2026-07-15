@@ -51,11 +51,10 @@ func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	if err != nil {
 		return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, err
 	}
-	info, ok := FinalizeWindowInfo(info)
-	if ok {
-		// Location is not available on Linux desktops; attach public IP only.
-		info.PublicIP = currentPublicIP()
-	}
+	// Location is not available on Linux desktops, and public IP is now attached
+	// by the location enricher (sidecar/monitor/encrichment/location), so there is
+	// no environment context to add here.
+	info, _ = FinalizeWindowInfo(info)
 	return info, nil
 }
 
