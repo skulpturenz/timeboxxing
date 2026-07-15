@@ -8,7 +8,7 @@ import (
 
 type Enricher = func(ctx context.Context, foregroundProcess sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool)
 
-func Fold(enrichers ...Enricher) Enricher {
+func Pipe(enrichers ...Enricher) Enricher {
 	return func(ctx context.Context, foregroundProcess sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
 		acc := foregroundProcess
 		some := false
