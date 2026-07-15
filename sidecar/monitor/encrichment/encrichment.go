@@ -11,14 +11,14 @@ type Enricher = func(ctx context.Context, foregroundProcess sessionnew.Foregroun
 func Combine(enrichers ...Enricher) Enricher {
 	return func(ctx context.Context, foregroundProcess sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
 		acc := foregroundProcess
-		ok := false
+		some := false
 		for _, fn := range enrichers {
 			if enriched, ok := fn(ctx, acc); ok {
 				acc = enriched
-				ok = true
+				some = true
 			}
 		}
 
-		return acc, ok
+		return acc, some
 	}
 }
