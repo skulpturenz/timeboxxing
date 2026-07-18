@@ -54,7 +54,7 @@ func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (m
 	}
 
 	updated := fp
-	updated.Enrichments[KeyMetadata] = metadata
+	updated.Enrichments[KeyMetadata] = &metadata
 	return updated, true
 }
 

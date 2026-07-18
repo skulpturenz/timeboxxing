@@ -44,7 +44,7 @@ Shutdown is a single `ctx` cancel that cascades: poll loop stops the ring buffer
 | `idle` | [`idle/`](idle/) | Per-OS idle detection (`IdleDetector`) |
 | `permission` | [`permission/`](permission/) | Shared permission vocabulary (stdlib-only leaf) |
 | `reporter` | [`reporter/`](reporter/) | Pub/sub fan-out with per-subscriber change-dedup |
-| `enrichment` | [`enrichment/`](enrichment/) | `Enricher` combinator kit (`Pipe`, `Or`) |
+| `enrichment` | [`enrichment/`](enrichment/) | `Enricher` combinator kit (`Pipe`, `Or`, `Merge`) |
 | `enrichment/app_metadata` | [`enrichment/app_metadata/`](enrichment/app_metadata/) | Friendly name, category, icon (local + Flathub/Winget feeds) |
 | `enrichment/browser` | [`enrichment/browser/`](enrichment/browser/) | Browser detection + tab title/URL via CDP |
 | `enrichment/location` | [`enrichment/location/`](enrichment/location/) | Lat/long + public IP |
@@ -211,21 +211,29 @@ sample stream.
 type Enricher = func(ctx, monitor.ForegroundProcess) (monitor.ForegroundProcess, bool)
 ```
 
-The `bool` means "did I contribute anything." Two combinators:
+The `bool` means "did I contribute anything." Three combinators:
 
-- `Pipe(...)` — runs **all** enrichers, threading an accumulator (orthogonal
-  dimensions: metadata + browser + location all apply).
+- `Pipe(...)` — runs **all** enrichers sequentially, threading one accumulator
+  (orthogonal dimensions: metadata + browser + location all apply).
 - `Or(...)` — returns the **first** enricher that succeeds (fallback within one
   dimension).
+- `Merge(...)` — like `Pipe` (all apply) but runs the enrichers **concurrently**
+  and folds their results with `mergo.Merge`. Each branch gets an isolated clone of
+  the `Enrichments` map via `utils.ParallelMapWithClone`, so the parallel writes
+  never race on the shared map. This is why enrichers store **pointers** (below):
+  `mergo` needs a pointer to carry a struct value across the merge. `Merge` is not
+  wired into `stack.Stack()` yet — `Pipe` remains the default.
 
-Enrichers never touch process identity — they only write typed values into the
-`Enrichments map[string]any` bag under well-known keys:
+Enrichers never touch process identity — they write a **pointer** to a typed
+struct into the `Enrichments map[string]any` bag under well-known keys (pointers so
+`Merge`'s `mergo` step can transfer them; the `Get` accessors dereference and still
+return values):
 
-| Enricher | Key | Value type | External I/O & caching | Permission? |
+| Enricher | Key | Stored value | External I/O & caching | Permission? |
 | --- | --- | --- | --- | --- |
-| `app_metadata` | `"appmetadata"` | `Metadata` (friendly name, description, `Category`, icon path) | Local OS metadata (plist/.desktop/PE) first; Flathub & Winget HTTP feeds as `Or` fallbacks. Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
-| `browser` | `"browser"` | `Tab` (browser, title, URL, domain) | Tab title parsed from window title; URL recovered via **Chrome DevTools Protocol** at `localhost:9222`. Self-rate-limited (500 ms), 1 s timeout, no HTTP retries. **Not memoized** (tab changes constantly) | none |
-| `location` | `"location"` | `Environment` (nullable lat/long + public IP) | Location read non-blockingly from an OS provider on a background thread (macOS CoreLocation, Windows WinRT Geolocator; no-op elsewhere). Public IP via `api.ipify.org`, **memoized 1-hour TTL** | **yes** (location) |
+| `app_metadata` | `"appmetadata"` | `*Metadata` (friendly name, description, `Category`, icon path) | Local OS metadata (plist/.desktop/PE) first; then HTTP feeds as `Or` fallbacks — **Flathub on Linux only**, **winget on Windows only** (each gated by `runtime.GOOS`). Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
+| `browser` | `"browser"` | `*Tab` (browser, title, URL, domain) | Tab title parsed from window title; URL recovered via **Chrome DevTools Protocol** at `localhost:9222`. Self-rate-limited (500 ms), 1 s timeout, no HTTP retries. **Not memoized** (tab changes constantly) | none |
+| `location` | `"location"` | `*Environment` (nullable lat/long + public IP) | Location read non-blockingly from an OS provider on a background thread (macOS CoreLocation, Windows WinRT Geolocator; no-op elsewhere). Public IP via `api.ipify.org`, **memoized 1-hour TTL** | **yes** (location) |
 
 The `location` enricher is the only one that guards against the **nil**
 `Enrichments` map ([location.go:80-83](enrichment/location/location.go#L80-L83)),
@@ -300,6 +308,10 @@ vendored protocol `*.xml`, generated `*.xml.go`, a hand-written `types.go`
   stream into semantic transitions, with the browser-tab title special case.
 - **Two independent drop policies** (buffer drops oldest, reporter drops newest)
   keep every stage non-blocking.
+- **Enrichment values are pointers, and parallel enrichment is isolated.** Enrichers
+  store `*Metadata`/`*Tab`/`*Environment` so `Merge` can `mergo`-combine them; `Merge`
+  clones the `Enrichments` map per concurrent branch (`ParallelMapWithClone`) so the
+  parallel writes never race, while `Pipe` threads one map sequentially.
 - **Goroutines per running pipeline:** poll loop, ring-buffer `run()`, reporter
   fan-out, timeline consumer — plus, on Wayland, the idle `loop()` and each
   event-driven window backend's reconnect goroutine.

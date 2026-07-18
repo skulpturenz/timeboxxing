@@ -2,6 +2,7 @@ package appmetadata
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/negrel/assert"
@@ -36,10 +37,18 @@ func Memoized(inner enrichment.Enricher) enrichment.Enricher {
 			// Cache whatever metadata the process carries after inner ran. This
 			// path only runs for a process with a stable identity, which always
 			// has a non-nil Enrichments map.
-			result, _ := inner(ctx, fp)
+			result, ok := inner(ctx, fp)
+			if !ok {
+				return nil, fmt.Errorf("no mapping")
+			}
+
 			assert.NotNil(result.Enrichments)
-			metadata, _ := result.Enrichments[KeyMetadata].(Metadata)
-			return metadata, nil
+			metadata, _ := result.Enrichments[KeyMetadata].(*Metadata)
+			if metadata == nil {
+				return nil, fmt.Errorf("no mapping")
+			}
+
+			return *metadata, nil
 		})
 
 		metadata, ok := value.(Metadata)
@@ -48,7 +57,7 @@ func Memoized(inner enrichment.Enricher) enrichment.Enricher {
 		}
 
 		updated := fp
-		updated.Enrichments[KeyMetadata] = metadata
+		updated.Enrichments[KeyMetadata] = &metadata
 		return updated, true
 	}
 }
