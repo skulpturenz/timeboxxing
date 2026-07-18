@@ -7,11 +7,11 @@ import (
 	"strings"
 	"unsafe"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"golang.org/x/sys/windows"
 )
 
-func LocalMetadataEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 	if fp.AppPath == nil {
 		return fp, false
 	}

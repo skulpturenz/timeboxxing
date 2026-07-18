@@ -2,36 +2,28 @@
 
 package platform
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestWindowsAppIdentityMapsKnownExecutable(t *testing.T) {
 	identifier, appName := windowsAppIdentity(`C:\Users\me\AppData\Local\Programs\Microsoft VS Code\Code.exe`)
-	if identifier != "code" {
-		t.Fatalf("expected identifier code, got %q", identifier)
-	}
-	if appName != "Visual Studio Code" {
-		t.Fatalf("expected Visual Studio Code, got %q", appName)
-	}
+	require.Equal(t, "code", identifier)
+	require.Equal(t, "Visual Studio Code", appName)
 }
 
 func TestWindowsAppIdentityFallsBackToCapitalizedExecutable(t *testing.T) {
 	identifier, appName := windowsAppIdentity(`C:\Tools\custom-helper.exe`)
-	if identifier != "custom-helper" {
-		t.Fatalf("expected identifier custom-helper, got %q", identifier)
-	}
-	if appName != "Custom-helper" {
-		t.Fatalf("expected Custom-helper, got %q", appName)
-	}
+	require.Equal(t, "custom-helper", identifier)
+	require.Equal(t, "Custom-helper", appName)
 }
 
 func TestWindowsAppIdentityPreservesJavaRuntimeName(t *testing.T) {
 	identifier, appName := windowsAppIdentity(`C:\Program Files\Eclipse Adoptium\jdk\bin\java.exe`)
-	if identifier != "java" {
-		t.Fatalf("expected identifier java, got %q", identifier)
-	}
-	if appName != "java" {
-		t.Fatalf("expected app name java, got %q", appName)
-	}
+	require.Equal(t, "java", identifier)
+	require.Equal(t, "java", appName)
 }
 
 func TestFinalizeWindowInfoUsesWindowsTitleWhenPathMissing(t *testing.T) {
@@ -40,17 +32,12 @@ func TestFinalizeWindowInfoUsesWindowsTitleWhenPathMissing(t *testing.T) {
 		TitleSource: TitleSourceWindowAPI,
 	})
 
-	if !ok {
-		t.Fatal("expected finalized foreground sample")
-	}
-	if info.AppName != "Untitled - Notepad" {
-		t.Fatalf("expected title fallback, got %q", info.AppName)
-	}
+	require.True(t, ok, "expected finalized foreground sample")
+	require.Equal(t, "Untitled - Notepad", info.AppName, "expected title fallback")
 }
 
 func TestWindowsAppIdentityHandlesEmptyPath(t *testing.T) {
 	identifier, appName := windowsAppIdentity("")
-	if identifier != "" || appName != "" {
-		t.Fatalf("expected empty identity, got identifier=%q appName=%q", identifier, appName)
-	}
+	require.Empty(t, identifier, "expected empty identity")
+	require.Empty(t, appName, "expected empty identity")
 }

@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
 // TestFlathub_Live hits the real Flathub endpoint to confirm the response still
@@ -31,8 +31,8 @@ func TestFlathub_Live(t *testing.T) {
 
 func ptr(s string) *string { return &s }
 
-func fpWithID(id string) sessionnew.ForegroundProcess {
-	return sessionnew.ForegroundProcess{
+func fpWithID(id string) monitor.ForegroundProcess {
+	return monitor.ForegroundProcess{
 		AppIdentifier: ptr(id),
 		Enrichments:   map[string]any{},
 	}
@@ -112,7 +112,7 @@ func TestFlathub_IgnoresNonReverseDNS(t *testing.T) {
 
 func TestMemoized_MemoizesByIdentity(t *testing.T) {
 	var calls int32
-	inner := func(_ context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	inner := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		atomic.AddInt32(&calls, 1)
 		return setMetadata(fp, Metadata{FriendlyName: "X", Source: SourceBundle})
 	}
@@ -128,10 +128,10 @@ func TestMemoized_MemoizesByIdentity(t *testing.T) {
 }
 
 func TestFold_MergesLocalThenFeed(t *testing.T) {
-	local := func(_ context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	local := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		return setMetadata(fp, Metadata{FriendlyName: "VLC", IconPath: "/i.png", Source: SourceDesktop})
 	}
-	feed := func(_ context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	feed := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		// Feed only fills category/description; must not overwrite the name.
 		return setMetadata(fp, Metadata{FriendlyName: "WRONG", Description: "desc", Category: CategoryMedia, Source: SourceFlathub})
 	}

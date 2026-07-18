@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
@@ -19,7 +19,7 @@ type flathubAppstream struct {
 	Icon          string   `json:"icon"`
 }
 
-func FlathubEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 	// An unconfigured base URL means the feed is disabled: no-op.
 	if strings.TrimSpace(flathubBaseURL) == "" {
 		return fp, false
@@ -66,7 +66,7 @@ func FlathubEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sess
 	return setMetadata(fp, metadata)
 }
 
-func normalizeFlatpakAppId(fp sessionnew.ForegroundProcess) string {
+func normalizeFlatpakAppId(fp monitor.ForegroundProcess) string {
 	if fp.AppIdentifier == nil {
 		return ""
 	}

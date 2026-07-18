@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
 // wingetBaseURL is the winget.run search endpoint; overridable in tests.
@@ -28,7 +28,7 @@ type wingetSearch struct {
 // the description and a best-effort category (winget exposes only loose tags, no
 // real taxonomy), which local Windows metadata cannot provide. Fill-if-empty;
 // no-op when enabled is false. Compose after the local enrichment.Enricher and wrap in Memoized.
-func WingetEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+func WingetEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 	existing, _ := GetMetadata(fp)
 
 	query := wingetQuery(existing, fp)
@@ -64,7 +64,7 @@ func WingetEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessi
 
 // wingetQuery picks the best search term: the locally-resolved friendly name,
 // falling back to the process's reported app name.
-func wingetQuery(existing Metadata, fp sessionnew.ForegroundProcess) string {
+func wingetQuery(existing Metadata, fp monitor.ForegroundProcess) string {
 	if name := strings.TrimSpace(existing.FriendlyName); name != "" {
 		return name
 	}

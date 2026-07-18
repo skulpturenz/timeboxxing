@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
 type fakeResolver struct {
@@ -22,8 +22,8 @@ func (f *fakeResolver) URLForTitle(_ context.Context, tabTitle string) string {
 
 func ptr(s string) *string { return &s }
 
-func fp(appName, title string) sessionnew.ForegroundProcess {
-	return sessionnew.ForegroundProcess{
+func fp(appName, title string) monitor.ForegroundProcess {
+	return monitor.ForegroundProcess{
 		AppName:     ptr(appName),
 		WindowTitle: ptr(title),
 		Enrichments: map[string]any{},
@@ -74,14 +74,14 @@ func TestEnrich_BrowserUnparseableTitle(t *testing.T) {
 
 func TestDomainOf(t *testing.T) {
 	cases := map[string]string{
-		"https://github.com/foo":       "github.com",
+		"https://github.com/foo":        "github.com",
 		"https://www.google.com/search": "google.com",
-		"http://localhost:3000/x":      "localhost",
-		"https://sub.example.co.uk":    "sub.example.co.uk",
-		"chrome://newtab/":             "",
-		"about:blank":                  "",
-		"":                             "",
-		"not a url":                    "",
+		"http://localhost:3000/x":       "localhost",
+		"https://sub.example.co.uk":     "sub.example.co.uk",
+		"chrome://newtab/":              "",
+		"about:blank":                   "",
+		"":                              "",
+		"not a url":                     "",
 	}
 	for in, want := range cases {
 		assert.Equalf(t, want, domainOf(in), "domainOf(%q)", in)

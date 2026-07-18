@@ -3,13 +3,13 @@ package enrichment
 import (
 	"context"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
-type Enricher = func(ctx context.Context, foregroundProcess sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool)
+type Enricher = func(ctx context.Context, foregroundProcess monitor.ForegroundProcess) (monitor.ForegroundProcess, bool)
 
 func Pipe(enrichers ...Enricher) Enricher {
-	return func(ctx context.Context, foregroundProcess sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	return func(ctx context.Context, foregroundProcess monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		acc := foregroundProcess
 		some := false
 		for _, fn := range enrichers {
@@ -24,7 +24,7 @@ func Pipe(enrichers ...Enricher) Enricher {
 }
 
 func Or(enrichers ...Enricher) Enricher {
-	return func(ctx context.Context, foregroundProcess sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	return func(ctx context.Context, foregroundProcess monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		for _, fn := range enrichers {
 			if enriched, ok := fn(ctx, foregroundProcess); ok {
 				return enriched, ok

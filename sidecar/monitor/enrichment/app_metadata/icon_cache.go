@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
 // identityKey picks the most stable identifier available for an app. Two samples
 // of the same app share a key so caching and icon filenames stay consistent.
-func identityKey(fp sessionnew.ForegroundProcess) string {
+func identityKey(fp monitor.ForegroundProcess) string {
 	for _, candidate := range []*string{fp.AppIdentifier, fp.AppPath, fp.AppName} {
 		if candidate != nil {
 			if value := strings.TrimSpace(*candidate); value != "" {

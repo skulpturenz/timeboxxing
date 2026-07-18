@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/memo"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
 // App metadata changes rarely, so memoize it for a good while rather than
@@ -25,7 +25,7 @@ func Memoized(inner enrichment.Enricher) enrichment.Enricher {
 	cleanup := memoCleanup
 	cache := memo.NewWithOptions(&ttl, &cleanup)
 
-	return func(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	return func(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		key := identityKey(fp)
 		if key == "" {
 			return inner(ctx, fp)

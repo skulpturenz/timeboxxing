@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
 type fakeLocation struct {
@@ -29,8 +29,8 @@ func (f fakeIP) PublicIP() *string { return f.ip }
 
 func strptr(s string) *string { return &s }
 
-func emptyFP() sessionnew.ForegroundProcess {
-	return sessionnew.ForegroundProcess{Enrichments: map[string]any{}}
+func emptyFP() monitor.ForegroundProcess {
+	return monitor.ForegroundProcess{Enrichments: map[string]any{}}
 }
 
 func TestEnrich_LocationAndIP(t *testing.T) {

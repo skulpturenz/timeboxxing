@@ -3,7 +3,7 @@ package appmetadata
 import (
 	"strings"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
 // KeyMetadata is the well-known key under which enrichers stash the typed
@@ -76,7 +76,7 @@ func (src Metadata) mergeInto(dst *Metadata) bool {
 
 // GetMetadata returns the Metadata currently stored on the process, plus
 // whether it was present. It never panics on a nil or wrongly-typed bag entry.
-func GetMetadata(fp sessionnew.ForegroundProcess) (Metadata, bool) {
+func GetMetadata(fp monitor.ForegroundProcess) (Metadata, bool) {
 	if fp.Enrichments == nil {
 		return Metadata{}, false
 	}
@@ -92,7 +92,7 @@ func GetMetadata(fp sessionnew.ForegroundProcess) (Metadata, bool) {
 // and writes the result back into the bag. It returns the (possibly copied)
 // process and whether the merge added any new information. The input is treated
 // as immutable: the Enrichments map is cloned before mutation.
-func setMetadata(fp sessionnew.ForegroundProcess, found Metadata) (sessionnew.ForegroundProcess, bool) {
+func setMetadata(fp monitor.ForegroundProcess, found Metadata) (monitor.ForegroundProcess, bool) {
 	existing, _ := GetMetadata(fp)
 	if !found.mergeInto(&existing) {
 		return fp, false

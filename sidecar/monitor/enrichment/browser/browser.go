@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
 // Key is the Enrichments bag key under which the Tab payload is stored.
@@ -89,7 +89,7 @@ type URLResolver interface {
 // metadata enrichers this is NOT memoized — the tab changes constantly, so it
 // runs every poll (the CDP poller rate-limits its own network calls).
 func Enrich(resolver URLResolver) enrichment.Enricher {
-	return func(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	return func(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		appName := deref(fp.AppName)
 		kind := IsBrowser(appName)
 		if kind == BrowserNone {
@@ -115,7 +115,7 @@ func Enrich(resolver URLResolver) enrichment.Enricher {
 }
 
 // Get returns the browser Tab stored on the process, if any.
-func Get(fp sessionnew.ForegroundProcess) (Tab, bool) {
+func Get(fp monitor.ForegroundProcess) (Tab, bool) {
 	if fp.Enrichments == nil {
 		return Tab{}, false
 	}
@@ -129,7 +129,7 @@ func Get(fp sessionnew.ForegroundProcess) (Tab, bool) {
 
 // setTab writes tab into a cloned Enrichments bag (the input is treated as
 // immutable) and returns the updated process.
-func setTab(fp sessionnew.ForegroundProcess, tab Tab) sessionnew.ForegroundProcess {
+func setTab(fp monitor.ForegroundProcess, tab Tab) monitor.ForegroundProcess {
 	bag := make(map[string]any, len(fp.Enrichments)+1)
 	for k, v := range fp.Enrichments {
 		bag[k] = v

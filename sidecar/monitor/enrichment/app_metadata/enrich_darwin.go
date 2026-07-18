@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	icns "github.com/jackmordaunt/icns/v2"
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 	"howett.net/plist"
 )
@@ -23,7 +23,7 @@ type infoPlist struct {
 	IconName    string `plist:"CFBundleIconName"`
 }
 
-func LocalMetadataEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 	if fp.AppPath == nil {
 		return fp, false
 	}

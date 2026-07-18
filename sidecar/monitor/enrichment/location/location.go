@@ -9,8 +9,8 @@ package location
 import (
 	"context"
 
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
 // Key is the Enrichments bag key under which the Environment payload is stored.
@@ -70,7 +70,7 @@ func Permissions(provider LocationProvider) []Permission {
 // each provider's cache on every poll. Returns (fp, false) when neither provider
 // has anything to contribute.
 func Enrich(location LocationProvider, publicIP PublicIPProvider) enrichment.Enricher {
-	return func(_ context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+	return func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		env := Environment{}
 		changed := false
 
@@ -103,7 +103,7 @@ func Default() enrichment.Enricher {
 }
 
 // Get returns the Environment stored on the process, if any.
-func Get(fp sessionnew.ForegroundProcess) (Environment, bool) {
+func Get(fp monitor.ForegroundProcess) (Environment, bool) {
 	if fp.Enrichments == nil {
 		return Environment{}, false
 	}
@@ -117,7 +117,7 @@ func Get(fp sessionnew.ForegroundProcess) (Environment, bool) {
 
 // setEnv writes env into a cloned Enrichments bag (the input is treated as
 // immutable) and returns the updated process.
-func setEnv(fp sessionnew.ForegroundProcess, env Environment) sessionnew.ForegroundProcess {
+func setEnv(fp monitor.ForegroundProcess, env Environment) monitor.ForegroundProcess {
 	bag := make(map[string]any, len(fp.Enrichments)+1)
 	for k, v := range fp.Enrichments {
 		bag[k] = v

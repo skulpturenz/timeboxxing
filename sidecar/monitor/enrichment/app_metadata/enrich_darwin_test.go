@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
-func fpForBundle(path string) sessionnew.ForegroundProcess {
-	return sessionnew.ForegroundProcess{
+func fpForBundle(path string) monitor.ForegroundProcess {
+	return monitor.ForegroundProcess{
 		AppIdentifier: new("test.bundle." + path),
 		AppPath:       new(path),
 		Enrichments:   map[string]any{},
