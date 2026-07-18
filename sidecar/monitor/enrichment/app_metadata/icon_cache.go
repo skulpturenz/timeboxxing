@@ -23,26 +23,17 @@ func identityKey(fp monitor.ForegroundProcess) string {
 	return ""
 }
 
-// iconCacheDir returns (creating if needed) the directory where enrichers stash
-// extracted app icons: <user cache>/timeboxxing/app-icons.
-func iconCacheDir() (string, error) {
+// iconCachePath builds a stable, filesystem-safe icon path for an app identity,
+// creating the cache dir (<user cache>/timeboxxing/app-icons) if needed. The
+// identity is hashed so arbitrary bundle ids / exe paths / app-ids can't produce
+// an invalid or colliding filename.
+func iconCachePath(identity string, ext string) (string, error) {
 	base, err := os.UserCacheDir()
 	if err != nil {
 		return "", err
 	}
 	dir := filepath.Join(base, "timeboxxing", "app-icons")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	return dir, nil
-}
-
-// iconCachePath builds a stable, filesystem-safe icon path for an app identity.
-// The identity is hashed so arbitrary bundle ids / exe paths / app-ids can't
-// produce an invalid or colliding filename.
-func iconCachePath(identity string, ext string) (string, error) {
-	dir, err := iconCacheDir()
-	if err != nil {
 		return "", err
 	}
 	sum := sha1.Sum([]byte(identity))

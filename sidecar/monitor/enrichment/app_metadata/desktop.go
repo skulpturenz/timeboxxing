@@ -22,10 +22,15 @@ type desktopEntry struct {
 // executable basename exeBase.
 func desktopMatches(entry desktopEntry, base string, idLower string, exeBase string) bool {
 	if idLower != "" {
+		// final dotted segment ("code" from "com.foo.code"), e.g. WM_CLASS "code"
+		// vs org.something.code.desktop.
+		baseTail := base
+		if idx := strings.LastIndex(base, "."); idx >= 0 {
+			baseTail = base[idx+1:]
+		}
 		if strings.EqualFold(entry.StartupWMClass, idLower) ||
 			strings.EqualFold(base, idLower) ||
-			// e.g. WM_CLASS "code" vs org.something.code.desktop
-			strings.EqualFold(lastDotSegment(base), idLower) {
+			strings.EqualFold(baseTail, idLower) {
 			return true
 		}
 	}
@@ -33,14 +38,6 @@ func desktopMatches(entry desktopEntry, base string, idLower string, exeBase str
 		return true
 	}
 	return false
-}
-
-func lastDotSegment(s string) string {
-	// final dotted segment ("code" from "com.foo.code").
-	if idx := strings.LastIndex(s, "."); idx >= 0 {
-		return s[idx+1:]
-	}
-	return s
 }
 
 // execBase extracts the executable basename from an Exec= line, dropping field

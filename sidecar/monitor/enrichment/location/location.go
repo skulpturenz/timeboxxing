@@ -75,7 +75,14 @@ func Enrich(location LocationProvider, publicIP PublicIPProvider) enrichment.Enr
 		if !changed {
 			return fp, false
 		}
-		return setEnv(fp, env), true
+
+		updated := fp
+		// An idle process reaches here (public IP is machine-wide) with a nil map.
+		if updated.Enrichments == nil {
+			updated.Enrichments = map[string]any{}
+		}
+		updated.Enrichments[Key] = env
+		return updated, true
 	}
 }
 
@@ -119,16 +126,4 @@ func Get(fp monitor.ForegroundProcess) (Environment, bool) {
 	}
 	env, ok := value.(Environment)
 	return env, ok
-}
-
-// setEnv writes env into a cloned Enrichments bag (the input is treated as
-// immutable) and returns the updated process.
-func setEnv(fp monitor.ForegroundProcess, env Environment) monitor.ForegroundProcess {
-	bag := make(map[string]any, len(fp.Enrichments)+1)
-	for k, v := range fp.Enrichments {
-		bag[k] = v
-	}
-	bag[Key] = env
-	fp.Enrichments = bag
-	return fp
 }

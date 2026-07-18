@@ -64,7 +64,17 @@ func NewPublicIPProvider() *IPProvider {
 // value. Returns nil when no lookup has succeeded (memo caches only successes).
 func (p *IPProvider) PublicIP() *string {
 	value, _, _ := p.cache.Do(publicIPKey, func() (any, error) {
-		return p.lookup(context.Background())
+		// resty applies the per-attempt timeout (SetTimeout) and body limit; the
+		// background ctx keeps cancellation propagating across retries.
+		resp, err := p.client.R().SetContext(context.Background()).Get(p.endpoint)
+		if err != nil {
+			return "", err
+		}
+		ip := strings.TrimSpace(string(resp.Bytes()))
+		if net.ParseIP(ip) == nil {
+			return "", &net.AddrError{Err: "invalid public ip response", Addr: ip}
+		}
+		return ip, nil
 	})
 
 	ip, ok := value.(string)
@@ -72,30 +82,4 @@ func (p *IPProvider) PublicIP() *string {
 		return nil
 	}
 	return new(ip)
-}
-
-func (p *IPProvider) lookup(ctx context.Context) (string, error) {
-	// resty applies the per-attempt timeout (SetTimeout) and body limit; ctx keeps
-	// cancellation propagating across retries.
-	resp, err := p.client.R().SetContext(ctx).Get(p.endpoint)
-	if err != nil {
-		return "", err
-	}
-
-	body := resp.Bytes()
-	ip := parsePublicIP(string(body))
-	if ip == "" {
-		return "", &net.AddrError{Err: "invalid public ip response", Addr: strings.TrimSpace(string(body))}
-	}
-	return ip, nil
-}
-
-// parsePublicIP trims and validates an echo-service response body, returning the
-// IP string or "" if it is not a valid IP.
-func parsePublicIP(body string) string {
-	ip := strings.TrimSpace(body)
-	if net.ParseIP(ip) == nil {
-		return ""
-	}
-	return ip
 }

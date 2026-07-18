@@ -29,9 +29,12 @@ type wingetSearch struct {
 // real taxonomy), which local Windows metadata cannot provide. Fill-if-empty;
 // no-op when enabled is false. Compose after the local enrichment.Enricher and wrap in Memoized.
 func WingetEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
-	existing, _ := GetMetadata(fp)
-
-	query := wingetQuery(existing, fp)
+	// The winget enricher only runs (via Or) when local metadata found nothing, so
+	// the search term is the process's reported app name.
+	query := ""
+	if fp.AppName != nil {
+		query = strings.TrimSpace(*fp.AppName)
+	}
 	if query == "" {
 		return fp, false
 	}
@@ -52,24 +55,15 @@ func WingetEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.
 	if category, err := ParseWingetTags(pkg.Latest.Tags); err == nil {
 		metadata.Category = category
 	}
-	if existing.IconPath == "" && pkg.IconURL != "" {
+	if pkg.IconURL != "" {
 		metadata.IconPath = downloadIconToCache(ctx, pkg.IconURL, identityKey(fp))
 	}
 
 	if metadata.empty() {
 		return fp, false
 	}
-	return setMetadata(fp, metadata)
-}
 
-// wingetQuery picks the best search term: the locally-resolved friendly name,
-// falling back to the process's reported app name.
-func wingetQuery(existing Metadata, fp monitor.ForegroundProcess) string {
-	if name := strings.TrimSpace(existing.FriendlyName); name != "" {
-		return name
-	}
-	if fp.AppName != nil {
-		return strings.TrimSpace(*fp.AppName)
-	}
-	return ""
+	updated := fp
+	updated.Enrichments[KeyMetadata] = metadata
+	return updated, true
 }

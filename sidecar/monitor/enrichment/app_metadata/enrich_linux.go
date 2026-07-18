@@ -43,7 +43,10 @@ func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (m
 	if metadata.empty() {
 		return fp, false
 	}
-	return setMetadata(fp, metadata)
+
+	updated := fp
+	updated.Enrichments[KeyMetadata] = metadata
+	return updated, true
 }
 
 // xdgApplicationDirs returns the directories that hold .desktop files, honoring

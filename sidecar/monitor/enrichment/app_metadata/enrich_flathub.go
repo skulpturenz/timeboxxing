@@ -30,12 +30,6 @@ func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor
 		return fp, false
 	}
 
-	// Nothing left for the feed to fill — skip the network call entirely.
-	existing, _ := GetMetadata(fp)
-	if existing.complete() {
-		return fp, false
-	}
-
 	var payload flathubAppstream
 	ok, err := getJSON(ctx, flathubBaseURL+appID, &payload)
 	if err != nil || !ok {
@@ -55,7 +49,7 @@ func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor
 		metadata.Category = category
 	}
 
-	if existing.IconPath == "" && payload.Icon != "" {
+	if payload.Icon != "" {
 		metadata.IconPath = downloadIconToCache(ctx, payload.Icon, identityKey(fp))
 	}
 
@@ -63,7 +57,9 @@ func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor
 		return fp, false
 	}
 
-	return setMetadata(fp, metadata)
+	updated := fp
+	updated.Enrichments[KeyMetadata] = metadata
+	return updated, true
 }
 
 func normalizeFlatpakAppId(fp monitor.ForegroundProcess) string {

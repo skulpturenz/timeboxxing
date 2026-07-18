@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
 )
 
 // TestFlathub_Live hits the real Flathub endpoint to confirm the response still
@@ -23,7 +22,7 @@ func TestFlathub_Live(t *testing.T) {
 	}
 	out, ok := FlathubEnricher(context.Background(), fpWithID("org.videolan.VLC"))
 	require.True(t, ok, "expected live Flathub enrichment for VLC")
-	md, _ := GetMetadata(out)
+	md, _ := out.Enrichments[KeyMetadata].(Metadata)
 	require.NotEmpty(t, md.FriendlyName, "live response under-populated")
 	require.NotEqual(t, CategoryUnknown, md.Category, "live response under-populated")
 	t.Logf("live VLC => name=%q category=%q desc.len=%d", md.FriendlyName, md.Category.Label(), len(md.Description))
@@ -62,34 +61,11 @@ func TestFlathub_FillsFromFeed(t *testing.T) {
 
 	out, ok := FlathubEnricher(context.Background(), fpWithID("org.videolan.VLC"))
 	require.True(t, ok, "expected Flathub to enrich")
-	md, _ := GetMetadata(out)
+	md, _ := out.Enrichments[KeyMetadata].(Metadata)
 	assert.Equal(t, "VLC", md.FriendlyName)
 	assert.Equal(t, CategoryMedia, md.Category)
 	assert.Equal(t, SourceFlathub, md.Source)
 	assert.NotEmpty(t, md.Description, "expected a description from the summary")
-}
-
-func TestFlathub_SkipsWhenLocalComplete(t *testing.T) {
-	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		_, _ = w.Write([]byte(vlcAppstreamJSON))
-	}))
-	defer srv.Close()
-	old := flathubBaseURL
-	flathubBaseURL = srv.URL + "/"
-	defer func() { flathubBaseURL = old }()
-
-	// Local enrichment already filled everything -> feed must not fire.
-	fp := fpWithID("org.videolan.VLC")
-	fp, _ = setMetadata(fp, Metadata{
-		FriendlyName: "VLC", Description: "d", Category: CategoryMedia,
-		IconPath: "/tmp/x.png", Source: SourceDesktop,
-	})
-
-	_, ok := FlathubEnricher(context.Background(), fp)
-	assert.False(t, ok, "expected no-op when metadata already complete")
-	assert.Equal(t, int32(0), hits.Load(), "feed must not be hit when metadata is complete")
 }
 
 func TestFlathub_Disabled(t *testing.T) {
@@ -112,14 +88,16 @@ func TestMemoized_MemoizesByIdentity(t *testing.T) {
 	var calls int32
 	inner := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		atomic.AddInt32(&calls, 1)
-		return setMetadata(fp, Metadata{FriendlyName: "X", Source: SourceBundle})
+		updated := fp
+		updated.Enrichments[KeyMetadata] = Metadata{FriendlyName: "X", Source: SourceBundle}
+		return updated, true
 	}
 	enricher := Memoized(inner)
 
 	for i := 0; i < 3; i++ {
 		out, ok := enricher(context.Background(), fpWithID("com.example.app"))
 		require.True(t, ok, "expected enrichment")
-		md, _ := GetMetadata(out)
+		md, _ := out.Enrichments[KeyMetadata].(Metadata)
 		assert.Equal(t, "X", md.FriendlyName)
 	}
 	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "inner should be called once (memoized)")
@@ -160,22 +138,4 @@ func TestGetJSON_DoesNotRetryOn404(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok, "404 is a not-found, not an error")
 	assert.Equal(t, int32(1), hits.Load(), "a 404 must not be retried")
-}
-
-func TestFold_MergesLocalThenFeed(t *testing.T) {
-	local := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
-		return setMetadata(fp, Metadata{FriendlyName: "VLC", IconPath: "/i.png", Source: SourceDesktop})
-	}
-	feed := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
-		// Feed only fills category/description; must not overwrite the name.
-		return setMetadata(fp, Metadata{FriendlyName: "WRONG", Description: "desc", Category: CategoryMedia, Source: SourceFlathub})
-	}
-
-	out, ok := enrichment.Pipe(local, feed)(context.Background(), fpWithID("org.videolan.VLC"))
-	require.True(t, ok, "expected combined enrichment")
-	md, _ := GetMetadata(out)
-	assert.Equal(t, "VLC", md.FriendlyName, "local should win")
-	assert.Equal(t, "desc", md.Description, "feed should fill description gap")
-	assert.Equal(t, CategoryMedia, md.Category, "feed should fill category gap")
-	assert.Equal(t, SourceDesktop, md.Source, "Source is the first contributor (desktop)")
 }

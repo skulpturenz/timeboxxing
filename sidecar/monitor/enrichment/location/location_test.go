@@ -113,16 +113,3 @@ func TestPublicIPProvider_MemoizesLookup(t *testing.T) {
 	// Subsequent calls must hit the memo, not the network.
 	assert.Equal(t, int32(1), atomic.LoadInt32(&hits), "server should be hit once (memoized)")
 }
-
-func TestParsePublicIP(t *testing.T) {
-	cases := map[string]string{
-		"203.0.113.1\n":      "203.0.113.1",
-		"  2001:db8::1  ":    "2001:db8::1",
-		"not-an-ip":          "",
-		"":                   "",
-		"<html>error</html>": "",
-	}
-	for in, want := range cases {
-		assert.Equalf(t, want, parsePublicIP(in), "parsePublicIP(%q)", in)
-	}
-}

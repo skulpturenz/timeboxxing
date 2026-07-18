@@ -23,7 +23,10 @@ func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (m
 	info, err := readVersionInfo(exe)
 	metadata := Metadata{Source: SourcePE}
 	if err == nil {
-		metadata.FriendlyName = firstNonBlank(info.FileDescription, info.ProductName)
+		metadata.FriendlyName = strings.TrimSpace(info.FileDescription)
+		if metadata.FriendlyName == "" {
+			metadata.FriendlyName = strings.TrimSpace(info.ProductName)
+		}
 		metadata.Description = strings.TrimSpace(info.Comments)
 	}
 	if iconPath := extractWindowsIcon(exe, identityKey(fp)); iconPath != "" {
@@ -33,16 +36,10 @@ func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (m
 	if metadata.empty() {
 		return fp, false
 	}
-	return setMetadata(fp, metadata)
-}
 
-func firstNonBlank(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	updated := fp
+	updated.Enrichments[KeyMetadata] = metadata
+	return updated, true
 }
 
 // versionInfo holds the PE version-resource string fields we consume.

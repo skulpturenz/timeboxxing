@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/negrel/assert"
 	"github.com/skulpturenz/timeboxxing/sidecar/memo"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
@@ -32,10 +33,12 @@ func Memoized(inner enrichment.Enricher) enrichment.Enricher {
 		}
 
 		value, _, _ := cache.Do(key, func() (any, error) {
-			// Cache whatever metadata the process carries after inner ran
-			// (including contributions merged by earlier enrichment.Enrichers).
+			// Cache whatever metadata the process carries after inner ran. This
+			// path only runs for a process with a stable identity, which always
+			// has a non-nil Enrichments map.
 			result, _ := inner(ctx, fp)
-			metadata, _ := GetMetadata(result)
+			assert.NotNil(result.Enrichments)
+			metadata, _ := result.Enrichments[KeyMetadata].(Metadata)
 			return metadata, nil
 		})
 
@@ -43,6 +46,9 @@ func Memoized(inner enrichment.Enricher) enrichment.Enricher {
 		if !ok || metadata.empty() {
 			return fp, false
 		}
-		return setMetadata(fp, metadata)
+
+		updated := fp
+		updated.Enrichments[KeyMetadata] = metadata
+		return updated, true
 	}
 }

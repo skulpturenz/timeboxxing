@@ -30,7 +30,7 @@ func TestDarwinLocalMetadata_RealBundle(t *testing.T) {
 
 	out, ok := LocalMetadataEnricher(context.Background(), fpForBundle(bundle))
 	require.True(t, ok, "expected enrichment for Calculator.app")
-	metadata, ok := GetMetadata(out)
+	metadata, ok := out.Enrichments[KeyMetadata].(Metadata)
 	require.True(t, ok, "metadata not stored in bag")
 
 	assert.Equal(t, "Calculator", metadata.FriendlyName)

@@ -110,7 +110,9 @@ func Enrich(resolver URLResolver) enrichment.Enricher {
 			}
 		}
 
-		return setTab(fp, tab), true
+		updated := fp
+		updated.Enrichments[Key] = tab
+		return updated, true
 	}
 }
 
@@ -125,18 +127,6 @@ func Get(fp monitor.ForegroundProcess) (Tab, bool) {
 	}
 	tab, ok := value.(Tab)
 	return tab, ok
-}
-
-// setTab writes tab into a cloned Enrichments bag (the input is treated as
-// immutable) and returns the updated process.
-func setTab(fp monitor.ForegroundProcess, tab Tab) monitor.ForegroundProcess {
-	bag := make(map[string]any, len(fp.Enrichments)+1)
-	for k, v := range fp.Enrichments {
-		bag[k] = v
-	}
-	bag[Key] = tab
-	fp.Enrichments = bag
-	return fp
 }
 
 // domainOf extracts the host (minus a leading "www.") from an http(s) URL.
