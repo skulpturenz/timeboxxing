@@ -2,6 +2,8 @@
 
 package location
 
+import "context"
+
 // DefaultLocationProvider returns a no-op provider on platforms without a
 // supported OS geolocation source (Linux and others). It always reports "no
 // fix", so the location enricher contributes only the public IP. A caller can
@@ -15,3 +17,7 @@ func (nopLocationProvider) Location() (float64, float64, bool) { return 0, 0, fa
 // Permission reports that location is not applicable on this platform, so it is
 // omitted from any permissions UI.
 func (nopLocationProvider) Permission() (Permission, bool) { return Permission{}, false }
+
+// RequestPermission is a no-op: there is no OS location permission to request on
+// this platform.
+func (nopLocationProvider) RequestPermission(context.Context) {}

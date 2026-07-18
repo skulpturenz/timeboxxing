@@ -63,15 +63,23 @@ void tbxStartLocationUpdates(void) {
                 g_locationManager = [[CLLocationManager alloc] init];
                 g_locationManager.delegate = g_locationDelegate;
                 g_locationManager.desiredAccuracy = kCLLocationAccuracyKilometer;
-                if ([g_locationManager respondsToSelector:@selector(requestWhenInUseAuthorization)]) {
-                    [g_locationManager requestWhenInUseAuthorization];
-                }
                 [g_locationManager startUpdatingLocation];
                 CFRunLoopRun();
             }
         }];
         [thread start];
     });
+}
+
+// tbxRequestLocationAuthorization raises the macOS location-permission prompt.
+// It is separate from tbxStartLocationUpdates so the prompt fires only when the
+// caller explicitly requests it. Safe to call before or after startup; a no-op
+// until the manager exists.
+void tbxRequestLocationAuthorization(void) {
+    if (g_locationManager != nil &&
+        [g_locationManager respondsToSelector:@selector(requestWhenInUseAuthorization)]) {
+        [g_locationManager requestWhenInUseAuthorization];
+    }
 }
 
 // tbxGetCachedLocation writes the latest fix into lat/lon and returns 1 when a
@@ -104,6 +112,8 @@ int tbxLocationAuthStatus(void) {
 */
 import "C"
 
+import "context"
+
 // DefaultLocationProvider starts the CoreLocation background provider (once) and
 // returns a provider that reads its cache non-blockingly.
 func DefaultLocationProvider() LocationProvider {
@@ -129,4 +139,11 @@ func (coreLocationProvider) Permission() (Permission, bool) {
 		Granted:    status == 3 || status == 4,
 		HowToGrant: "System Settings → Privacy & Security → Location Services → enable this app",
 	}, true
+}
+
+// RequestPermission raises the macOS location-authorization prompt. Authorization
+// only actually succeeds for a bundled app with NSLocationWhenInUseUsageDescription;
+// unbundled/CLI runs get no fix and the cache stays empty.
+func (coreLocationProvider) RequestPermission(context.Context) {
+	C.tbxRequestLocationAuthorization()
 }

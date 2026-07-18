@@ -22,6 +22,7 @@ type fakeLocation struct {
 
 func (f fakeLocation) Location() (float64, float64, bool) { return f.lat, f.lon, f.ok }
 func (f fakeLocation) Permission() (Permission, bool)     { return f.perm, f.permOK }
+func (f fakeLocation) RequestPermission(context.Context)  {}
 
 type fakeIP struct{ ip *string }
 

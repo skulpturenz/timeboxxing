@@ -11,6 +11,7 @@ import (
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 // Key is the Enrichments bag key under which the Environment payload is stored.
@@ -34,6 +35,11 @@ type LocationProvider interface {
 	// on platforms where location is unsupported (e.g. Linux), so callers can
 	// omit it from a permissions UI.
 	Permission() (perm Permission, applicable bool)
+	// RequestPermission triggers the OS location-authorization prompt. It is a
+	// no-op on platforms where location is unsupported. Requesting is deferred to
+	// this call (rather than provider construction) so the caller controls when
+	// the prompt fires.
+	RequestPermission(ctx context.Context)
 }
 
 // PublicIPProvider yields the cached public IP, or nil when unknown. Reads must
@@ -96,11 +102,34 @@ func Enrich(location LocationProvider, publicIP PublicIPProvider) enrichment.Enr
 	}
 }
 
-// Default composes Enrich with the platform's default location provider and a
-// fresh public-IP provider. This is the enricher most callers want.
-func Default() enrichment.Enricher {
-	return Enrich(DefaultLocationProvider(), NewPublicIPProvider())
+// Requestable adapts a LocationProvider into a permission.Permission so a caller
+// (e.g. monitor.New) can request the OS location authorization uniformly with
+// other monitor permissions. Returns ok=false when location is unsupported on
+// this platform, so it is omitted from the permission set.
+func Requestable(provider LocationProvider) (permission.Permission, bool) {
+	if provider == nil {
+		return nil, false
+	}
+	if _, applicable := provider.Permission(); !applicable {
+		return nil, false
+	}
+	return providerPermission{provider: provider}, true
 }
+
+// providerPermission is the permission.Permission view of a LocationProvider. It
+// re-reads the live status on each accessor and delegates Request to the provider.
+type providerPermission struct {
+	provider LocationProvider
+}
+
+func (p providerPermission) Name() string { perm, _ := p.provider.Permission(); return perm.Name }
+func (p providerPermission) HowToGrant() string {
+	perm, _ := p.provider.Permission()
+	return perm.HowToGrant
+}
+func (p providerPermission) Granted() bool { perm, _ := p.provider.Permission(); return perm.Granted }
+
+func (p providerPermission) Request(ctx context.Context) { p.provider.RequestPermission(ctx) }
 
 // Get returns the Environment stored on the process, if any.
 func Get(fp monitor.ForegroundProcess) (Environment, bool) {

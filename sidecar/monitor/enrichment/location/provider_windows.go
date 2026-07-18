@@ -3,6 +3,7 @@
 package location
 
 import (
+	"context"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -105,6 +106,27 @@ func (p *windowsLocationProvider) Permission() (Permission, bool) {
 	}, true
 }
 
+// RequestPermission raises the Windows location-access prompt via the Geolocator
+// static factory's RequestAccessAsync, on its own COM-initialized thread. Deferred
+// to this call (rather than the run() startup) so the caller controls when it fires.
+func (p *windowsLocationProvider) RequestPermission(context.Context) {
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		if r, _, _ := procRoInitialize.Call(uintptr(roInitMultithreaded)); r != 0 {
+			slog.Debug("RoInitialize returned non-zero", "hr", r)
+		}
+		className, err := createHString(geolocatorClassName)
+		if err != nil {
+			slog.Debug("WindowsCreateString failed", "error", err)
+			return
+		}
+		defer deleteHString(className)
+		p.requestAccess(className)
+	}()
+}
+
 // comCall invokes vtable slot `index` on a COM interface pointer `this`.
 // COM interface pointers are carried as unsafe.Pointer (they reference native,
 // non-Go-managed memory) so the vtable dereference stays vet-clean.
@@ -198,9 +220,6 @@ func (p *windowsLocationProvider) run() {
 		return
 	}
 	defer deleteHString(className)
-
-	// Best-effort location access request via the static factory.
-	p.requestAccess(className)
 
 	var inspectable unsafe.Pointer
 	if r, _, _ := procRoActivateInstance.Call(className, uintptr(unsafe.Pointer(&inspectable))); r != 0 || inspectable == nil {

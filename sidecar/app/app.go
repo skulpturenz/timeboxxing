@@ -114,7 +114,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 // foreground process, dedups to change events via the pub/sub reporter, enriches each one (app
 // metadata, browser tab/URL, location), and projects it into the timeline event store.
 func startForegroundProjection(ctx context.Context, registry *services.Services[any, any], logger *slog.Logger, options componentTimeline.Options) {
-	m := monitor.New(ctx, monitor.MonitorOptions{})
+	enrich, permissions := stack.Stack()
+	m := monitor.New(ctx, monitor.MonitorOptions{Permissions: permissions})
 	if m == nil {
 		logger.WarnContext(ctx, "foreground monitor unavailable")
 		return
@@ -122,7 +123,6 @@ func startForegroundProjection(ctx context.Context, registry *services.Services[
 
 	projector := componentTimeline.NewService(registry, options)
 	pubsub, _ := reporter.From(ctx, m.Stream)
-	enrich := stack.Stack()
 	events := pubsub.Subscribe("timeline_projection")
 
 	go func() {

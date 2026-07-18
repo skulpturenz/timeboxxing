@@ -6,6 +6,7 @@ import (
 
 	"github.com/jonoton/go-ringbuffer"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/idle"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/platform"
 )
 
@@ -26,6 +27,9 @@ type MonitorOptions struct {
 	IdleAfter    *time.Duration
 	BufferSize   *int
 	Reporter     *Reporter
+	// Permissions are the OS permissions the enrichment stack needs; New requests
+	// each one (alongside the platform tracker's own permissions).
+	Permissions []permission.Permission
 }
 
 type Monitor struct {
@@ -36,7 +40,7 @@ type Monitor struct {
 }
 
 func New(ctx context.Context, options MonitorOptions) *Monitor {
-	tracker, err := platform.New(ctx, platform.Config{})
+	tracker, err := platform.New(ctx, platform.Config{PromptPermissions: true})
 	if err != nil {
 		return nil
 	}
@@ -44,6 +48,10 @@ func New(ctx context.Context, options MonitorOptions) *Monitor {
 	idleDetector, err := idle.New(ctx)
 	if err != nil {
 		idleDetector = idle.Nop()
+	}
+
+	for _, perm := range options.Permissions {
+		perm.Request(ctx)
 	}
 
 	pollInterval := 200 * time.Millisecond
