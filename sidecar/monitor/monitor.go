@@ -2,79 +2,134 @@ package monitor
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/jonoton/go-ringbuffer"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/idle"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/platform"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
 )
 
-type Config struct {
-	PollInterval  time.Duration
-	MinDuration   time.Duration
-	IdleThreshold time.Duration
+type ForegroundProcess struct {
+	AppName       *string
+	AppIdentifier *string
+	AppPath       *string
+	PID           *int32
+	WindowTitle   *string
+	TitleSource   *platform.TitleSource
+	Timestamp     time.Time
+	Idle          bool
+	Enrichments   map[string]any
 }
 
-const (
-	defaultPollInterval  = 500 * time.Millisecond
-	defaultMinDuration   = time.Second
-	defaultIdleThreshold = 5 * time.Minute
-)
-
-type Handle struct {
-	Transitions <-chan session.Transition
-	manager     *session.SessionManager
+type MonitorOptions struct {
+	PollInterval *time.Duration
+	IdleAfter    *time.Duration
+	BufferSize   *int
+	Reporter     *Reporter
 }
 
-func (h *Handle) CurrentSession() *session.Session {
-	if h == nil || h.manager == nil {
+type Monitor struct {
+	Stream       *ringbuffer.RingBuffer[ForegroundProcess]
+	pollInterval time.Duration
+	idleAfter    time.Duration
+	idleDetector idle.IdleDetector
+}
+
+func New(options MonitorOptions) *Monitor {
+	tracker, err := platform.New(context.TODO(), platform.Config{})
+	if err != nil {
 		return nil
 	}
-	return h.manager.CurrentSession()
-}
 
-func Start(ctx context.Context, logger *slog.Logger, cfg Config) (*Handle, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	cfg = resolveConfig(cfg)
-
-	tracker, err := platform.New(ctx, platform.Config{Logger: logger})
+	idleDetector, err := idle.New(context.TODO())
 	if err != nil {
-		return nil, fmt.Errorf("create platform tracker: %w", err)
-	}
-
-	idleDetector, err := idle.New(ctx)
-	if err != nil {
-		logger.WarnContext(ctx, "idle detection unavailable, continuing without idle tracking", "error", err)
 		idleDetector = idle.Nop()
 	}
 
-	manager := session.NewManager(session.ManagerConfig{
-		MinDuration:   cfg.MinDuration,
-		IdleThreshold: cfg.IdleThreshold,
-		IdleDetector:  idleDetector,
-	})
+	pollInterval := 200 * time.Millisecond
+	if options.PollInterval != nil {
+		pollInterval = *options.PollInterval
+	}
 
-	go manager.Run(ctx, tracker, cfg.PollInterval)
+	idleAfter := 5 * time.Minute
+	if options.IdleAfter != nil {
+		idleAfter = *options.IdleAfter
+	}
 
-	return &Handle{
-		Transitions: manager.Transitions,
-		manager:     manager,
-	}, nil
+	bufferSize := 10
+	if options.BufferSize != nil {
+		bufferSize = *options.BufferSize
+	}
+
+	// don't care about dropping oldest items
+	// if we poll every 200ms, it takes 2 seconds to fill
+	buffer := ringbuffer.New[ForegroundProcess](bufferSize)
+
+	monitor := Monitor{
+		pollInterval: pollInterval,
+		idleAfter:    idleAfter,
+		Stream:       buffer,
+		idleDetector: idleDetector,
+	}
+
+	go monitor.Poll(context.TODO(), tracker)
+
+	return &monitor
 }
 
-func resolveConfig(cfg Config) Config {
-	if cfg.PollInterval == 0 {
-		cfg.PollInterval = defaultPollInterval
+func (m *Monitor) Poll(ctx context.Context, tracker platform.Tracker) {
+	ticker := time.NewTicker(m.pollInterval * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			m.Stream.Stop()
+			return
+		case <-ticker.C:
+			m.tick(ctx, tracker)
+		}
 	}
-	if cfg.MinDuration == 0 {
-		cfg.MinDuration = defaultMinDuration
+}
+
+func (m *Monitor) tick(ctx context.Context, tracker platform.Tracker) {
+	windowInfo, err := tracker.Poll(ctx)
+	if err != nil {
+		return
 	}
-	if cfg.IdleThreshold == 0 {
-		cfg.IdleThreshold = defaultIdleThreshold
+
+	idleSeconds, _ := m.idleDetector.SecondsSinceLastInput(ctx)
+	isIdle := idleSeconds >= m.idleAfter.Seconds()
+
+	if isIdle {
+		item := ForegroundProcess{
+			Idle:      isIdle,
+			Timestamp: time.Now().Add(time.Duration(-1*idleSeconds) * time.Second),
+		}
+		m.Stream.Add(item)
+
+		return
 	}
-	return cfg
+
+	appName := windowInfo.AppName
+	appIdentifier := windowInfo.AppIdentifier
+	appPath := windowInfo.AppPath
+	pid := windowInfo.PID
+	windowTitle := windowInfo.WindowTitle
+	titleSource := windowInfo.TitleSource
+	timestamp := windowInfo.Timestamp
+	encrichments := map[string]any{}
+
+	item := ForegroundProcess{
+		AppName:       &appName,
+		AppIdentifier: &appIdentifier,
+		AppPath:       &appPath,
+		PID:           &pid,
+		WindowTitle:   &windowTitle,
+		TitleSource:   &titleSource,
+		Timestamp:     timestamp,
+		Idle:          false,
+		Enrichments:   encrichments,
+	}
+
+	m.Stream.Add(item)
 }

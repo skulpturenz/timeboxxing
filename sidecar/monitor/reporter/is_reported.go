@@ -1,8 +1,10 @@
 package reporter
 
-import sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+import (
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+)
 
-func isReported(current *sessionnew.ForegroundProcess, incoming sessionnew.ForegroundProcess) bool {
+func isReported(current *monitor.ForegroundProcess, incoming monitor.ForegroundProcess) bool {
 	if current == nil {
 		return false
 	}
@@ -24,5 +26,5 @@ func isReported(current *sessionnew.ForegroundProcess, incoming sessionnew.Foreg
 		}
 	}
 
-	return true // dedupe by default
+	return true
 }

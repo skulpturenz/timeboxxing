@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/jonoton/go-ringbuffer"
-	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 )
 
 type PubSubReporter struct {
@@ -17,12 +17,12 @@ type PubSubReporter struct {
 
 type subscriber struct {
 	id        string
-	ch        chan<- sessionnew.ForegroundProcess
-	current   *sessionnew.ForegroundProcess
+	ch        chan<- monitor.ForegroundProcess
+	current   *monitor.ForegroundProcess
 	dropCount int
 }
 
-func From(ctx context.Context, stream *ringbuffer.RingBuffer[sessionnew.ForegroundProcess]) (*PubSubReporter, func()) {
+func From(ctx context.Context, stream *ringbuffer.RingBuffer[monitor.ForegroundProcess]) (*PubSubReporter, func()) {
 	subscribers := []*subscriber{}
 
 	reporter := PubSubReporter{
@@ -59,7 +59,7 @@ func From(ctx context.Context, stream *ringbuffer.RingBuffer[sessionnew.Foregrou
 	return &reporter, cleanup
 }
 
-func (p *PubSubReporter) Subscribe(id string) <-chan sessionnew.ForegroundProcess {
+func (p *PubSubReporter) Subscribe(id string) <-chan monitor.ForegroundProcess {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -69,7 +69,7 @@ func (p *PubSubReporter) Subscribe(id string) <-chan sessionnew.ForegroundProces
 
 	// channel size: there can only be 1 foreground process at a time
 	// order: can be processed out of order, we have timestamps
-	c := make(chan sessionnew.ForegroundProcess, 1)
+	c := make(chan monitor.ForegroundProcess, 1)
 	p.subscribers = append(p.subscribers, &subscriber{
 		id: id,
 		ch: c,
@@ -78,7 +78,7 @@ func (p *PubSubReporter) Subscribe(id string) <-chan sessionnew.ForegroundProces
 	return c
 }
 
-func (p *PubSubReporter) publish(incoming sessionnew.ForegroundProcess) {
+func (p *PubSubReporter) publish(incoming monitor.ForegroundProcess) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
