@@ -2,48 +2,46 @@ package appmetadata
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
 	"os"
 	"path"
 	"strings"
 	"time"
+
+	"resty.dev/v3"
 )
 
-// feedTimeout bounds a single feed lookup. Feeds are a best-effort fallback, so
-// a slow endpoint must never stall the enrichment chain.
+// feedTimeout bounds a single feed lookup attempt. Feeds are a best-effort
+// fallback, so a slow endpoint must never stall the enrichment chain.
 const feedTimeout = 4 * time.Second
 
 // maxIconBytes caps how much of a remote icon we will download.
 const maxIconBytes = 2 << 20 // 2 MiB
 
-// feedHTTPClient is shared across feed enrichers.
-var feedHTTPClient = &http.Client{Timeout: feedTimeout}
+// feedClient is shared across feed enrichers. It retries transient failures
+// (transport errors, 429, 5xx) with backoff, but never a 4xx — Flathub/Winget
+// return 404 for unknown apps, which must stay a fast negative.
+var feedClient = resty.New().
+	SetTimeout(feedTimeout).
+	SetResponseBodyLimit(maxIconBytes).
+	SetRetryCount(2).
+	SetRetryWaitTime(200*time.Millisecond).
+	SetRetryMaxWaitTime(2*time.Second).
+	SetRetryDefaultConditions(true).
+	AddRetryConditions(resty.RetryConditionStatusTooManyRequests, resty.RetryConditionStatus5XX)
 
-// getJSON fetches url and decodes the JSON body into out. Non-200 responses are
+// getJSON fetches url and decodes the JSON body into out. Non-2xx responses are
 // treated as "not found" (returns false, nil).
 func getJSON(ctx context.Context, url string, out any) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, feedTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := feedClient.R().
+		SetContext(ctx).
+		SetHeader("Accept", "application/json").
+		SetResult(out).
+		Get(url)
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := feedHTTPClient.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
+	if !resp.IsStatusSuccess() {
 		return false, nil
-	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return false, err
 	}
 	return true, nil
 }
@@ -68,24 +66,14 @@ func downloadIconToCache(ctx context.Context, url string, identity string) strin
 		return ""
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, feedTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return ""
-	}
-	resp, err := feedHTTPClient.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	// The client caps the body at maxIconBytes (SetResponseBodyLimit).
+	resp, err := feedClient.R().SetContext(ctx).Get(url)
+	if err != nil || !resp.IsStatusSuccess() {
 		return ""
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxIconBytes))
-	if err != nil || len(data) == 0 {
+	data := resp.Bytes()
+	if len(data) == 0 {
 		return ""
 	}
 	if err := os.WriteFile(target, data, 0o644); err != nil {

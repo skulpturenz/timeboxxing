@@ -2,11 +2,11 @@ package browser
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
+
+	"resty.dev/v3"
 )
 
 // CDPTab represents one entry from Chrome's /json endpoint.
@@ -22,7 +22,7 @@ type CDPTab struct {
 // with --remote-debugging-port.
 type CDPPoller struct {
 	mu           sync.Mutex
-	client       *http.Client
+	client       *resty.Client
 	endpoint     string
 	cache        []CDPTab
 	enabled      bool      // false → no-op until next probe attempt
@@ -35,8 +35,12 @@ type CDPPoller struct {
 // NewCDPPoller creates a CDPPoller targeting the given port.
 // Call Probe() once at startup to check if the port is reachable.
 func NewCDPPoller(port int) *CDPPoller {
+	// The CDP endpoint is local and this runs on the enrichment path, so we use a
+	// short timeout and NO HTTP retries — connectivity failures are handled by the
+	// application-level probe backoff below, not by retrying the localhost call.
+	client := resty.New().SetTimeout(time.Second)
 	return &CDPPoller{
-		client:       &http.Client{Timeout: time.Second},
+		client:       client,
 		endpoint:     fmt.Sprintf("http://localhost:%d/json", port),
 		minInterval:  500 * time.Millisecond,
 		probeBackoff: 30 * time.Second,
@@ -95,18 +99,13 @@ func (p *CDPPoller) fetchAndCache(ctx context.Context) bool {
 	if ctx.Err() != nil {
 		return false
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint, nil)
-	if err != nil {
-		return false
-	}
-	resp, err := p.client.Do(req)
+	var tabs []CDPTab
+	resp, err := p.client.R().SetContext(ctx).SetResult(&tabs).Get(p.endpoint)
 	if err != nil {
 		p.enabled = false
 		return false
 	}
-	defer resp.Body.Close()
-	var tabs []CDPTab
-	if err := json.NewDecoder(resp.Body).Decode(&tabs); err != nil {
+	if !resp.IsStatusSuccess() {
 		return false
 	}
 	p.cache = tabs

@@ -125,6 +125,43 @@ func TestMemoized_MemoizesByIdentity(t *testing.T) {
 	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "inner should be called once (memoized)")
 }
 
+func TestGetJSON_RetriesOn5xx(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if hits.Add(1) == 1 {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"ok"}`))
+	}))
+	defer srv.Close()
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	ok, err := getJSON(context.Background(), srv.URL, &out)
+	require.NoError(t, err)
+	assert.True(t, ok, "expected success after retrying the transient 500")
+	assert.Equal(t, "ok", out.Name)
+	assert.Equal(t, int32(2), hits.Load(), "expected one retry after the 500 (2 hits total)")
+}
+
+func TestGetJSON_DoesNotRetryOn404(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	var out struct{}
+	ok, err := getJSON(context.Background(), srv.URL, &out)
+	require.NoError(t, err)
+	assert.False(t, ok, "404 is a not-found, not an error")
+	assert.Equal(t, int32(1), hits.Load(), "a 404 must not be retried")
+}
+
 func TestFold_MergesLocalThenFeed(t *testing.T) {
 	local := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		return setMetadata(fp, Metadata{FriendlyName: "VLC", IconPath: "/i.png", Source: SourceDesktop})

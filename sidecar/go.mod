@@ -28,6 +28,8 @@ require (
 	howett.net/plist v1.0.1
 )
 
+require resty.dev/v3 v3.0.0-rc.3
+
 require (
 	buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.11-20250718181942-e35f9b667443.1 // indirect
 	buf.build/gen/go/bufbuild/protodescriptor/protocolbuffers/go v1.36.11-20250109164928-1da0de137947.1 // indirect

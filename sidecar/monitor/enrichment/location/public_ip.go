@@ -2,13 +2,20 @@ package location
 
 import (
 	"context"
-	"io"
 	"net"
-	"net/http"
 	"strings"
 	"time"
 
+	"resty.dev/v3"
+
 	"github.com/skulpturenz/timeboxxing/sidecar/memo"
+)
+
+// publicIPTimeout bounds a single lookup attempt; publicIPBodyLimit caps the echo
+// response (an IP string is tiny) so a misbehaving endpoint can't stream unbounded.
+const (
+	publicIPTimeout   = 5 * time.Second
+	publicIPBodyLimit = 64
 )
 
 // The public IP of a NAT'd machine cannot be discovered locally, so an outbound
@@ -26,17 +33,27 @@ const (
 // subsequent calls until the TTL expires. Satisfies PublicIPProvider.
 type IPProvider struct {
 	endpoint string
-	client   *http.Client
+	client   *resty.Client
 	cache    *memo.Memoize
 }
 
-// NewPublicIPProvider returns a provider using the default echo endpoint.
+// NewPublicIPProvider returns a provider using the default echo endpoint. The
+// resty client retries transient failures (transport errors, 429, 5xx) with
+// backoff; a 4xx is not retried.
 func NewPublicIPProvider() *IPProvider {
 	ttl := publicIPCacheTTL
 	cleanup := publicIPCacheTTL + time.Minute
+	client := resty.New().
+		SetTimeout(publicIPTimeout).
+		SetResponseBodyLimit(publicIPBodyLimit).
+		SetRetryCount(2).
+		SetRetryWaitTime(200*time.Millisecond).
+		SetRetryMaxWaitTime(2*time.Second).
+		SetRetryDefaultConditions(true).
+		AddRetryConditions(resty.RetryConditionStatusTooManyRequests, resty.RetryConditionStatus5XX)
 	return &IPProvider{
 		endpoint: defaultPublicIPEndpoint,
-		client:   &http.Client{Timeout: 5 * time.Second},
+		client:   client,
 		cache:    memo.NewWithOptions(&ttl, &cleanup),
 	}
 }
@@ -58,24 +75,14 @@ func (p *IPProvider) PublicIP() *string {
 }
 
 func (p *IPProvider) lookup(ctx context.Context) (string, error) {
-	reqCtx, cancel := context.WithTimeout(ctx, p.client.Timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, p.endpoint, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+	// resty applies the per-attempt timeout (SetTimeout) and body limit; ctx keeps
+	// cancellation propagating across retries.
+	resp, err := p.client.R().SetContext(ctx).Get(p.endpoint)
 	if err != nil {
 		return "", err
 	}
 
+	body := resp.Bytes()
 	ip := parsePublicIP(string(body))
 	if ip == "" {
 		return "", &net.AddrError{Err: "invalid public ip response", Addr: strings.TrimSpace(string(body))}
