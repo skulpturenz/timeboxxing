@@ -12,7 +12,7 @@ type parallelMapItem[T any] struct {
 	item T
 }
 
-func ParallelMap[T any, U any](clone func(T) T, fns ...func(context.Context, T) (U, bool)) func(context.Context, T) ([]U, bool) {
+func ParallelMap[T any, U any](fns ...func(context.Context, T) (U, bool)) func(context.Context, T) ([]U, bool) {
 	noop := func(item T) T {
 		return item
 	}
