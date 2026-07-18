@@ -2,6 +2,7 @@ package reporter
 
 import (
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 func isReported(current *monitor.ForegroundProcess, incoming monitor.ForegroundProcess) bool {
@@ -18,18 +19,10 @@ func isReported(current *monitor.ForegroundProcess, incoming monitor.ForegroundP
 			return false
 		}
 
-		if deref(current.WindowTitle) != deref(incoming.WindowTitle) { // browsers
+		if utils.Coalesce(current.WindowTitle, "") != utils.Coalesce(incoming.WindowTitle, "") { // browsers
 			return false
 		}
 	}
 
 	return true
-}
-
-func deref[T any](p *T) T {
-	if p == nil {
-		var zero T
-		return zero
-	}
-	return *p
 }

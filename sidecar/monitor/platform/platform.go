@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 // TitleSource documents which OS API produced the WindowTitle.
@@ -97,12 +98,7 @@ func displayNameFromIdentifier(value string) string {
 }
 
 func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	return strings.TrimSpace(utils.Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) }, values...), ""))
 }
 
 // Config holds tunables passed from main into the platform layer.

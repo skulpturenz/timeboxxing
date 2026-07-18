@@ -39,7 +39,7 @@ func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (m
 
 	metadata := Metadata{Source: SourceBundle}
 	metadata.FriendlyName = utils.
-		Coalesce(utils.Or(func(x string) bool { return strings.TrimSpace(x) != "" },
+		Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) },
 			info.DisplayName,
 			info.BundleName), "")
 	if category, err := ParseAppleCategory(info.Category); err == nil {

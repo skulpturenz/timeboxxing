@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 // wingetBaseURL is the winget.run search endpoint; overridable in tests.
@@ -31,10 +32,7 @@ type wingetSearch struct {
 func WingetEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 	// The winget enricher only runs (via Or) when local metadata found nothing, so
 	// the search term is the process's reported app name.
-	query := ""
-	if fp.AppName != nil {
-		query = strings.TrimSpace(*fp.AppName)
-	}
+	query := strings.TrimSpace(utils.Coalesce(fp.AppName, ""))
 	if query == "" {
 		return fp, false
 	}

@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 	"golang.org/x/sys/windows"
 )
 
@@ -23,10 +24,8 @@ func LocalMetadataEnricher(ctx context.Context, fp monitor.ForegroundProcess) (m
 	info, err := readVersionInfo(exe)
 	metadata := Metadata{Source: SourcePE}
 	if err == nil {
-		metadata.FriendlyName = strings.TrimSpace(info.FileDescription)
-		if metadata.FriendlyName == "" {
-			metadata.FriendlyName = strings.TrimSpace(info.ProductName)
-		}
+		metadata.FriendlyName = utils.Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) },
+			info.FileDescription, info.ProductName), "")
 		metadata.Description = strings.TrimSpace(info.Comments)
 	}
 	if iconPath := extractWindowsIcon(exe, identityKey(fp)); iconPath != "" {

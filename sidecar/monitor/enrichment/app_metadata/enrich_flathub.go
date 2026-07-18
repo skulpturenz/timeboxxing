@@ -21,7 +21,7 @@ type flathubAppstream struct {
 
 func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 	// An unconfigured base URL means the feed is disabled: no-op.
-	if strings.TrimSpace(flathubBaseURL) == "" {
+	if utils.IsEmptyString(flathubBaseURL) {
 		return fp, false
 	}
 
@@ -40,7 +40,7 @@ func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor
 		Source:       SourceFlathub,
 		FriendlyName: payload.Name,
 		Description: utils.
-			Coalesce(utils.Or(func(x string) bool { return strings.TrimSpace(x) != "" },
+			Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) },
 				payload.Summary,
 				payload.Description), ""),
 	}

@@ -1,7 +1,7 @@
 package appmetadata
 
 import (
-	"strings"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 // KeyMetadata is the well-known key under which enrichers stash the typed
@@ -30,8 +30,8 @@ type Metadata struct {
 
 // empty reports whether the metadata carries no information at all.
 func (m Metadata) empty() bool {
-	return strings.TrimSpace(m.FriendlyName) == "" &&
-		strings.TrimSpace(m.Description) == "" &&
-		m.Category == CategoryUnknown &&
-		strings.TrimSpace(m.IconPath) == ""
+	return utils.IsEmptyString(m.FriendlyName) &&
+		utils.IsEmptyString(m.Description) &&
+		utils.IsZero(m.Category) &&
+		utils.IsEmptyString(m.IconPath)
 }

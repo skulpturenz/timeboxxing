@@ -9,6 +9,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/idle"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/platform"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 type ForegroundProcess struct {
@@ -52,20 +53,9 @@ func New(ctx context.Context, options Options) (*Monitor, error) {
 		perm.Request(ctx)
 	}
 
-	pollInterval := 200 * time.Millisecond
-	if options.PollInterval != nil {
-		pollInterval = *options.PollInterval
-	}
-
-	idleAfter := 5 * time.Minute
-	if options.IdleAfter != nil {
-		idleAfter = *options.IdleAfter
-	}
-
-	bufferSize := 10
-	if options.BufferSize != nil {
-		bufferSize = *options.BufferSize
-	}
+	pollInterval := utils.Coalesce(options.PollInterval, 200*time.Millisecond)
+	idleAfter := utils.Coalesce(options.IdleAfter, 5*time.Minute)
+	bufferSize := utils.Coalesce(options.BufferSize, 10)
 
 	// don't care about dropping oldest items
 	// if we poll every 200ms, it takes 2 seconds to fill

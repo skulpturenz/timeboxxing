@@ -11,6 +11,7 @@ import (
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 // Key is the Enrichments bag key under which the Tab payload is stored.
@@ -90,15 +91,15 @@ type URLResolver interface {
 // runs every poll (the CDP poller rate-limits its own network calls).
 func Enrich(resolver URLResolver) enrichment.Enricher {
 	return func(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
-		appName := deref(fp.AppName)
+		appName := strings.TrimSpace(utils.Coalesce(fp.AppName, ""))
 		kind := IsBrowser(appName)
-		if kind == BrowserNone {
+		if utils.IsZero(kind) {
 			return fp, false
 		}
 
 		tab := Tab{Browser: kind.String()}
 
-		if title := deref(fp.WindowTitle); title != "" {
+		if title := strings.TrimSpace(utils.Coalesce(fp.WindowTitle, "")); title != "" {
 			if info, ok := ParseTabTitle(appName, title); ok {
 				tab.Title = info.TabTitle
 				if resolver != nil {
@@ -140,13 +141,6 @@ func domainOf(rawURL string) string {
 		return ""
 	}
 	return strings.TrimPrefix(parsed.Hostname(), "www.")
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return strings.TrimSpace(*s)
 }
 
 // IsBrowser returns the BrowserKind for the given app name, or BrowserNone.
@@ -219,7 +213,7 @@ func ParseTabTitle(appName, rawTitle string) (TabInfo, bool) {
 		return TabInfo{}, false
 	}
 	kind := IsBrowser(appName)
-	if kind == BrowserNone {
+	if utils.IsZero(kind) {
 		return TabInfo{}, false
 	}
 
