@@ -11,6 +11,7 @@ import (
 
 	grpcLogging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	componentTimeline "github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	componentUsage "github.com/skulpturenz/timeboxxing/sidecar/components/usage"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
@@ -30,6 +31,7 @@ import (
 	grpcUsage "github.com/skulpturenz/timeboxxing/sidecar/grpc/usage"
 	sidecarLogging "github.com/skulpturenz/timeboxxing/sidecar/logging"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment/stack"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/observability"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
@@ -92,24 +94,45 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	}
 	startStartupSemanticBackfill(semanticRuntime)
 
-	monitorHandle, err := monitor.Start(ctx, logger.With("service", "monitor"), monitor.Config{})
-	if err != nil {
-		return fmt.Errorf("start monitor: %w", err)
-	}
-	componentUsage.RegisterActiveSessions(registry, monitorHandle)
 	usageService := componentUsage.NewService(registry)
 	if semanticRuntime.Answerer != nil {
 		semanticRuntime.Answerer.SetToolRunner(grpcAma.NewAppUsageToolRunner(usageService))
 	}
 
-	transitionQueueReporter := reporter.NewQueueReporter(registry)
-	go func() {
-		if err := transitionQueueReporter.Run(ctx, monitorHandle.Transitions); err != nil {
-			logger.ErrorContext(ctx, "transition queue reporter stopped", "error", err)
+	timelineOptions := componentTimeline.Options{}
+	if semanticRuntime.Indexer != nil {
+		if queues, ok := workers.QueuesFromServices(registry); ok && queues.TransitionEventReportedQueue != nil {
+			timelineOptions.Enqueuer = workers.NewTransitionEventReportedEnqueuer(queues.TransitionEventReportedQueue)
 		}
-	}()
+	}
+	startForegroundProjection(ctx, registry, logger.With("service", "timeline"), timelineOptions)
 
 	return serveGRPC(ctx, registry, logger)
+}
+
+// startForegroundProjection wires the foreground monitor to the timeline projection: it polls the OS
+// foreground process, dedups to change events via the pub/sub reporter, enriches each one (app
+// metadata, browser tab/URL, location), and projects it into the timeline event store.
+func startForegroundProjection(ctx context.Context, registry *services.Services[any, any], logger *slog.Logger, options componentTimeline.Options) {
+	m := monitor.New(ctx, monitor.MonitorOptions{})
+	if m == nil {
+		logger.WarnContext(ctx, "foreground monitor unavailable")
+		return
+	}
+
+	projector := componentTimeline.NewService(registry, options)
+	pubsub, _ := reporter.From(ctx, m.Stream)
+	enrich := stack.Stack()
+	events := pubsub.Subscribe("timeline_projection")
+
+	go func() {
+		for foregroundProcess := range events {
+			enriched, _ := enrich(ctx, foregroundProcess)
+			if err := projector.Project(ctx, enriched); err != nil {
+				logger.ErrorContext(ctx, "project foreground process", "error", err)
+			}
+		}
+	}()
 }
 
 func buildQueues(ctx context.Context, registry *services.Services[any, any]) error {
@@ -118,15 +141,6 @@ func buildQueues(ctx context.Context, registry *services.Services[any, any]) err
 	// buildQueues runs immediately after db.Register, so the database is always present.
 	database, _ := db.FromServices(registry)
 	queueDSN := database.DSN.String()
-
-	transitionEventQueue, err := queue.New[reporter.TransitionEvent](ctx, queue.QueueOptions{
-		ConnectionString: queueDSN,
-		QueueName:        workers.TransitionEventQueueName.String(),
-	})
-	if err != nil {
-		return fmt.Errorf("create transition event queue: %w", err)
-	}
-	reporter.RegisterTransitionEventQueue(registry, transitionEventQueue)
 
 	transitionEventReportedQueue, err := queue.New[workers.TransitionEventReported](ctx, queue.QueueOptions{
 		ConnectionString: queueDSN,
@@ -196,11 +210,6 @@ func startWorkers(ctx context.Context, registry *services.Services[any, any], ru
 		}
 	}
 
-	transitionEventQueue, _ := reporter.TransitionEventQueueFromServices(registry)
-	if queue, ok := transitionEventQueue.(*queue.Queue[reporter.TransitionEvent]); ok {
-		transitionEventCleanup := runtime.TransitionEventReporterWorker(ctx, queue)
-		cleanups = append(cleanups, transitionEventCleanup)
-	}
 	return cleanups
 }
 

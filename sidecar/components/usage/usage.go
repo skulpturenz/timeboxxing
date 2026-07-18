@@ -4,25 +4,18 @@ import (
 	"time"
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 const defaultActiveSnapshotInterval = 30 * time.Second
 
-type ActiveSessionProvider interface {
-	CurrentSession() *session.Session
-}
-
 type Service struct {
 	transitions            *componentTransitions.Service
-	activeSessions         ActiveSessionProvider
 	clock                  func() time.Time
 	activeSnapshotInterval time.Duration
 }
 
 type serviceKey struct{}
-type activeSessionsKey struct{}
 type clockKey struct{}
 type activeSnapshotIntervalKey struct{}
 
@@ -38,10 +31,6 @@ func ServiceFromServices(registry *services.Services[any, any]) (*Service, bool)
 	return service.Unwrap(), true
 }
 
-func RegisterActiveSessions(registry *services.Services[any, any], provider ActiveSessionProvider) {
-	services.Set(registry, activeSessionsKey{}, provider)
-}
-
 func RegisterClock(registry *services.Services[any, any], clock func() time.Time) {
 	services.Set(registry, clockKey{}, clock)
 }
@@ -52,7 +41,6 @@ func RegisterActiveSnapshotInterval(registry *services.Services[any, any], inter
 
 func NewService(registry *services.Services[any, any]) *Service {
 	transitions, _ := componentTransitions.ServiceFromServices(registry)
-	activeSessions, _ := activeSessionsFromServices(registry)
 	clock := clockFromServices(registry)
 	if clock == nil {
 		clock = time.Now
@@ -63,7 +51,6 @@ func NewService(registry *services.Services[any, any]) *Service {
 	}
 	service := &Service{
 		transitions:            transitions,
-		activeSessions:         activeSessions,
 		clock:                  clock,
 		activeSnapshotInterval: interval,
 	}
@@ -76,14 +63,6 @@ func minDuration(first time.Duration, second time.Duration) time.Duration {
 		return first
 	}
 	return second
-}
-
-func activeSessionsFromServices(registry *services.Services[any, any]) (ActiveSessionProvider, bool) {
-	service, ok := services.Get[ActiveSessionProvider](registry, activeSessionsKey{})
-	if !ok {
-		return nil, false
-	}
-	return service.Unwrap(), true
 }
 
 func clockFromServices(registry *services.Services[any, any]) func() time.Time {

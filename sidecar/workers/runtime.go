@@ -1,20 +1,26 @@
 package workers
 
 import (
+	"context"
 	"log/slog"
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/logging"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
+// transitionEventIndexer indexes a finalized transition event for semantic search.
+// *semantic.Indexer satisfies it.
+type transitionEventIndexer interface {
+	IndexTransitionEvent(ctx context.Context, transitionEventID int64) (int64, error)
+}
+
 type Runtime struct {
 	logger      *slog.Logger
 	queues      Queues
-	indexer     reporter.TransitionEventIndexer
+	indexer     transitionEventIndexer
 	transitions *componentTransitions.Service
 }
 
@@ -52,8 +58,8 @@ func RuntimeFromServices(registry *services.Services[any, any]) (*Runtime, bool)
 func NewRuntime(registry *services.Services[any, any]) *Runtime {
 	queues, _ := QueuesFromServices(registry)
 	transitions, _ := componentTransitions.ServiceFromServices(registry)
-	var indexer reporter.TransitionEventIndexer
-	if semanticRuntime, ok := semantic.RuntimeFromServices(registry); ok && semanticRuntime != nil {
+	var indexer transitionEventIndexer
+	if semanticRuntime, ok := semantic.RuntimeFromServices(registry); ok && semanticRuntime != nil && semanticRuntime.Indexer != nil {
 		indexer = semanticRuntime.Indexer
 	}
 

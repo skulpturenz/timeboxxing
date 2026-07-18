@@ -28,7 +28,7 @@ func (s *Service) Subscribe(ctx context.Context, params SubscribeParams) Subscri
 		defer ticker.Stop()
 
 		sendActive := func() (bool, bool) {
-			event, ok := s.activeEvent(params.Window)
+			event, ok := s.activeEvent(ctx, params.Window)
 			if !ok {
 				return true, false
 			}

@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
 )
 
 func TestGetAppUsageTotalsAggregatesClipsSortsAndLimits(t *testing.T) {
@@ -98,20 +96,14 @@ func TestGetAppUsageTotalsIncludesActiveSession(t *testing.T) {
 	windowStart := time.Date(2026, 6, 13, 9, 0, 0, 0, time.UTC)
 	now := windowStart.Add(90 * time.Minute)
 	service, _ := newTestService(t, database,
-		withActiveSessions(fakeActiveSessionProvider{
-			current: &session.Session{
-				Key: session.AppKey{
-					AppName: "Linear",
-				},
-				ApplicationIdentity: session.AppIdentity{
-					Identifier: "com.linear",
-					Path:       "/Applications/Linear.app",
-				},
-				StartedAt: windowStart.Add(30 * time.Minute),
-			},
-		}),
 		withClock(func() time.Time { return now }),
 	)
+	createOpenTimelineEvent(t, ctx, database, openTimelineFixture{
+		ApplicationName:       "Linear",
+		ApplicationIdentifier: "com.linear",
+		ApplicationPath:       "/Applications/Linear.app",
+		StartedAt:             windowStart.Add(30 * time.Minute),
+	})
 
 	totals, err := service.GetAppUsageTotals(ctx, AppUsageTotalsParams{
 		Window: Window{StartedAt: windowStart, EndedAt: windowStart.Add(4 * time.Hour)},

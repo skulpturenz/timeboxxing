@@ -35,13 +35,13 @@ type Monitor struct {
 	idleDetector idle.IdleDetector
 }
 
-func New(options MonitorOptions) *Monitor {
-	tracker, err := platform.New(context.TODO(), platform.Config{})
+func New(ctx context.Context, options MonitorOptions) *Monitor {
+	tracker, err := platform.New(ctx, platform.Config{})
 	if err != nil {
 		return nil
 	}
 
-	idleDetector, err := idle.New(context.TODO())
+	idleDetector, err := idle.New(ctx)
 	if err != nil {
 		idleDetector = idle.Nop()
 	}
@@ -72,13 +72,13 @@ func New(options MonitorOptions) *Monitor {
 		idleDetector: idleDetector,
 	}
 
-	go monitor.Poll(context.TODO(), tracker)
+	go monitor.Poll(ctx, tracker)
 
 	return &monitor
 }
 
 func (m *Monitor) Poll(ctx context.Context, tracker platform.Tracker) {
-	ticker := time.NewTicker(m.pollInterval * time.Millisecond)
+	ticker := time.NewTicker(m.pollInterval)
 	defer ticker.Stop()
 	for {
 		select {

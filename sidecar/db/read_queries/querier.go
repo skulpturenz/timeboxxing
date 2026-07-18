@@ -11,6 +11,8 @@ import (
 
 type Querier interface {
 	GetApplicationSettings(ctx context.Context) (GetApplicationSettingsRow, error)
+	GetLatestTimelineEntry(ctx context.Context) (GetLatestTimelineEntryRow, error)
+	GetOpenTimelineEvent(ctx context.Context) (GetOpenTimelineEventRow, error)
 	GetProjectColorIDByColor(ctx context.Context, color int64) (int64, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
 	GetSemanticIndexCounts(ctx context.Context, embeddingModelID sql.NullInt64) (GetSemanticIndexCountsRow, error)

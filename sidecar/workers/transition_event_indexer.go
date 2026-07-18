@@ -11,6 +11,12 @@ import (
 
 const transitionEventIndexAttempts = 3
 
+// TransitionEventReported is enqueued when a timeline entry is finalized, to be picked up by the
+// semantic indexer worker below.
+type TransitionEventReported struct {
+	TransitionEventId int64
+}
+
 type TransitionEventIndexed struct {
 	TransitionEventId int64
 }
