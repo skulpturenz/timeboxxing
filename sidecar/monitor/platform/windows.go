@@ -10,6 +10,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 var (
@@ -167,10 +169,10 @@ func windowsRuntimeExecutableName(exe string) (string, bool) {
 	}
 }
 
-func (t *windowsTracker) Permissions() []PermissionStatus {
+func (t *windowsTracker) Permissions() []permission.Status {
 	// GetForegroundWindow requires no special permissions on Windows. Location
 	// permission is now surfaced by the location enricher, not the tracker.
-	return []PermissionStatus{
+	return []permission.Status{
 		{Name: "None required", Granted: true, HowToGrant: ""},
 	}
 }

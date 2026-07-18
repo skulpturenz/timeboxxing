@@ -11,18 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 type fakeLocation struct {
 	lat, lon float64
 	ok       bool
-	perm     Permission
+	perm     permission.Status
 	permOK   bool
 }
 
-func (f fakeLocation) Location() (float64, float64, bool) { return f.lat, f.lon, f.ok }
-func (f fakeLocation) Permission() (Permission, bool)     { return f.perm, f.permOK }
-func (f fakeLocation) RequestPermission(context.Context)  {}
+func (f fakeLocation) Location() (float64, float64, bool)    { return f.lat, f.lon, f.ok }
+func (f fakeLocation) Permission() (permission.Status, bool) { return f.perm, f.permOK }
+func (f fakeLocation) RequestPermission(context.Context)     {}
 
 type fakeIP struct{ ip *string }
 
@@ -71,19 +72,21 @@ func TestEnrich_NilProviders(t *testing.T) {
 	assert.False(t, ok, "expected no-op with nil providers")
 }
 
-func TestPermissions(t *testing.T) {
-	// Applicable provider surfaces its permission.
-	granted := fakeLocation{perm: Permission{Name: "Location Services", Granted: true}, permOK: true}
-	perms := Permissions(granted)
-	require.Len(t, perms, 1)
-	assert.Equal(t, "Location Services", perms[0].Name)
-	assert.True(t, perms[0].Granted)
+func TestRequestable(t *testing.T) {
+	// Applicable provider surfaces a requestable permission reflecting its status.
+	granted := fakeLocation{perm: permission.Status{Name: "Location Services", Granted: true}, permOK: true}
+	perm, ok := Requestable(granted)
+	require.True(t, ok)
+	assert.Equal(t, "Location Services", perm.Name())
+	assert.True(t, perm.Granted())
 
-	// Unsupported platform (applicable=false) yields no permissions.
-	assert.Empty(t, Permissions(fakeLocation{permOK: false}), "want empty for unsupported provider")
+	// Unsupported platform (applicable=false) is omitted.
+	_, ok = Requestable(fakeLocation{permOK: false})
+	assert.False(t, ok, "want not-ok for unsupported provider")
 
 	// Nil provider is safe.
-	assert.Nil(t, Permissions(nil), "Permissions(nil) should be nil")
+	_, ok = Requestable(nil)
+	assert.False(t, ok, "Requestable(nil) should be not-ok")
 }
 
 func TestPublicIPProvider_MemoizesLookup(t *testing.T) {

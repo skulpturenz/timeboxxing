@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 // TitleSource documents which OS API produced the WindowTitle.
@@ -103,27 +105,8 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// PermissionStatus describes one OS permission required by this platform tracker.
-type PermissionStatus struct {
-	Name       string
-	Granted    bool
-	HowToGrant string
-}
-
-// PermissionError is returned when a required permission has not been granted.
-type PermissionError struct {
-	Permission string
-	Detail     string
-}
-
-func (e *PermissionError) Error() string {
-	return "permission required: " + e.Permission + ": " + e.Detail
-}
-
 // Config holds tunables passed from main into the platform layer.
 type Config struct {
-	// macOS: prefer AX API over osascript for window titles.
-	PreferAX bool
 	// macOS: trigger the system permission dialog at startup.
 	PromptPermissions bool
 	// Logger is used by platform backends to surface setup hints (e.g. the
@@ -139,5 +122,5 @@ type Tracker interface {
 	Poll(ctx context.Context) (WindowInfo, error)
 	// Permissions returns the list of permissions this implementation requires
 	// and whether each is currently granted.
-	Permissions() []PermissionStatus
+	Permissions() []permission.Status
 }

@@ -86,10 +86,10 @@ func (p *PubSubReporter) publish(incoming monitor.ForegroundProcess) {
 		return
 	}
 
+	snapshot := new(incoming)
 	for _, s := range p.subscribers {
 		shouldSkip := isReported(s.current, incoming)
-		current := incoming
-		s.current = &current
+		s.current = snapshot
 		if shouldSkip {
 			continue
 		}
@@ -101,7 +101,7 @@ func (p *PubSubReporter) publish(incoming monitor.ForegroundProcess) {
 		// consider: if incoming keeps changing then it's noise
 		default:
 			s.dropCount += 1
-			slog.Error("dropped") // TODO
+			slog.Error("dropped foreground process")
 		}
 	}
 }

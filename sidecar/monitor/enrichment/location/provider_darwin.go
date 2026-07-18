@@ -112,7 +112,11 @@ int tbxLocationAuthStatus(void) {
 */
 import "C"
 
-import "context"
+import (
+	"context"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
+)
 
 // DefaultLocationProvider starts the CoreLocation background provider (once) and
 // returns a provider that reads its cache non-blockingly.
@@ -131,10 +135,10 @@ func (coreLocationProvider) Location() (float64, float64, bool) {
 	return 0, 0, false
 }
 
-func (coreLocationProvider) Permission() (Permission, bool) {
+func (coreLocationProvider) Permission() (permission.Status, bool) {
 	// CLAuthorizationStatus: authorizedAlways=3, authorizedWhenInUse=4.
 	status := int(C.tbxLocationAuthStatus())
-	return Permission{
+	return permission.Status{
 		Name:       "Location Services",
 		Granted:    status == 3 || status == 4,
 		HowToGrant: "System Settings → Privacy & Security → Location Services → enable this app",

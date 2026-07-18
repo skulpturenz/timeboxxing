@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 //go:embed gnome_extension/metadata.json gnome_extension/extension.js
@@ -85,8 +87,8 @@ func (b *gnomeBackend) poll(now time.Time) (WindowInfo, error) {
 	return gnomeWindowInfo(payload, now), nil
 }
 
-func (b *gnomeBackend) permissions() []PermissionStatus {
-	return []PermissionStatus{
+func (b *gnomeBackend) permissions() []permission.Status {
+	return []permission.Status{
 		{
 			Name:       "GNOME focus extension",
 			Granted:    b.extensionAvailable(),

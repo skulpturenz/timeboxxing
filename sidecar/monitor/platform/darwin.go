@@ -120,6 +120,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 type darwinTracker struct {
@@ -226,9 +228,9 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	return info, nil
 }
 
-func (t *darwinTracker) Permissions() []PermissionStatus {
+func (t *darwinTracker) Permissions() []permission.Status {
 	granted := C.isAXTrusted() == 1
-	return []PermissionStatus{
+	return []permission.Status{
 		{
 			Name:       "Accessibility",
 			Granted:    granted,

@@ -20,12 +20,10 @@ func (f *fakeResolver) URLForTitle(_ context.Context, tabTitle string) string {
 	return f.url
 }
 
-func ptr(s string) *string { return &s }
-
 func fp(appName, title string) monitor.ForegroundProcess {
 	return monitor.ForegroundProcess{
-		AppName:     ptr(appName),
-		WindowTitle: ptr(title),
+		AppName:     new(appName),
+		WindowTitle: new(title),
 		Enrichments: map[string]any{},
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 // Windows location capture via the WinRT Windows.Devices.Geolocation.Geolocator.
@@ -95,11 +97,11 @@ func (p *windowsLocationProvider) Location() (float64, float64, bool) {
 	return p.lat, p.lon, true
 }
 
-func (p *windowsLocationProvider) Permission() (Permission, bool) {
+func (p *windowsLocationProvider) Permission() (permission.Status, bool) {
 	p.mu.RLock()
 	granted := p.granted
 	p.mu.RUnlock()
-	return Permission{
+	return permission.Status{
 		Name:       "Location Services",
 		Granted:    granted,
 		HowToGrant: "Settings → Privacy & security → Location → enable location access for this app",

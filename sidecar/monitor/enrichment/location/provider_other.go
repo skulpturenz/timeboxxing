@@ -2,7 +2,11 @@
 
 package location
 
-import "context"
+import (
+	"context"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
+)
 
 // DefaultLocationProvider returns a no-op provider on platforms without a
 // supported OS geolocation source (Linux and others). It always reports "no
@@ -16,7 +20,7 @@ func (nopLocationProvider) Location() (float64, float64, bool) { return 0, 0, fa
 
 // Permission reports that location is not applicable on this platform, so it is
 // omitted from any permissions UI.
-func (nopLocationProvider) Permission() (Permission, bool) { return Permission{}, false }
+func (nopLocationProvider) Permission() (permission.Status, bool) { return permission.Status{}, false }
 
 // RequestPermission is a no-op: there is no OS location permission to request on
 // this platform.

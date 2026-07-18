@@ -11,6 +11,8 @@ import (
 
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/xproto"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 // x11Backend detects the active window on an X11 session (or XWayland) using
@@ -78,9 +80,9 @@ func (b *x11Backend) poll(now time.Time) (WindowInfo, error) {
 	}, nil
 }
 
-func (b *x11Backend) permissions() []PermissionStatus {
+func (b *x11Backend) permissions() []permission.Status {
 	// X11 window tracking requires no special permissions.
-	return []PermissionStatus{
+	return []permission.Status{
 		{Name: "X11 Display", Granted: os.Getenv("DISPLAY") != "", HowToGrant: "set the DISPLAY environment variable (e.g. DISPLAY=:0)"},
 	}
 }

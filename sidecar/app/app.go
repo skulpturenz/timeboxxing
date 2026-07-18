@@ -115,15 +115,15 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 // metadata, browser tab/URL, location), and projects it into the timeline event store.
 func startForegroundProjection(ctx context.Context, registry *services.Services[any, any], logger *slog.Logger, options componentTimeline.Options) {
 	enrich, permissions := stack.Stack()
-	m := monitor.New(ctx, monitor.MonitorOptions{Permissions: permissions})
-	if m == nil {
-		logger.WarnContext(ctx, "foreground monitor unavailable")
+	m, err := monitor.New(ctx, monitor.Options{Permissions: permissions})
+	if err != nil {
+		logger.WarnContext(ctx, "foreground monitor unavailable", "error", err)
 		return
 	}
 
 	projector := componentTimeline.NewService(registry, options)
 	pubsub, _ := reporter.From(ctx, m.Stream)
-	events := pubsub.Subscribe("timeline_projection")
+	events := pubsub.Subscribe("timeline")
 
 	go func() {
 		for foregroundProcess := range events {

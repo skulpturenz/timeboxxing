@@ -29,11 +29,9 @@ func TestFlathub_Live(t *testing.T) {
 	t.Logf("live VLC => name=%q category=%q desc.len=%d", md.FriendlyName, md.Category.Label(), len(md.Description))
 }
 
-func ptr(s string) *string { return &s }
-
 func fpWithID(id string) monitor.ForegroundProcess {
 	return monitor.ForegroundProcess{
-		AppIdentifier: ptr(id),
+		AppIdentifier: new(id),
 		Enrichments:   map[string]any{},
 	}
 }

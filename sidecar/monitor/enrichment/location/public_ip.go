@@ -54,7 +54,7 @@ func (p *IPProvider) PublicIP() *string {
 	if !ok || ip == "" {
 		return nil
 	}
-	return &ip
+	return new(ip)
 }
 
 func (p *IPProvider) lookup(ctx context.Context) (string, error) {

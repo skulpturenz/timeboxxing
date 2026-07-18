@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jonoton/go-ringbuffer"
@@ -22,14 +23,11 @@ type ForegroundProcess struct {
 	Enrichments   map[string]any
 }
 
-type MonitorOptions struct {
+type Options struct {
 	PollInterval *time.Duration
 	IdleAfter    *time.Duration
 	BufferSize   *int
-	Reporter     *Reporter
-	// Permissions are the OS permissions the enrichment stack needs; New requests
-	// each one (alongside the platform tracker's own permissions).
-	Permissions []permission.Permission
+	Permissions  []permission.Permission
 }
 
 type Monitor struct {
@@ -39,10 +37,10 @@ type Monitor struct {
 	idleDetector idle.IdleDetector
 }
 
-func New(ctx context.Context, options MonitorOptions) *Monitor {
+func New(ctx context.Context, options Options) (*Monitor, error) {
 	tracker, err := platform.New(ctx, platform.Config{PromptPermissions: true})
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("create platform tracker: %w", err)
 	}
 
 	idleDetector, err := idle.New(ctx)
@@ -80,12 +78,12 @@ func New(ctx context.Context, options MonitorOptions) *Monitor {
 		idleDetector: idleDetector,
 	}
 
-	go monitor.Poll(ctx, tracker)
+	go monitor.poll(ctx, tracker)
 
-	return &monitor
+	return &monitor, nil
 }
 
-func (m *Monitor) Poll(ctx context.Context, tracker platform.Tracker) {
+func (m *Monitor) poll(ctx context.Context, tracker platform.Tracker) {
 	ticker := time.NewTicker(m.pollInterval)
 	defer ticker.Stop()
 	for {
@@ -111,32 +109,22 @@ func (m *Monitor) tick(ctx context.Context, tracker platform.Tracker) {
 	if isIdle {
 		item := ForegroundProcess{
 			Idle:      isIdle,
-			Timestamp: time.Now().Add(time.Duration(-1*idleSeconds) * time.Second),
+			Timestamp: time.Now().Add(-time.Duration(idleSeconds * float64(time.Second))),
 		}
 		m.Stream.Add(item)
 
 		return
 	}
 
-	appName := windowInfo.AppName
-	appIdentifier := windowInfo.AppIdentifier
-	appPath := windowInfo.AppPath
-	pid := windowInfo.PID
-	windowTitle := windowInfo.WindowTitle
-	titleSource := windowInfo.TitleSource
-	timestamp := windowInfo.Timestamp
-	encrichments := map[string]any{}
-
 	item := ForegroundProcess{
-		AppName:       &appName,
-		AppIdentifier: &appIdentifier,
-		AppPath:       &appPath,
-		PID:           &pid,
-		WindowTitle:   &windowTitle,
-		TitleSource:   &titleSource,
-		Timestamp:     timestamp,
-		Idle:          false,
-		Enrichments:   encrichments,
+		AppName:       new(windowInfo.AppName),
+		AppIdentifier: new(windowInfo.AppIdentifier),
+		AppPath:       new(windowInfo.AppPath),
+		PID:           new(windowInfo.PID),
+		WindowTitle:   new(windowInfo.WindowTitle),
+		TitleSource:   new(windowInfo.TitleSource),
+		Timestamp:     windowInfo.Timestamp,
+		Enrichments:   map[string]any{},
 	}
 
 	m.Stream.Add(item)

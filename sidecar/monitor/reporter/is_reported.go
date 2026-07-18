@@ -18,13 +18,18 @@ func isReported(current *monitor.ForegroundProcess, incoming monitor.ForegroundP
 			return false
 		}
 
-		currentWindowTitle := *current.WindowTitle
-		incomingWindowTitle := *incoming.WindowTitle
-
-		if currentWindowTitle != incomingWindowTitle { // browsers
+		if deref(current.WindowTitle) != deref(incoming.WindowTitle) { // browsers
 			return false
 		}
 	}
 
 	return true
+}
+
+func deref[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return *p
 }

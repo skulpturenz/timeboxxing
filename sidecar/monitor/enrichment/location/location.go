@@ -34,7 +34,7 @@ type LocationProvider interface {
 	// Permission reports the OS location-permission status. applicable is false
 	// on platforms where location is unsupported (e.g. Linux), so callers can
 	// omit it from a permissions UI.
-	Permission() (perm Permission, applicable bool)
+	Permission() (status permission.Status, applicable bool)
 	// RequestPermission triggers the OS location-authorization prompt. It is a
 	// no-op on platforms where location is unsupported. Requesting is deferred to
 	// this call (rather than provider construction) so the caller controls when
@@ -46,28 +46,6 @@ type LocationProvider interface {
 // be non-blocking.
 type PublicIPProvider interface {
 	PublicIP() *string
-}
-
-// Permission describes an OS permission the location enricher relies on, in the
-// same shape as the platform tracker's PermissionStatus so a UI can present them
-// together.
-type Permission struct {
-	Name       string
-	Granted    bool
-	HowToGrant string
-}
-
-// Permissions returns the OS permissions the location provider needs, suitable
-// for surfacing in a settings UI. Empty when the provider is nil or location is
-// unsupported on this platform.
-func Permissions(provider LocationProvider) []Permission {
-	if provider == nil {
-		return nil
-	}
-	if perm, ok := provider.Permission(); ok {
-		return []Permission{perm}
-	}
-	return nil
 }
 
 // Enrich returns an enricher that tags the process with location and public IP
@@ -82,9 +60,8 @@ func Enrich(location LocationProvider, publicIP PublicIPProvider) enrichment.Enr
 
 		if location != nil {
 			if lat, lon, ok := location.Location(); ok {
-				latitude, longitude := lat, lon
-				env.Latitude = &latitude
-				env.Longitude = &longitude
+				env.Latitude = new(lat)
+				env.Longitude = new(lon)
 				changed = true
 			}
 		}

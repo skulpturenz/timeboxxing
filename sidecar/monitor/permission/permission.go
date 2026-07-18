@@ -15,3 +15,11 @@ type Permission interface {
 	Granted() bool
 	Request(ctx context.Context)
 }
+
+// Status describes an OS permission's current grant state, for surfacing in a UI. It is the shared
+// shape reported by both the platform tracker and the enrichment providers.
+type Status struct {
+	Name       string
+	Granted    bool
+	HowToGrant string
+}
