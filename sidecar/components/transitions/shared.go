@@ -90,6 +90,9 @@ func eventFromGetTransitionEventsRow(row readqueries.GetTransitionEventsRow) Eve
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
 	}
+	if row.ApplicationIdentifier.Valid {
+		event.ApplicationIdentifier = row.ApplicationIdentifier.String
+	}
 	if row.ApplicationPath.Valid {
 		event.ApplicationPath = row.ApplicationPath.String
 	}
@@ -121,6 +124,43 @@ func eventFromGetTransitionEventRow(row readqueries.GetTransitionEventRow) Event
 	if row.ApplicationName.Valid {
 		event.ApplicationName = row.ApplicationName.String
 	}
+	if row.ApplicationIdentifier.Valid {
+		event.ApplicationIdentifier = row.ApplicationIdentifier.String
+	}
+	if row.ApplicationPath.Valid {
+		event.ApplicationPath = row.ApplicationPath.String
+	}
+	if row.Browser.Valid {
+		event.Browser = row.Browser.Bool
+	}
+	if row.Tab != nil {
+		event.Tab = *row.Tab
+	}
+	if row.Idle.Valid {
+		event.Idle = row.Idle.Bool
+	}
+	if row.CdpUrl != nil {
+		event.CDPURL = *row.CdpUrl
+	}
+
+	return event
+}
+
+// eventFromGetOpenTimelineEventRow maps the open (current) timeline row to an Event. The entry has no
+// end boundary yet, so EndedAt is left zero for the caller to fill (e.g. usage clips it to "now").
+func eventFromGetOpenTimelineEventRow(row readqueries.GetOpenTimelineEventRow) Event {
+	event := Event{
+		ID:        row.TransitionEventID,
+		Reason:    reasonActive,
+		StartedAt: row.StartedAt.UTC(),
+		PID:       int32(row.Pid),
+	}
+	if row.ApplicationName.Valid {
+		event.ApplicationName = row.ApplicationName.String
+	}
+	if row.ApplicationIdentifier.Valid {
+		event.ApplicationIdentifier = row.ApplicationIdentifier.String
+	}
 	if row.ApplicationPath.Valid {
 		event.ApplicationPath = row.ApplicationPath.String
 	}
@@ -147,6 +187,7 @@ const (
 	reasonReturnFromIdle = "return_from_idle"
 	reasonTabChange      = "tab_change"
 	reasonFocusChange    = "focus_change"
+	reasonActive         = "active"
 )
 
 // coarseReason derives a reason without adjacency context (single-row lookups).

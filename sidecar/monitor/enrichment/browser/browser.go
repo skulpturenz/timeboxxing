@@ -1,6 +1,21 @@
+// Package browser provides an enricher that annotates a foreground process with
+// browser tab information — the active browser, the tab/page title, and (when a
+// Chrome DevTools endpoint is reachable) the full URL and its domain. It mirrors
+// the detection logic in sidecar/monitor/browser.
 package browser
 
-import "strings"
+import (
+	"context"
+	"net/url"
+	"strings"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
+)
+
+// Key is the Enrichments bag key under which the Tab payload is stored.
+const Key = "browser"
 
 // BrowserKind identifies a supported browser.
 type BrowserKind int
@@ -32,25 +47,100 @@ func (k BrowserKind) String() string {
 // Covers macOS localizedName, Windows exe-derived names, Linux /proc/pid/comm.
 var browserAppNames = map[string]BrowserKind{
 	// macOS / Windows display names
-	"google chrome":              BrowserChrome,
-	"google chrome canary":       BrowserChrome,
-	"chromium":                   BrowserChrome,
-	"chromium-browser":           BrowserChrome,
-	"firefox":                    BrowserFirefox,
-	"firefox developer edition":  BrowserFirefox,
-	"firefox nightly":            BrowserFirefox,
-	"safari":                     BrowserSafari,
-	"safari technology preview":  BrowserSafari,
-	"microsoft edge":             BrowserEdge,
-	"microsoft edge canary":      BrowserEdge,
+	"google chrome":             BrowserChrome,
+	"google chrome canary":      BrowserChrome,
+	"chromium":                  BrowserChrome,
+	"chromium-browser":          BrowserChrome,
+	"firefox":                   BrowserFirefox,
+	"firefox developer edition": BrowserFirefox,
+	"firefox nightly":           BrowserFirefox,
+	"safari":                    BrowserSafari,
+	"safari technology preview": BrowserSafari,
+	"microsoft edge":            BrowserEdge,
+	"microsoft edge canary":     BrowserEdge,
 	// Windows exe-derived (after stripping .exe and lowercasing)
-	"chrome":        BrowserChrome,
-	"msedge":        BrowserEdge,
+	"chrome":         BrowserChrome,
+	"msedge":         BrowserEdge,
 	"microsoft-edge": BrowserEdge,
 	// Linux /proc/<pid>/comm (max 15 chars, may be truncated)
-	"google-chrome":  BrowserChrome,
-	"google-chrome-": BrowserChrome, // truncated
+	"google-chrome":   BrowserChrome,
+	"google-chrome-":  BrowserChrome, // truncated
 	"chromium-browse": BrowserChrome,
+}
+
+// Tab describes the active browser tab for a foreground process. Fields are
+// filled progressively: Browser is always set for a browser window; Title needs
+// a parseable window title; URL/Domain need a reachable CDP endpoint.
+type Tab struct {
+	Browser string // "Chrome", "Firefox", "Safari", "Edge"
+	Title   string // page/tab title, browser suffix stripped
+	URL     string // full URL when resolvable (Chrome/Edge via CDP)
+	Domain  string // host from URL without a leading "www.", e.g. "github.com"
+}
+
+// URLResolver resolves a tab title to its full URL. *browserkit.CDPPoller
+// satisfies it; it is an interface so callers can pass nil or a fake in tests.
+type URLResolver interface {
+	URLForTitle(ctx context.Context, tabTitle string) string
+}
+
+// Enrich returns an enricher that tags browser windows with their tab info. The
+// resolver (typically a *browser.CDPPoller) supplies the URL for Chrome/Edge; it
+// may be nil, in which case URL and Domain are left empty. Unlike the app
+// metadata enrichers this is NOT memoized — the tab changes constantly, so it
+// runs every poll (the CDP poller rate-limits its own network calls).
+func Enrich(resolver URLResolver) enrichment.Enricher {
+	return func(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
+		appName := strings.TrimSpace(utils.Coalesce(fp.AppName, ""))
+		kind := IsBrowser(appName)
+		if utils.IsZero(kind) {
+			return fp, false
+		}
+
+		tab := Tab{Browser: kind.String()}
+
+		if title := strings.TrimSpace(utils.Coalesce(fp.WindowTitle, "")); title != "" {
+			if info, ok := ParseTabTitle(appName, title); ok {
+				tab.Title = info.TabTitle
+				if resolver != nil {
+					if resolved := resolver.URLForTitle(ctx, info.TabTitle); resolved != "" {
+						tab.URL = resolved
+						tab.Domain = domainOf(resolved)
+					}
+				}
+			}
+		}
+
+		updated := fp
+		updated.Enrichments[Key] = tab
+		return updated, true
+	}
+}
+
+// Get returns the browser Tab stored on the process, if any.
+func Get(fp monitor.ForegroundProcess) (Tab, bool) {
+	if fp.Enrichments == nil {
+		return Tab{}, false
+	}
+	value, ok := fp.Enrichments[Key]
+	if !ok {
+		return Tab{}, false
+	}
+	tab, ok := value.(Tab)
+	return tab, ok
+}
+
+// domainOf extracts the host (minus a leading "www.") from an http(s) URL.
+// Non-web schemes (chrome://, about:, file://) yield "".
+func domainOf(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	return strings.TrimPrefix(parsed.Hostname(), "www.")
 }
 
 // IsBrowser returns the BrowserKind for the given app name, or BrowserNone.
@@ -72,18 +162,11 @@ func IsBrowser(appName string) BrowserKind {
 	return BrowserNone
 }
 
-// TabInfo is the result of parsing a raw browser window title.
-type TabInfo struct {
-	Browser   BrowserKind
-	TabTitle  string // page title, browser suffix stripped
-	RawTitle  string // original unmodified window title
-}
-
 // browserSuffixes lists the suffixes that each browser appends to window titles.
 // Tried longest-first so the most specific match wins.
 var browserSuffixes = map[BrowserKind][]string{
 	BrowserChrome: {
-		" \u2014 Google Chrome",  // em-dash variant (some locales)
+		" \u2014 Google Chrome", // em-dash variant (some locales)
 		" - Google Chrome",
 		" \u2014 Chromium",
 		" - Chromium",
@@ -112,6 +195,13 @@ var browserSuffixes = map[BrowserKind][]string{
 	},
 }
 
+// TabInfo is the result of parsing a raw browser window title.
+type TabInfo struct {
+	Browser  BrowserKind
+	TabTitle string // page title, browser suffix stripped
+	RawTitle string // original unmodified window title
+}
+
 // ParseTabTitle strips the browser suffix from rawTitle and returns a TabInfo.
 // Returns (TabInfo{}, false) if the title is empty or cannot be parsed as a tab
 // (e.g., a native browser dialog with no recognisable suffix).
@@ -123,7 +213,7 @@ func ParseTabTitle(appName, rawTitle string) (TabInfo, bool) {
 		return TabInfo{}, false
 	}
 	kind := IsBrowser(appName)
-	if kind == BrowserNone {
+	if utils.IsZero(kind) {
 		return TabInfo{}, false
 	}
 

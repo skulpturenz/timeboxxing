@@ -20,8 +20,10 @@ type Querier interface {
 	CreateTimelineEmbedding(ctx context.Context, arg CreateTimelineEmbeddingParams) error
 	DeleteLedgerItem(ctx context.Context, id int64) error
 	DeleteProject(ctx context.Context, id int64) error
+	DeleteTimeline(ctx context.Context, id int64) error
 	DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID sql.NullInt64) error
 	EnsureLedger(ctx context.Context) error
+	UpdateTimelineEnd(ctx context.Context, arg UpdateTimelineEndParams) error
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
 	UpsertApplicationSettings(ctx context.Context, arg UpsertApplicationSettingsParams) error
 	UpsertForegroundProcess(ctx context.Context, arg UpsertForegroundProcessParams) (int64, error)

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/browser"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment/browser"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 

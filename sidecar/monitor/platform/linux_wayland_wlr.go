@@ -10,6 +10,7 @@ import (
 	"github.com/neurlang/wayland/wl"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/internal/wlproto/wlr"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 // wlrBackend tracks the active toplevel on wlroots-based compositors (Sway,
@@ -98,8 +99,8 @@ func (b *wlrBackend) poll(now time.Time) (WindowInfo, error) {
 	return info, nil
 }
 
-func (b *wlrBackend) permissions() []PermissionStatus {
-	return []PermissionStatus{
+func (b *wlrBackend) permissions() []permission.Status {
+	return []permission.Status{
 		{Name: "Wayland (wlr-foreign-toplevel-management)", Granted: true, HowToGrant: ""},
 	}
 }

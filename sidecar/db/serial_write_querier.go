@@ -114,10 +114,22 @@ func (s *SerialWriteQuerier) DeleteProject(ctx context.Context, id int64) error 
 	return s.querier.DeleteProject(ctx, id)
 }
 
+func (s *SerialWriteQuerier) DeleteTimeline(ctx context.Context, id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.DeleteTimeline(ctx, id)
+}
+
 func (s *SerialWriteQuerier) DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID sql.NullInt64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.DeleteTimelineEmbedding(ctx, timelineSemanticDocumentsID)
+}
+
+func (s *SerialWriteQuerier) UpdateTimelineEnd(ctx context.Context, arg writequeries.UpdateTimelineEndParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.UpdateTimelineEnd(ctx, arg)
 }
 
 func (s *SerialWriteQuerier) EnsureLedger(ctx context.Context) error {

@@ -24,16 +24,20 @@ func (s *Service) GetEvents(ctx context.Context, params GetEventsParams) ([]Even
 		}
 		usageEvents = append(usageEvents, eventFromTransition(event))
 	}
-	if activeEvent, ok := s.activeEvent(params.Window); ok {
+	if activeEvent, ok := s.activeEvent(ctx, params.Window); ok {
 		usageEvents = append(usageEvents, activeEvent)
 	}
 
 	return usageEvents, nil
 }
 
-func (s *Service) activeEvent(window Window) (Event, bool) {
-	if s.activeSessions == nil {
+func (s *Service) activeEvent(ctx context.Context, window Window) (Event, bool) {
+	if s.transitions == nil {
 		return Event{}, false
 	}
-	return eventFromActiveSession(s.activeSessions.CurrentSession(), s.clock(), window)
+	active, ok, err := s.transitions.GetActiveEvent(ctx)
+	if err != nil || !ok {
+		return Event{}, false
+	}
+	return eventFromActiveTransition(active, s.clock(), window)
 }

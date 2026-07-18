@@ -2,6 +2,7 @@
 SELECT
   timeline.id AS transition_event_id,
   applications.name AS application_name,
+  applications.identifier AS application_identifier,
   applications.path AS application_path,
   fp0.created_at_utc AS started_at,
   fp1.created_at_utc AS ended_at,

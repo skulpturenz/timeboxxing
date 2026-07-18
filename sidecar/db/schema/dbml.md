@@ -22,8 +22,8 @@ Table foreground_processes {
 TABLE foreground_process_metadata {
   id BIGINT [pk] // auto increment
   foreground_process_id BIGINT [NOT NULL]
-  browser boolean [default: FALSE]
-  idle boolean [default: FALSE]
+  browser boolean [NOT NULL, default: FALSE]
+  idle boolean [NOT NULL, default: FALSE]
   tab TEXT
   cdp_url TEXT // chrome dev tools protocol
   latitude REAL
@@ -77,7 +77,7 @@ TABLE ledger {
 TABLE ledger_items {
   id BIGINT [pk] // auto increment
   ledger_id BIGINT [ref: > ledger.id]
-  billable BOOLEAN [default: FALSE]
+  billable BOOLEAN [NOT NULL, default: FALSE]
   title TEXT [NOT NULL]
   notes TEXT
   started_at_utc TIMESTAMP
@@ -134,12 +134,26 @@ TABLE application_settings {
 Table applications {
   id BIGINT [pk] // auto increment
   name TEXT [NOT NULL]
+  identifier TEXT
   operating_system_id SMALLINT [ref: > operating_systems.id]
   path TEXT
 
   indexes {
-    name [unique, name: 'unique_name']
+    (identifier, operating_system_id) [unique, name: 'unique_identifier_operating_system_id']
   }
+}
+
+Table application_categories {
+  id BIGINT [pk] // auto increment
+  category_id BIGINT
+  code TEXT [NOT NULL]
+  label TEXT [NOT NULL]
+}
+
+Table application_application_categories_map {
+  id BIGINT [pk] // auto increment
+  application_id BIGINT [NOT NULL]
+  application_categories_id BIGINT [NOT NULL]
 }
 
 Table operating_systems {
@@ -182,8 +196,8 @@ TABLE model_providers {
 
 TABLE models {
   id SMALLINT [pk] // auto increment
-  semantic BOOLEAN [default: FALSE]
-  embedding BOOLEAN [default: FALSE]
+  semantic BOOLEAN [NOT NULL, default: FALSE]
+  embedding BOOLEAN [NOT NULL, default: FALSE]
   openrouter_slug TEXT
   ollama_slug TEXT
   label TEXT [NOT NULL]
@@ -215,4 +229,6 @@ Ref: ledger_item_timeline_entries.timeline_id > timeline.id [delete: cascade]
 Ref: project_costs.ledger_items_id > ledger_items.id [delete: cascade]
 Ref: project_costs.projects_id > projects.id [delete: cascade]
 Ref: project_details.projects_id - projects.id [delete: cascade]
+Ref: application_application_categories_map.application_id > applications.id [delete: cascade]
+Ref: application_application_categories_map.application_categories_id > application_categories.id [delete: cascade]
 ```

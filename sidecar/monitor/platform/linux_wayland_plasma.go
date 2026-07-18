@@ -10,6 +10,7 @@ import (
 	"github.com/neurlang/wayland/wl"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/internal/wlproto/plasma"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 // plasmaBackend tracks the active window on KDE Plasma/KWin using the native
@@ -76,8 +77,8 @@ func (b *plasmaBackend) poll(now time.Time) (WindowInfo, error) {
 	return info, nil
 }
 
-func (b *plasmaBackend) permissions() []PermissionStatus {
-	return []PermissionStatus{
+func (b *plasmaBackend) permissions() []permission.Status {
+	return []permission.Status{
 		{Name: "Wayland (plasma-window-management)", Granted: true, HowToGrant: ""},
 	}
 }

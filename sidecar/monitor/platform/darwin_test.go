@@ -5,20 +5,18 @@ package platform
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPathFromBundleOrProcessPrefersBundlePath(t *testing.T) {
 	got := pathFromBundleOrProcess("/Applications/System Settings.app", int32(os.Getpid()))
-	if got != "/Applications/System Settings.app" {
-		t.Fatalf("expected bundle path to win, got %q", got)
-	}
+	require.Equal(t, "/Applications/System Settings.app", got, "expected bundle path to win")
 }
 
 func TestPathFromBundleOrProcessFallsBackToExecutablePath(t *testing.T) {
 	got := pathFromBundleOrProcess("", int32(os.Getpid()))
-	if got == "" {
-		t.Fatal("expected executable path for current process")
-	}
+	require.NotEmpty(t, got, "expected executable path for current process")
 }
 
 func TestNormalizeDarwinAppIdentityPrefersJavaExecutable(t *testing.T) {
@@ -29,15 +27,9 @@ func TestNormalizeDarwinAppIdentityPrefersJavaExecutable(t *testing.T) {
 		"/Library/Java/JavaVirtualMachines/temurin.jdk/Contents/Home/bin/java",
 	)
 
-	if got.AppName != "java" {
-		t.Fatalf("expected java app name, got %q", got.AppName)
-	}
-	if got.AppIdentifier != "java" {
-		t.Fatalf("expected java identifier, got %q", got.AppIdentifier)
-	}
-	if got.AppPath != "/Library/Java/JavaVirtualMachines/temurin.jdk/Contents/Home/bin/java" {
-		t.Fatalf("expected executable path, got %q", got.AppPath)
-	}
+	require.Equal(t, "java", got.AppName)
+	require.Equal(t, "java", got.AppIdentifier)
+	require.Equal(t, "/Library/Java/JavaVirtualMachines/temurin.jdk/Contents/Home/bin/java", got.AppPath)
 }
 
 func TestNormalizeDarwinAppIdentityFallsBackFromBlankName(t *testing.T) {
@@ -54,12 +46,8 @@ func TestNormalizeDarwinAppIdentityFallsBackFromBlankName(t *testing.T) {
 		TitleSource:   TitleSourceAX,
 	})
 
-	if !ok {
-		t.Fatal("expected finalized foreground sample")
-	}
-	if info.AppName != "Safari" {
-		t.Fatalf("expected Safari fallback, got %q", info.AppName)
-	}
+	require.True(t, ok, "expected finalized foreground sample")
+	require.Equal(t, "Safari", info.AppName, "expected Safari fallback")
 }
 
 func TestNormalizeDarwinAppIdentityPreservesBundleApps(t *testing.T) {
@@ -70,15 +58,9 @@ func TestNormalizeDarwinAppIdentityPreservesBundleApps(t *testing.T) {
 		"/Applications/Visual Studio Code.app/Contents/MacOS/Code",
 	)
 
-	if got.AppName != "Visual Studio Code" {
-		t.Fatalf("expected bundle app name, got %q", got.AppName)
-	}
-	if got.AppIdentifier != "com.microsoft.VSCode" {
-		t.Fatalf("expected bundle identifier, got %q", got.AppIdentifier)
-	}
-	if got.AppPath != "/Applications/Visual Studio Code.app" {
-		t.Fatalf("expected bundle path, got %q", got.AppPath)
-	}
+	require.Equal(t, "Visual Studio Code", got.AppName)
+	require.Equal(t, "com.microsoft.VSCode", got.AppIdentifier)
+	require.Equal(t, "/Applications/Visual Studio Code.app", got.AppPath)
 }
 
 func TestNormalizeDarwinAppIdentityFallsBackToExecutablePath(t *testing.T) {
@@ -89,10 +71,6 @@ func TestNormalizeDarwinAppIdentityFallsBackToExecutablePath(t *testing.T) {
 		"/usr/local/bin/helper",
 	)
 
-	if got.AppName != "helper" {
-		t.Fatalf("expected app name to be preserved, got %q", got.AppName)
-	}
-	if got.AppPath != "/usr/local/bin/helper" {
-		t.Fatalf("expected executable path fallback, got %q", got.AppPath)
-	}
+	require.Equal(t, "helper", got.AppName, "expected app name to be preserved")
+	require.Equal(t, "/usr/local/bin/helper", got.AppPath, "expected executable path fallback")
 }

@@ -15,6 +15,7 @@ const getTransitionEvents = `-- name: GetTransitionEvents :many
 SELECT
   timeline.id AS transition_event_id,
   applications.name AS application_name,
+  applications.identifier AS application_identifier,
   applications.path AS application_path,
   fp0.created_at_utc AS started_at,
   fp1.created_at_utc AS ended_at,
@@ -40,17 +41,18 @@ type GetTransitionEventsParams struct {
 }
 
 type GetTransitionEventsRow struct {
-	TransitionEventID int64
-	ApplicationName   sql.NullString
-	ApplicationPath   sql.NullString
-	StartedAt         time.Time
-	EndedAt           time.Time
-	Browser           sql.NullBool
-	Tab               *string
-	Idle              sql.NullBool
-	CdpUrl            *string
-	ApplicationID     sql.NullInt64
-	Pid               int64
+	TransitionEventID     int64
+	ApplicationName       sql.NullString
+	ApplicationIdentifier sql.NullString
+	ApplicationPath       sql.NullString
+	StartedAt             time.Time
+	EndedAt               time.Time
+	Browser               sql.NullBool
+	Tab                   *string
+	Idle                  sql.NullBool
+	CdpUrl                *string
+	ApplicationID         sql.NullInt64
+	Pid                   int64
 }
 
 func (q *Queries) GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error) {
@@ -65,6 +67,7 @@ func (q *Queries) GetTransitionEvents(ctx context.Context, arg GetTransitionEven
 		if err := rows.Scan(
 			&i.TransitionEventID,
 			&i.ApplicationName,
+			&i.ApplicationIdentifier,
 			&i.ApplicationPath,
 			&i.StartedAt,
 			&i.EndedAt,

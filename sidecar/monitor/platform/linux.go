@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 // linuxBackend is the internal abstraction each Linux windowing backend
@@ -19,7 +21,7 @@ type linuxBackend interface {
 	// poll returns the current foreground window. Event-driven Wayland
 	// backends return a cached snapshot; the X11 backend queries synchronously.
 	poll(now time.Time) (WindowInfo, error)
-	permissions() []PermissionStatus
+	permissions() []permission.Status
 	close()
 }
 
@@ -51,15 +53,14 @@ func (t *linuxTracker) Poll(ctx context.Context) (WindowInfo, error) {
 	if err != nil {
 		return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, err
 	}
-	info, ok := FinalizeWindowInfo(info)
-	if ok {
-		// Location is not available on Linux desktops; attach public IP only.
-		info.PublicIP = currentPublicIP()
-	}
+	// Location is not available on Linux desktops, and public IP is now attached
+	// by the location enricher (sidecar/monitor/enrichment/location), so there is
+	// no environment context to add here.
+	info, _ = FinalizeWindowInfo(info)
 	return info, nil
 }
 
-func (t *linuxTracker) Permissions() []PermissionStatus {
+func (t *linuxTracker) Permissions() []permission.Status {
 	return t.backend.permissions()
 }
 
@@ -128,8 +129,8 @@ func (d *degradedBackend) poll(now time.Time) (WindowInfo, error) {
 	return WindowInfo{Timestamp: now, TitleSource: TitleSourceNone}, nil
 }
 
-func (d *degradedBackend) permissions() []PermissionStatus {
-	return []PermissionStatus{
+func (d *degradedBackend) permissions() []permission.Status {
+	return []permission.Status{
 		{Name: "Active-window protocol", Granted: false, HowToGrant: d.reason},
 	}
 }

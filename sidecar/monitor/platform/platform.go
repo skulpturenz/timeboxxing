@@ -5,6 +5,9 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 // TitleSource documents which OS API produced the WindowTitle.
@@ -26,14 +29,6 @@ type WindowInfo struct {
 	WindowTitle   string
 	TitleSource   TitleSource
 	Timestamp     time.Time
-	// Latitude and Longitude carry the user's current location when the OS
-	// exposes it (macOS/Windows). Nil when unavailable (no fix yet, permission
-	// denied, or unsupported platform) — distinct from a literal 0,0.
-	Latitude  *float64
-	Longitude *float64
-	// PublicIP is the machine's current public IP address, resolved via an
-	// external echo service. Nil until the first successful lookup.
-	PublicIP *string
 }
 
 const UnknownAppName = "Unknown app"
@@ -103,35 +98,11 @@ func displayNameFromIdentifier(value string) string {
 }
 
 func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
-// PermissionStatus describes one OS permission required by this platform tracker.
-type PermissionStatus struct {
-	Name       string
-	Granted    bool
-	HowToGrant string
-}
-
-// PermissionError is returned when a required permission has not been granted.
-type PermissionError struct {
-	Permission string
-	Detail     string
-}
-
-func (e *PermissionError) Error() string {
-	return "permission required: " + e.Permission + ": " + e.Detail
+	return strings.TrimSpace(utils.Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) }, values...), ""))
 }
 
 // Config holds tunables passed from main into the platform layer.
 type Config struct {
-	// macOS: prefer AX API over osascript for window titles.
-	PreferAX bool
 	// macOS: trigger the system permission dialog at startup.
 	PromptPermissions bool
 	// Logger is used by platform backends to surface setup hints (e.g. the
@@ -147,5 +118,5 @@ type Tracker interface {
 	Poll(ctx context.Context) (WindowInfo, error)
 	// Permissions returns the list of permissions this implementation requires
 	// and whether each is currently granted.
-	Permissions() []PermissionStatus
+	Permissions() []permission.Status
 }

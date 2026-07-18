@@ -1,6 +1,9 @@
 package enumsenv
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type Environment int
 
@@ -16,7 +19,7 @@ func (env Environment) String() string {
 }
 
 func Parse(s string) (Environment, error) {
-	switch s {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "production":
 		return Production, nil
 	case "development":

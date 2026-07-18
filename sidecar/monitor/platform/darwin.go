@@ -4,12 +4,10 @@ package platform
 
 /*
 #cgo CFLAGS: -x objective-c
-#cgo LDFLAGS: -framework AppKit -framework ApplicationServices -framework CoreGraphics -framework CoreLocation
+#cgo LDFLAGS: -framework AppKit -framework ApplicationServices -framework CoreGraphics
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
-#import <CoreLocation/CoreLocation.h>
-#import <os/lock.h>
 #include <libproc.h>
 #include <stdlib.h>
 
@@ -110,98 +108,6 @@ int isAXTrustedWithPrompt(void) {
     NSDictionary *opts = @{(__bridge NSString*)kAXTrustedCheckOptionPrompt: @YES};
     return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)opts) ? 1 : 0;
 }
-
-// --- CoreLocation: background location provider -----------------------------
-//
-// CLLocationManager delivers delegate callbacks on the run loop of the thread
-// that created it, so the manager runs on a dedicated thread with its own
-// CFRunLoop. The latest fix is cached under a lock; Poll reads it without ever
-// blocking on a fix. Authorization requires a bundled app with
-// NSLocationWhenInUseUsageDescription — unbundled/CLI runs simply never get a
-// fix, leaving the cache empty (getCachedLocation returns 0).
-
-static os_unfair_lock g_locLock = OS_UNFAIR_LOCK_INIT;
-static double g_lat = 0;
-static double g_lon = 0;
-static int g_hasLocation = 0;
-
-// Kept in statics so ARC does not release them (CLLocationManager holds its
-// delegate weakly).
-static CLLocationManager *g_locationManager = nil;
-
-@interface TBXLocationDelegate : NSObject <CLLocationManagerDelegate>
-@end
-
-@implementation TBXLocationDelegate
-- (void)locationManager:(CLLocationManager *)manager
-     didUpdateLocations:(NSArray<CLLocation *> *)locations {
-    CLLocation *loc = [locations lastObject];
-    if (!loc) return;
-    os_unfair_lock_lock(&g_locLock);
-    g_lat = loc.coordinate.latitude;
-    g_lon = loc.coordinate.longitude;
-    g_hasLocation = 1;
-    os_unfair_lock_unlock(&g_locLock);
-}
-- (void)locationManager:(CLLocationManager *)manager
-       didFailWithError:(NSError *)error {
-    // Keep the previous cached value on transient failures.
-}
-@end
-
-static TBXLocationDelegate *g_locationDelegate = nil;
-
-// startLocationUpdates spins up the CLLocationManager once, on a dedicated
-// run-loop thread. Safe to call repeatedly.
-void startLocationUpdates(void) {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSThread *thread = [[NSThread alloc] initWithBlock:^{
-            @autoreleasepool {
-                g_locationDelegate = [[TBXLocationDelegate alloc] init];
-                g_locationManager = [[CLLocationManager alloc] init];
-                g_locationManager.delegate = g_locationDelegate;
-                g_locationManager.desiredAccuracy = kCLLocationAccuracyKilometer;
-                if ([g_locationManager respondsToSelector:@selector(requestWhenInUseAuthorization)]) {
-                    [g_locationManager requestWhenInUseAuthorization];
-                }
-                [g_locationManager startUpdatingLocation];
-                // Run the loop so delegate callbacks are delivered on this thread.
-                CFRunLoopRun();
-            }
-        }];
-        [thread start];
-    });
-}
-
-// getCachedLocation writes the latest fix into lat/lon and returns 1 when a fix
-// is available, 0 otherwise. Never blocks on the network/GPS.
-int getCachedLocation(double *lat, double *lon) {
-    int has = 0;
-    os_unfair_lock_lock(&g_locLock);
-    if (g_hasLocation) {
-        *lat = g_lat;
-        *lon = g_lon;
-        has = 1;
-    }
-    os_unfair_lock_unlock(&g_locLock);
-    return has;
-}
-
-// locationAuthStatus returns the raw CLAuthorizationStatus
-// (notDetermined=0, restricted=1, denied=2, authorizedAlways=3,
-// authorizedWhenInUse=4).
-int locationAuthStatus(void) {
-    if (g_locationManager != nil) {
-        if (@available(macOS 11.0, *)) {
-            return (int)g_locationManager.authorizationStatus;
-        }
-    }
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    return (int)[CLLocationManager authorizationStatus];
-#pragma clang diagnostic pop
-}
 */
 import "C"
 
@@ -214,6 +120,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
 type darwinTracker struct {
@@ -234,24 +142,7 @@ func New(ctx context.Context, cfg Config) (Tracker, error) {
 	}
 	t.axGranted = C.isAXTrusted() == 1
 	t.axLastCheck = time.Now()
-	// Kick off the background CoreLocation provider; Poll reads its cache
-	// non-blockingly. No-op beyond the first call.
-	C.startLocationUpdates()
 	return t, nil
-}
-
-// attachEnvironment enriches a foreground sample with the current location
-// (from the CoreLocation cache) and public IP. Both stay nil when unavailable.
-func attachEnvironment(info WindowInfo) WindowInfo {
-	var lat, lon C.double
-	if C.getCachedLocation(&lat, &lon) == 1 {
-		latitude := float64(lat)
-		longitude := float64(lon)
-		info.Latitude = &latitude
-		info.Longitude = &longitude
-	}
-	info.PublicIP = currentPublicIP()
-	return info
 }
 
 func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
@@ -305,7 +196,7 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 			info.AppIdentifier = identity.AppIdentifier
 			info.AppPath = identity.AppPath
 			info, _ = FinalizeWindowInfo(info)
-			return attachEnvironment(info), nil
+			return info, nil
 		}
 
 		if rc == 1 {
@@ -334,24 +225,16 @@ func (t *darwinTracker) Poll(ctx context.Context) (WindowInfo, error) {
 		Timestamp:     now,
 	}
 	info, _ = FinalizeWindowInfo(info)
-	return attachEnvironment(info), nil
+	return info, nil
 }
 
-func (t *darwinTracker) Permissions() []PermissionStatus {
+func (t *darwinTracker) Permissions() []permission.Status {
 	granted := C.isAXTrusted() == 1
-	// CLAuthorizationStatus: authorizedAlways=3, authorizedWhenInUse=4.
-	locStatus := int(C.locationAuthStatus())
-	locGranted := locStatus == 3 || locStatus == 4
-	return []PermissionStatus{
+	return []permission.Status{
 		{
 			Name:       "Accessibility",
 			Granted:    granted,
 			HowToGrant: "System Settings → Privacy & Security → Accessibility → enable this app",
-		},
-		{
-			Name:       "Location Services",
-			Granted:    locGranted,
-			HowToGrant: "System Settings → Privacy & Security → Location Services → enable this app",
 		},
 	}
 }

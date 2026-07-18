@@ -1,6 +1,10 @@
 package platform
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestFinalizeWindowInfoUsesPathFallback(t *testing.T) {
 	info, ok := FinalizeWindowInfo(WindowInfo{
@@ -8,12 +12,8 @@ func TestFinalizeWindowInfoUsesPathFallback(t *testing.T) {
 		TitleSource: TitleSourceAX,
 	})
 
-	if !ok {
-		t.Fatal("expected foreground sample")
-	}
-	if info.AppName != "Safari" {
-		t.Fatalf("expected app name Safari, got %q", info.AppName)
-	}
+	require.True(t, ok, "expected foreground sample")
+	require.Equal(t, "Safari", info.AppName)
 }
 
 func TestFinalizeWindowInfoUsesIdentifierFallback(t *testing.T) {
@@ -22,12 +22,8 @@ func TestFinalizeWindowInfoUsesIdentifierFallback(t *testing.T) {
 		TitleSource:   TitleSourceAX,
 	})
 
-	if !ok {
-		t.Fatal("expected foreground sample")
-	}
-	if info.AppName != "Safari" {
-		t.Fatalf("expected app name Safari, got %q", info.AppName)
-	}
+	require.True(t, ok, "expected foreground sample")
+	require.Equal(t, "Safari", info.AppName)
 }
 
 func TestFinalizeWindowInfoUsesWindowTitleFallback(t *testing.T) {
@@ -36,12 +32,8 @@ func TestFinalizeWindowInfoUsesWindowTitleFallback(t *testing.T) {
 		TitleSource: TitleSourceWindowAPI,
 	})
 
-	if !ok {
-		t.Fatal("expected foreground sample")
-	}
-	if info.AppName != "Personal — Instagram" {
-		t.Fatalf("expected title fallback, got %q", info.AppName)
-	}
+	require.True(t, ok, "expected foreground sample")
+	require.Equal(t, "Personal — Instagram", info.AppName, "expected title fallback")
 }
 
 func TestFinalizeWindowInfoUsesUnknownForForegroundSignalWithoutNames(t *testing.T) {
@@ -50,18 +42,12 @@ func TestFinalizeWindowInfoUsesUnknownForForegroundSignalWithoutNames(t *testing
 		TitleSource: TitleSourceWindowAPI,
 	})
 
-	if !ok {
-		t.Fatal("expected foreground sample")
-	}
-	if info.AppName != UnknownAppName {
-		t.Fatalf("expected unknown app fallback, got %q", info.AppName)
-	}
+	require.True(t, ok, "expected foreground sample")
+	require.Equal(t, UnknownAppName, info.AppName, "expected unknown app fallback")
 }
 
 func TestFinalizeWindowInfoIgnoresEmptySample(t *testing.T) {
 	info, ok := FinalizeWindowInfo(WindowInfo{})
 
-	if ok {
-		t.Fatalf("expected empty sample to be ignored, got %#v", info)
-	}
+	require.Falsef(t, ok, "expected empty sample to be ignored, got %#v", info)
 }

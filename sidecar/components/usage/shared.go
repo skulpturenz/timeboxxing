@@ -5,8 +5,6 @@ import (
 	"time"
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/browser"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/session"
 )
 
 type Source int
@@ -95,30 +93,20 @@ func eventFromTransition(event componentTransitions.Event) Event {
 	return usageEvent
 }
 
-func eventFromActiveSession(activeSession *session.Session, now time.Time, window Window) (Event, bool) {
-	if activeSession == nil || activeSession.StartedAt.IsZero() {
+// eventFromActiveTransition turns the open (current) timeline row into a live "active" usage event,
+// clipping its open interval to now (bounded by the window). Browser/Tab/CDPURL/Idle come from the
+// stored foreground_process_metadata carried on the transition Event.
+func eventFromActiveTransition(active componentTransitions.Event, now time.Time, window Window) (Event, bool) {
+	if active.StartedAt.IsZero() {
 		return Event{}, false
 	}
 	endedAt := minTime(now, window.EndedAt)
-	if !endedAt.After(activeSession.StartedAt) {
+	if !endedAt.After(active.StartedAt) {
 		return Event{}, false
 	}
 
-	key := activeSession.Key
-	event := eventFromTransition(componentTransitions.Event{
-		ID:                    -1,
-		ApplicationName:       key.AppName,
-		ApplicationIdentifier: activeSession.ApplicationIdentity.Identifier,
-		ApplicationPath:       activeSession.ApplicationIdentity.Path,
-		PID:                   activeSession.ApplicationIdentity.PID,
-		Reason:                "active",
-		StartedAt:             activeSession.StartedAt,
-		EndedAt:               endedAt,
-		Browser:               !key.IsIdle && browser.IsBrowser(key.AppName) != browser.BrowserNone,
-		Tab:                   key.TabTitle,
-		Idle:                  key.IsIdle,
-		CDPURL:                key.CDPURL,
-	})
+	active.EndedAt = endedAt
+	event := eventFromTransition(active)
 	event.Active = true
 	if !usageEventOverlapsWindow(event, window) {
 		return Event{}, false

@@ -13,15 +13,22 @@ require (
 	github.com/goptics/sqliteq v0.2.3
 	github.com/goptics/varmq v1.7.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
+	github.com/jackmordaunt/icns/v2 v2.2.7
+	github.com/jonoton/go-ringbuffer v1.6.0
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/negrel/assert v0.5.0
 	github.com/neurlang/wayland v0.4.3
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	go.opentelemetry.io/otel/trace v1.43.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.45.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
+	howett.net/plist v1.0.1
 )
+
+require resty.dev/v3 v3.0.0-rc.3
 
 require (
 	buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.11-20250718181942-e35f9b667443.1 // indirect
@@ -231,6 +238,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/neo4j/neo4j-go-driver v1.8.1-0.20200803113522-b626aa943eba // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
@@ -267,7 +275,7 @@ require (
 	github.com/sqlc-dev/doubleclick v1.0.0 // indirect
 	github.com/sqlc-dev/sqlc v1.31.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/stretchr/testify v1.11.1
 	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
 	github.com/u-root/u-root v0.15.1-0.20251208185023-2f8c7e763cf8 // indirect
@@ -307,7 +315,6 @@ require (
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260508192327-42602be52be6 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
@@ -320,6 +327,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260523011958-0a33c5d7ca68 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260523011958-0a33c5d7ca68 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/ini.v1 v1.67.3
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/uint128 v1.2.0 // indirect

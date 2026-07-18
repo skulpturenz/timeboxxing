@@ -21,7 +21,7 @@ func (env JournalMode) String() string {
 }
 
 func Parse(s string) (JournalMode, error) {
-	switch strings.ToLower(s) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "delete":
 		return Delete, nil
 	case "truncate":

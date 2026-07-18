@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Name=VLC media player
+Name[de]=VLC Medienwiedergabe
+GenericName=Media player
+Comment=Read, capture, broadcast your multimedia streams
+Exec=/usr/bin/vlc --started-from-file %U
+Icon=vlc
+Terminal=false
+Type=Application
+Categories=AudioVideo;Player;Recorder;
+StartupWMClass=vlc

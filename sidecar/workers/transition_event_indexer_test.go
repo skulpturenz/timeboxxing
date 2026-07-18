@@ -14,7 +14,6 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	"github.com/skulpturenz/timeboxxing/sidecar/logging"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/reporter"
 	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
@@ -34,85 +33,6 @@ func (workerFakeEmbedder) Embed(_ context.Context, input string) ([]float32, err
 		values[1] = 1
 	}
 	return values, nil
-}
-
-func TestTransitionEventWorkersPersistAndIndexReportedEvent(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dsn := db.NewDSN(filepath.Join(t.TempDir(), "workers.db"))
-	dsn.SetJournalMode(enumsjournalmode.WAL)
-	dsn.EnableFK()
-	dsn.SetBusyTimeout(5 * time.Second)
-	database, err := db.New(ctx, db.Options{DSN: dsn})
-	if err != nil {
-		t.Fatalf("create database: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := database.Close(); err != nil {
-			t.Errorf("close database: %v", err)
-		}
-	})
-
-	queueDSN := dsn.String()
-	transitionEventQueue, err := queue.New[reporter.TransitionEvent](ctx, queue.QueueOptions{
-		ConnectionString: queueDSN,
-		QueueName:        TransitionEventQueueName.String(),
-	})
-	if err != nil {
-		t.Fatalf("create transition event queue: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := transitionEventQueue.Close(); err != nil {
-			t.Errorf("close transition event queue: %v", err)
-		}
-	})
-	transitionEventReportedQueue, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions{
-		ConnectionString: queueDSN,
-		QueueName:        TransitionEventReportedQueueName.String(),
-	})
-	if err != nil {
-		t.Fatalf("create transition event reported queue: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := transitionEventReportedQueue.Close(); err != nil {
-			t.Errorf("close transition event reported queue: %v", err)
-		}
-	})
-
-	registry := services.New()
-	logging.RegisterLogger(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	db.Register(registry, database)
-	reporter.RegisterTransitionEventQueue(registry, transitionEventQueue)
-	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
-	_ = componentTransitions.NewService(registry)
-	semantic.RegisterRuntime(registry, &semantic.Runtime{
-		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}, 1),
-	})
-
-	runtime := NewRuntime(registry)
-	cleanupIndexer := runtime.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
-	defer cleanupIndexer()
-	cleanupReporter := runtime.TransitionEventReporterWorker(ctx, transitionEventQueue)
-	defer cleanupReporter()
-
-	tab := "GitHub"
-	url := "https://github.com/"
-	if err := transitionEventQueue.Add(reporter.TransitionEvent{
-		ApplicationName: "Google Chrome",
-		Reason:          "focus_change",
-		StartedAt:       time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC),
-		EndedAt:         time.Date(2026, 6, 13, 10, 5, 0, 0, time.UTC),
-		Browser:         true,
-		Tab:             &tab,
-		CdpUrl:          &url,
-	}); err != nil {
-		t.Fatalf("add transition event job: %v", err)
-	}
-
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline", 1)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_semantic_documents", 7)
-	waitForWorkerRowCount(t, ctx, database.ReadConn, "timeline_embeddings", 7)
 }
 
 func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {

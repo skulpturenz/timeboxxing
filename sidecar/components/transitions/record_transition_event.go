@@ -30,6 +30,7 @@ func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransi
 		if !params.Idle && appName != "" {
 			id, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 				Name:              appName,
+				Identifier:        nullString(params.ApplicationIdentifier),
 				OperatingSystemID: operatingSystemID(),
 				Path:              nullString(params.ApplicationPath),
 			})
