@@ -11,13 +11,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// LocalMetadata reads the foreground app's friendly name and description from
-// its executable's PE version resource, and extracts the embedded icon. Windows
-// carries no application category in the exe, so CategoryCode is left for the
-// winget feed fallback. Wrap with Memoized to avoid re-reading the exe every poll.
-var LocalMetadata Enricher = windowsLocalMetadata
-
-func windowsLocalMetadata(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+func LocalMetadataEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
 	if fp.AppPath == nil {
 		return fp, false
 	}

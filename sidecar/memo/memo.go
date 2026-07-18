@@ -12,13 +12,26 @@ type Memoize struct {
 	group singleflight.Group
 }
 
-func New(expiration *time.Duration, cleanupInterval *time.Duration) *Memoize {
-	defaultExpiration := 250 * time.Millisecond
+const (
+	defaultExpiration      = 250 * time.Millisecond
+	defaultCleanupInterval = 500 * time.Millisecond
+)
+
+func New() *Memoize {
+	c := cache.New(defaultExpiration, defaultCleanupInterval)
+
+	return &Memoize{
+		cache: c,
+	}
+}
+
+func NewWithOptions(expiration *time.Duration, cleanupInterval *time.Duration) *Memoize {
+	defaultExpiration := defaultExpiration
 	if expiration != nil {
 		defaultExpiration = *expiration
 	}
 
-	defaultCleanupInterval := 500 * time.Millisecond
+	defaultCleanupInterval := defaultCleanupInterval
 	if cleanupInterval != nil {
 		defaultCleanupInterval = *cleanupInterval
 	}

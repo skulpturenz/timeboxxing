@@ -10,15 +10,10 @@ import (
 	"strings"
 
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"gopkg.in/ini.v1"
 )
 
-// LocalMetadata resolves the foreground app's freedesktop .desktop entry and
-// reads its friendly name, description (Comment), category, and icon. The entry
-// is matched from the app identifier (WM_CLASS / Wayland app_id) or the process
-// executable. Wrap with Memoized to avoid re-scanning on every poll.
-var LocalMetadata Enricher = linuxLocalMetadata
-
-func linuxLocalMetadata(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+func LocalMetadataEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
 	identifier := ""
 	if fp.AppIdentifier != nil {
 		identifier = strings.TrimSpace(*fp.AppIdentifier)
@@ -38,9 +33,8 @@ func linuxLocalMetadata(ctx context.Context, fp sessionnew.ForegroundProcess) (s
 		FriendlyName: strings.TrimSpace(entry.Name),
 		Description:  strings.TrimSpace(entry.Comment),
 	}
-	if code, label := CategoryFromFreedesktop(entry.Categories); code != "" {
-		metadata.CategoryCode = code
-		metadata.CategoryLabel = label
+	if category, err := ParseFreedesktopCategories(entry.Categories); err == nil {
+		metadata.Category = category
 	}
 	if iconPath := cacheLinuxIcon(entry.Icon, identityKey(fp)); iconPath != "" {
 		metadata.IconPath = iconPath
@@ -108,9 +102,18 @@ func findDesktopEntry(identifier string, exe string) (desktopEntry, bool) {
 	if identifier != "" {
 		for _, dir := range dirs {
 			candidate := filepath.Join(dir, identifier+".desktop")
-			if entry, err := parseDesktopFile(candidate); err == nil {
-				return entry, true
+			cfg, err := ini.LoadSources(
+				ini.LoadOptions{IgnoreInlineComment: true, SkipUnrecognizableLines: true},
+				candidate,
+			)
+			if err != nil {
+				continue
 			}
+			var entry desktopEntry
+			if err := cfg.Section("Desktop Entry").MapTo(&entry); err != nil {
+				continue
+			}
+			return entry, true
 		}
 	}
 
@@ -124,8 +127,15 @@ func findDesktopEntry(identifier string, exe string) (desktopEntry, bool) {
 			if file.IsDir() || !strings.HasSuffix(file.Name(), ".desktop") {
 				continue
 			}
-			entry, err := parseDesktopFile(filepath.Join(dir, file.Name()))
+			cfg, err := ini.LoadSources(
+				ini.LoadOptions{IgnoreInlineComment: true, SkipUnrecognizableLines: true},
+				filepath.Join(dir, file.Name()),
+			)
 			if err != nil {
+				continue
+			}
+			var entry desktopEntry
+			if err := cfg.Section("Desktop Entry").MapTo(&entry); err != nil {
 				continue
 			}
 			base := strings.TrimSuffix(file.Name(), ".desktop")

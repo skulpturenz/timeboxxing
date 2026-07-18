@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
@@ -35,69 +38,51 @@ func TestEnrich_LocationAndIP(t *testing.T) {
 	ip := fakeIP{ip: strptr("203.0.113.7")}
 
 	out, ok := Enrich(loc, ip)(context.Background(), emptyFP())
-	if !ok {
-		t.Fatal("expected enrichment")
-	}
+	require.True(t, ok, "expected enrichment")
 	env, ok := Get(out)
-	if !ok {
-		t.Fatal("environment not stored in bag")
-	}
-	if env.Latitude == nil || *env.Latitude != 40.71 {
-		t.Errorf("Latitude = %v, want 40.71", env.Latitude)
-	}
-	if env.Longitude == nil || *env.Longitude != -74.0 {
-		t.Errorf("Longitude = %v, want -74.0", env.Longitude)
-	}
-	if env.PublicIP == nil || *env.PublicIP != "203.0.113.7" {
-		t.Errorf("PublicIP = %v", env.PublicIP)
-	}
+	require.True(t, ok, "environment not stored in bag")
+
+	require.NotNil(t, env.Latitude)
+	assert.Equal(t, 40.71, *env.Latitude)
+	require.NotNil(t, env.Longitude)
+	assert.Equal(t, -74.0, *env.Longitude)
+	require.NotNil(t, env.PublicIP)
+	assert.Equal(t, "203.0.113.7", *env.PublicIP)
 }
 
 func TestEnrich_IPOnlyWhenNoFix(t *testing.T) {
 	out, ok := Enrich(fakeLocation{ok: false}, fakeIP{ip: strptr("198.51.100.9")})(context.Background(), emptyFP())
-	if !ok {
-		t.Fatal("expected enrichment from public IP alone")
-	}
+	require.True(t, ok, "expected enrichment from public IP alone")
 	env, _ := Get(out)
-	if env.Latitude != nil || env.Longitude != nil {
-		t.Errorf("expected no location, got lat=%v lon=%v", env.Latitude, env.Longitude)
-	}
-	if env.PublicIP == nil || *env.PublicIP != "198.51.100.9" {
-		t.Errorf("PublicIP = %v", env.PublicIP)
-	}
+	assert.Nil(t, env.Latitude, "expected no location latitude")
+	assert.Nil(t, env.Longitude, "expected no location longitude")
+	require.NotNil(t, env.PublicIP)
+	assert.Equal(t, "198.51.100.9", *env.PublicIP)
 }
 
 func TestEnrich_NothingToContribute(t *testing.T) {
 	_, ok := Enrich(fakeLocation{ok: false}, fakeIP{ip: nil})(context.Background(), emptyFP())
-	if ok {
-		t.Error("expected no enrichment when neither provider has data")
-	}
+	assert.False(t, ok, "expected no enrichment when neither provider has data")
 }
 
 func TestEnrich_NilProviders(t *testing.T) {
 	_, ok := Enrich(nil, nil)(context.Background(), emptyFP())
-	if ok {
-		t.Error("expected no-op with nil providers")
-	}
+	assert.False(t, ok, "expected no-op with nil providers")
 }
 
 func TestPermissions(t *testing.T) {
 	// Applicable provider surfaces its permission.
 	granted := fakeLocation{perm: Permission{Name: "Location Services", Granted: true}, permOK: true}
 	perms := Permissions(granted)
-	if len(perms) != 1 || perms[0].Name != "Location Services" || !perms[0].Granted {
-		t.Errorf("Permissions = %+v, want one granted Location Services", perms)
-	}
+	require.Len(t, perms, 1)
+	assert.Equal(t, "Location Services", perms[0].Name)
+	assert.True(t, perms[0].Granted)
 
 	// Unsupported platform (applicable=false) yields no permissions.
-	if got := Permissions(fakeLocation{permOK: false}); len(got) != 0 {
-		t.Errorf("Permissions = %+v, want empty for unsupported provider", got)
-	}
+	assert.Empty(t, Permissions(fakeLocation{permOK: false}), "want empty for unsupported provider")
 
 	// Nil provider is safe.
-	if got := Permissions(nil); got != nil {
-		t.Errorf("Permissions(nil) = %+v, want nil", got)
-	}
+	assert.Nil(t, Permissions(nil), "Permissions(nil) should be nil")
 }
 
 func TestPublicIPProvider_MemoizesLookup(t *testing.T) {
@@ -112,20 +97,17 @@ func TestPublicIPProvider_MemoizesLookup(t *testing.T) {
 	p.endpoint = srv.URL
 
 	ip := p.PublicIP() // first call performs the (blocking) lookup
-	if ip == nil || *ip != "192.0.2.44" {
-		t.Fatalf("PublicIP = %v, want 192.0.2.44", ip)
-	}
+	require.NotNil(t, ip)
+	require.Equal(t, "192.0.2.44", *ip)
 
 	// Returned pointer must be a copy — mutating it must not corrupt the cache.
 	*ip = "mutated"
-	if again := p.PublicIP(); again == nil || *again != "192.0.2.44" {
-		t.Errorf("cache was mutated through returned pointer: %v", again)
-	}
+	again := p.PublicIP()
+	require.NotNil(t, again)
+	assert.Equal(t, "192.0.2.44", *again, "cache was mutated through returned pointer")
 
 	// Subsequent calls must hit the memo, not the network.
-	if got := atomic.LoadInt32(&hits); got != 1 {
-		t.Errorf("server hit %d times, want 1 (memoized)", got)
-	}
+	assert.Equal(t, int32(1), atomic.LoadInt32(&hits), "server should be hit once (memoized)")
 }
 
 func TestParsePublicIP(t *testing.T) {
@@ -137,8 +119,6 @@ func TestParsePublicIP(t *testing.T) {
 		"<html>error</html>": "",
 	}
 	for in, want := range cases {
-		if got := parsePublicIP(in); got != want {
-			t.Errorf("parsePublicIP(%q) = %q, want %q", in, got, want)
-		}
+		assert.Equalf(t, want, parsePublicIP(in), "parsePublicIP(%q)", in)
 	}
 }

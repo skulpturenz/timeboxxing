@@ -8,6 +8,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment"
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
@@ -18,15 +21,12 @@ func TestFlathub_Live(t *testing.T) {
 	if os.Getenv("TBX_LIVE_FEEDS") == "" {
 		t.Skip("set TBX_LIVE_FEEDS=1 to run live feed tests")
 	}
-	out, ok := Flathub(true)(context.Background(), fpWithID("org.videolan.VLC"))
-	if !ok {
-		t.Fatal("expected live Flathub enrichment for VLC")
-	}
+	out, ok := FlathubEnricher(context.Background(), fpWithID("org.videolan.VLC"))
+	require.True(t, ok, "expected live Flathub enrichment for VLC")
 	md, _ := GetMetadata(out)
-	if md.FriendlyName == "" || md.CategoryCode == "" {
-		t.Fatalf("live response under-populated: %+v", md)
-	}
-	t.Logf("live VLC => name=%q category=%q desc.len=%d", md.FriendlyName, md.CategoryLabel, len(md.Description))
+	require.NotEmpty(t, md.FriendlyName, "live response under-populated")
+	require.NotEqual(t, CategoryUnknown, md.Category, "live response under-populated")
+	t.Logf("live VLC => name=%q category=%q desc.len=%d", md.FriendlyName, md.Category.Label(), len(md.Description))
 }
 
 func ptr(s string) *string { return &s }
@@ -62,29 +62,19 @@ func TestFlathub_FillsFromFeed(t *testing.T) {
 	flathubBaseURL = srv.URL + "/"
 	defer func() { flathubBaseURL = old }()
 
-	out, ok := Flathub(true)(context.Background(), fpWithID("org.videolan.VLC"))
-	if !ok {
-		t.Fatal("expected Flathub to enrich")
-	}
+	out, ok := FlathubEnricher(context.Background(), fpWithID("org.videolan.VLC"))
+	require.True(t, ok, "expected Flathub to enrich")
 	md, _ := GetMetadata(out)
-	if md.FriendlyName != "VLC" {
-		t.Errorf("FriendlyName = %q", md.FriendlyName)
-	}
-	if md.CategoryCode != CategoryMedia {
-		t.Errorf("CategoryCode = %q, want %q", md.CategoryCode, CategoryMedia)
-	}
-	if md.Source != SourceFlathub {
-		t.Errorf("Source = %q", md.Source)
-	}
-	if md.Description == "" {
-		t.Error("expected a description from the summary")
-	}
+	assert.Equal(t, "VLC", md.FriendlyName)
+	assert.Equal(t, CategoryMedia, md.Category)
+	assert.Equal(t, SourceFlathub, md.Source)
+	assert.NotEmpty(t, md.Description, "expected a description from the summary")
 }
 
 func TestFlathub_SkipsWhenLocalComplete(t *testing.T) {
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
+		hits.Add(1)
 		_, _ = w.Write([]byte(vlcAppstreamJSON))
 	}))
 	defer srv.Close()
@@ -95,32 +85,29 @@ func TestFlathub_SkipsWhenLocalComplete(t *testing.T) {
 	// Local enrichment already filled everything -> feed must not fire.
 	fp := fpWithID("org.videolan.VLC")
 	fp, _ = setMetadata(fp, Metadata{
-		FriendlyName: "VLC", Description: "d", CategoryCode: CategoryMedia,
-		CategoryLabel: "Media & Entertainment", IconPath: "/tmp/x.png", Source: SourceDesktop,
+		FriendlyName: "VLC", Description: "d", Category: CategoryMedia,
+		IconPath: "/tmp/x.png", Source: SourceDesktop,
 	})
 
-	_, ok := Flathub(true)(context.Background(), fp)
-	if ok {
-		t.Error("expected no-op when metadata already complete")
-	}
-	if got := atomic.LoadInt32(&hits); got != 0 {
-		t.Errorf("feed was hit %d times, want 0", got)
-	}
+	_, ok := FlathubEnricher(context.Background(), fp)
+	assert.False(t, ok, "expected no-op when metadata already complete")
+	assert.Equal(t, int32(0), hits.Load(), "feed must not be hit when metadata is complete")
 }
 
 func TestFlathub_Disabled(t *testing.T) {
-	_, ok := Flathub(false)(context.Background(), fpWithID("org.videolan.VLC"))
-	if ok {
-		t.Error("disabled Flathub should be a no-op")
-	}
+	// An unconfigured (empty) base URL disables the feed.
+	old := flathubBaseURL
+	flathubBaseURL = ""
+	defer func() { flathubBaseURL = old }()
+
+	_, ok := FlathubEnricher(context.Background(), fpWithID("org.videolan.VLC"))
+	assert.False(t, ok, "disabled Flathub should be a no-op")
 }
 
 func TestFlathub_IgnoresNonReverseDNS(t *testing.T) {
 	// "chrome" (Windows-style exe id) is not a flatpak app id.
-	_, ok := Flathub(true)(context.Background(), fpWithID("chrome"))
-	if ok {
-		t.Error("expected no-op for non reverse-DNS identifier")
-	}
+	_, ok := FlathubEnricher(context.Background(), fpWithID("chrome"))
+	assert.False(t, ok, "expected no-op for non reverse-DNS identifier")
 }
 
 func TestMemoized_MemoizesByIdentity(t *testing.T) {
@@ -133,16 +120,11 @@ func TestMemoized_MemoizesByIdentity(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		out, ok := enricher(context.Background(), fpWithID("com.example.app"))
-		if !ok {
-			t.Fatal("expected enrichment")
-		}
-		if md, _ := GetMetadata(out); md.FriendlyName != "X" {
-			t.Fatalf("FriendlyName = %q", md.FriendlyName)
-		}
+		require.True(t, ok, "expected enrichment")
+		md, _ := GetMetadata(out)
+		assert.Equal(t, "X", md.FriendlyName)
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
-		t.Errorf("inner called %d times, want 1 (memoized)", got)
-	}
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "inner should be called once (memoized)")
 }
 
 func TestFold_MergesLocalThenFeed(t *testing.T) {
@@ -151,21 +133,14 @@ func TestFold_MergesLocalThenFeed(t *testing.T) {
 	}
 	feed := func(_ context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
 		// Feed only fills category/description; must not overwrite the name.
-		return setMetadata(fp, Metadata{FriendlyName: "WRONG", Description: "desc", CategoryCode: CategoryMedia, Source: SourceFlathub})
+		return setMetadata(fp, Metadata{FriendlyName: "WRONG", Description: "desc", Category: CategoryMedia, Source: SourceFlathub})
 	}
 
 	out, ok := enrichment.Pipe(local, feed)(context.Background(), fpWithID("org.videolan.VLC"))
-	if !ok {
-		t.Fatal("expected combined enrichment")
-	}
+	require.True(t, ok, "expected combined enrichment")
 	md, _ := GetMetadata(out)
-	if md.FriendlyName != "VLC" {
-		t.Errorf("FriendlyName = %q, want VLC (local wins)", md.FriendlyName)
-	}
-	if md.Description != "desc" || md.CategoryCode != CategoryMedia {
-		t.Errorf("feed did not fill gaps: %+v", md)
-	}
-	if md.Source != SourceDesktop {
-		t.Errorf("Source = %q, want first contributor (desktop)", md.Source)
-	}
+	assert.Equal(t, "VLC", md.FriendlyName, "local should win")
+	assert.Equal(t, "desc", md.Description, "feed should fill description gap")
+	assert.Equal(t, CategoryMedia, md.Category, "feed should fill category gap")
+	assert.Equal(t, SourceDesktop, md.Source, "Source is the first contributor (desktop)")
 }

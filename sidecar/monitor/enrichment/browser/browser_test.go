@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
 )
 
@@ -31,67 +34,42 @@ func TestEnrich_ChromeWithURL(t *testing.T) {
 	resolver := &fakeResolver{url: "https://github.com/foo/bar?x=1"}
 
 	out, ok := Enrich(resolver)(context.Background(), fp("Google Chrome", "GitHub · foo - Google Chrome"))
-	if !ok {
-		t.Fatal("expected enrichment for a Chrome window")
-	}
+	require.True(t, ok, "expected enrichment for a Chrome window")
 	tab, ok := Get(out)
-	if !ok {
-		t.Fatal("tab not stored in bag")
-	}
-	if tab.Browser != "Chrome" {
-		t.Errorf("Browser = %q, want Chrome", tab.Browser)
-	}
-	if tab.Title != "GitHub · foo" {
-		t.Errorf("Title = %q, want 'GitHub · foo'", tab.Title)
-	}
-	if tab.URL != "https://github.com/foo/bar?x=1" {
-		t.Errorf("URL = %q", tab.URL)
-	}
-	if tab.Domain != "github.com" {
-		t.Errorf("Domain = %q, want github.com", tab.Domain)
-	}
-	if len(resolver.titles) != 1 || resolver.titles[0] != "GitHub · foo" {
-		t.Errorf("resolver queried with %v, want [GitHub · foo]", resolver.titles)
-	}
+	require.True(t, ok, "tab not stored in bag")
+
+	assert.Equal(t, "Chrome", tab.Browser)
+	assert.Equal(t, "GitHub · foo", tab.Title)
+	assert.Equal(t, "https://github.com/foo/bar?x=1", tab.URL)
+	assert.Equal(t, "github.com", tab.Domain)
+	assert.Equal(t, []string{"GitHub · foo"}, resolver.titles, "resolver queried with unexpected titles")
 }
 
 func TestEnrich_NonBrowser(t *testing.T) {
 	_, ok := Enrich(nil)(context.Background(), fp("Visual Studio Code", "main.go — myproj"))
-	if ok {
-		t.Error("expected no enrichment for a non-browser app")
-	}
+	assert.False(t, ok, "expected no enrichment for a non-browser app")
 }
 
 func TestEnrich_BrowserWithoutResolver(t *testing.T) {
 	// A browser window with a parseable title but no CDP resolver: Browser and
 	// Title populate, URL/Domain stay empty.
 	out, ok := Enrich(nil)(context.Background(), fp("Firefox", "Wikipedia — Mozilla Firefox"))
-	if !ok {
-		t.Fatal("expected enrichment")
-	}
+	require.True(t, ok, "expected enrichment")
 	tab, _ := Get(out)
-	if tab.Browser != "Firefox" || tab.Title != "Wikipedia" {
-		t.Errorf("got %+v", tab)
-	}
-	if tab.URL != "" || tab.Domain != "" {
-		t.Errorf("expected no URL/Domain without a resolver, got %+v", tab)
-	}
+	assert.Equal(t, "Firefox", tab.Browser)
+	assert.Equal(t, "Wikipedia", tab.Title)
+	assert.Empty(t, tab.URL, "expected no URL without a resolver")
+	assert.Empty(t, tab.Domain, "expected no Domain without a resolver")
 }
 
 func TestEnrich_BrowserUnparseableTitle(t *testing.T) {
 	// A recognised browser but the title has no tab suffix (e.g. a devtools or
 	// download window): still enriched with Browser, but no Title/URL.
 	out, ok := Enrich(nil)(context.Background(), fp("Google Chrome", "DevTools"))
-	if !ok {
-		t.Fatal("expected enrichment for a browser window")
-	}
+	require.True(t, ok, "expected enrichment for a browser window")
 	tab, _ := Get(out)
-	if tab.Browser != "Chrome" {
-		t.Errorf("Browser = %q", tab.Browser)
-	}
-	if tab.Title != "" {
-		t.Errorf("Title = %q, want empty (unparseable)", tab.Title)
-	}
+	assert.Equal(t, "Chrome", tab.Browser)
+	assert.Empty(t, tab.Title, "Title should be empty (unparseable)")
 }
 
 func TestDomainOf(t *testing.T) {
@@ -106,8 +84,6 @@ func TestDomainOf(t *testing.T) {
 		"not a url":                    "",
 	}
 	for in, want := range cases {
-		if got := domainOf(in); got != want {
-			t.Errorf("domainOf(%q) = %q, want %q", in, got, want)
-		}
+		assert.Equalf(t, want, domainOf(in), "domainOf(%q)", in)
 	}
 }

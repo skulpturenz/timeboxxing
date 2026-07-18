@@ -3,33 +3,29 @@ package appmetadata
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/ini.v1"
 )
 
-func TestParseDesktopFile(t *testing.T) {
-	entry, err := parseDesktopFile(filepath.Join("testdata", "org.videolan.VLC.desktop"))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+func TestLoadDesktopEntry(t *testing.T) {
+	cfg, err := ini.LoadSources(
+		ini.LoadOptions{IgnoreInlineComment: true, SkipUnrecognizableLines: true},
+		filepath.Join("testdata", "org.videolan.VLC.desktop"),
+	)
+	require.NoError(t, err, "load")
+	var entry desktopEntry
+	require.NoError(t, cfg.Section("Desktop Entry").MapTo(&entry), "map")
 
-	if entry.Name != "VLC media player" { // unlocalized Name, not Name[de]
-		t.Errorf("Name = %q", entry.Name)
-	}
-	if entry.Comment != "Read, capture, broadcast your multimedia streams" {
-		t.Errorf("Comment = %q", entry.Comment)
-	}
-	if entry.Categories != "AudioVideo;Player;Recorder;" {
-		t.Errorf("Categories = %q", entry.Categories)
-	}
-	if entry.Icon != "vlc" {
-		t.Errorf("Icon = %q", entry.Icon)
-	}
-	if entry.StartupWMClass != "vlc" {
-		t.Errorf("StartupWMClass = %q", entry.StartupWMClass)
-	}
+	assert.Equal(t, "VLC media player", entry.Name) // unlocalized Name, not Name[de]
+	assert.Equal(t, "Read, capture, broadcast your multimedia streams", entry.Comment)
+	assert.Equal(t, "AudioVideo;Player;Recorder;", entry.Categories)
+	assert.Equal(t, "vlc", entry.Icon)
+	assert.Equal(t, "vlc", entry.StartupWMClass)
 
-	if code, _ := CategoryFromFreedesktop(entry.Categories); code != CategoryMedia {
-		t.Errorf("category = %q, want %q", code, CategoryMedia)
-	}
+	category, _ := ParseFreedesktopCategories(entry.Categories)
+	assert.Equal(t, CategoryMedia, category)
 }
 
 func TestDesktopMatches(t *testing.T) {
@@ -49,9 +45,7 @@ func TestDesktopMatches(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := desktopMatches(entry, tc.base, tc.idLower, tc.exeBase); got != tc.want {
-				t.Errorf("desktopMatches = %v, want %v", got, tc.want)
-			}
+			assert.Equal(t, tc.want, desktopMatches(entry, tc.base, tc.idLower, tc.exeBase))
 		})
 	}
 }
@@ -64,14 +58,12 @@ func TestExecBase(t *testing.T) {
 		"":                                    "",
 	}
 	for in, want := range cases {
-		if got := execBase(in); got != want {
-			t.Errorf("execBase(%q) = %q, want %q", in, got, want)
-		}
+		assert.Equalf(t, want, execBase(in), "execBase(%q)", in)
 	}
 }
 
 func TestCategoryFromFreedesktop(t *testing.T) {
-	cases := map[string]string{
+	cases := map[string]Category{
 		"AudioVideo;Player;":        CategoryMedia,
 		"Development;IDE;":          CategoryDevelopment,
 		"Network;WebBrowser;":       CategoryWebBrowsing,
@@ -79,28 +71,31 @@ func TestCategoryFromFreedesktop(t *testing.T) {
 		"Office;":                   CategoryProductivity,
 		"Game;":                     CategoryGames,
 		"Settings;System;":          CategorySystem,
-		"NonsenseCategory;":         "",
+		"NonsenseCategory;":         CategoryUnknown,
 	}
 	for cats, want := range cases {
-		if got, _ := CategoryFromFreedesktop(cats); got != want {
-			t.Errorf("CategoryFromFreedesktop(%q) = %q, want %q", cats, got, want)
-		}
+		got, _ := ParseFreedesktopCategories(cats)
+		assert.Equalf(t, want, got, "ParseFreedesktopCategories(%q)", cats)
 	}
 }
 
 func TestCategoryFromApple(t *testing.T) {
-	cases := map[string]string{
+	cases := map[string]Category{
 		"public.app-category.developer-tools":   CategoryDevelopment,
 		"public.app-category.productivity":      CategoryProductivity,
 		"public.app-category.games":             CategoryGames,
 		"public.app-category.action-games":      CategoryGames,
 		"public.app-category.social-networking": CategorySocial,
-		"public.app-category.unknown-thing":     "",
-		"":                                      "",
+		"public.app-category.unknown-thing":     CategoryUnknown,
+		"":                                      CategoryUnknown,
 	}
 	for uti, want := range cases {
-		if got, _ := CategoryFromApple(uti); got != want {
-			t.Errorf("CategoryFromApple(%q) = %q, want %q", uti, got, want)
+		got, err := ParseAppleCategory(uti)
+		assert.Equalf(t, want, got, "ParseAppleCategory(%q)", uti)
+		if want == CategoryUnknown {
+			assert.Errorf(t, err, "ParseAppleCategory(%q) should error", uti)
+		} else {
+			assert.NoErrorf(t, err, "ParseAppleCategory(%q)", uti)
 		}
 	}
 }

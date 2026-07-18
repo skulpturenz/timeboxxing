@@ -11,17 +11,10 @@ import (
 
 	icns "github.com/jackmordaunt/icns/v2"
 	sessionnew "github.com/skulpturenz/timeboxxing/sidecar/monitor/session_new"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 	"howett.net/plist"
 )
 
-// LocalMetadata reads friendly name, category, and icon for the foreground
-// app out of its macOS .app bundle's Info.plist. There is no description field
-// in Info.plist, so Description is left for a feed fallback. Wrap with Memoized
-// to avoid re-parsing the bundle on every poll.
-var LocalMetadata Enricher = darwinLocalMetadata
-
-// infoPlist captures the Info.plist keys we care about. Missing keys decode to
-// their zero value.
 type infoPlist struct {
 	DisplayName string `plist:"CFBundleDisplayName"`
 	BundleName  string `plist:"CFBundleName"`
@@ -30,7 +23,7 @@ type infoPlist struct {
 	IconName    string `plist:"CFBundleIconName"`
 }
 
-func darwinLocalMetadata(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
+func LocalMetadataEnricher(ctx context.Context, fp sessionnew.ForegroundProcess) (sessionnew.ForegroundProcess, bool) {
 	if fp.AppPath == nil {
 		return fp, false
 	}
@@ -45,10 +38,12 @@ func darwinLocalMetadata(ctx context.Context, fp sessionnew.ForegroundProcess) (
 	}
 
 	metadata := Metadata{Source: SourceBundle}
-	metadata.FriendlyName = firstNonBlank(info.DisplayName, info.BundleName)
-	if code, label := CategoryFromApple(info.Category); code != "" {
-		metadata.CategoryCode = code
-		metadata.CategoryLabel = label
+	metadata.FriendlyName = utils.
+		Coalesce(utils.Or(func(x string) bool { return strings.TrimSpace(x) != "" },
+			info.DisplayName,
+			info.BundleName), "")
+	if category, err := ParseAppleCategory(info.Category); err == nil {
+		metadata.Category = category
 	}
 	if iconPath := extractDarwinIcon(bundle, info, identityKey(fp)); iconPath != "" {
 		metadata.IconPath = iconPath
@@ -60,9 +55,6 @@ func darwinLocalMetadata(ctx context.Context, fp sessionnew.ForegroundProcess) (
 	return setMetadata(fp, metadata)
 }
 
-// bundleRoot returns the ".app" bundle directory for a path that may point at
-// the bundle itself or at an executable nested inside it. Returns "" when the
-// path is not part of an .app bundle.
 func bundleRoot(appPath string) string {
 	if appPath == "" {
 		return ""
@@ -151,15 +143,6 @@ func resolveICNS(resources string, info infoPlist) string {
 	// Last resort: first .icns in the Resources dir.
 	if matches, _ := filepath.Glob(filepath.Join(resources, "*.icns")); len(matches) > 0 {
 		return matches[0]
-	}
-	return ""
-}
-
-func firstNonBlank(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
 	}
 	return ""
 }

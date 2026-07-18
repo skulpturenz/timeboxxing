@@ -37,7 +37,7 @@ func NewPublicIPProvider() *IPProvider {
 	return &IPProvider{
 		endpoint: defaultPublicIPEndpoint,
 		client:   &http.Client{Timeout: 5 * time.Second},
-		cache:    memo.New(&ttl, &cleanup),
+		cache:    memo.NewWithOptions(&ttl, &cleanup),
 	}
 }
 

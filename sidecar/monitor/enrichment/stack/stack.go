@@ -9,9 +9,9 @@ import (
 
 func Stack() enrichment.Enricher {
 	return enrichment.Pipe(
-		enrichment.Or(appmetadata.Memoized(appmetadata.LocalMetadata),
-			appmetadata.Memoized(appmetadata.Flathub(true)),
-			appmetadata.Memoized(appmetadata.Winget(true)),
+		enrichment.Or(appmetadata.Memoized(appmetadata.LocalMetadataEnricher),
+			appmetadata.Memoized(appmetadata.FlathubEnricher),
+			appmetadata.Memoized(appmetadata.WingetEnricher),
 		),
 		browser.Enrich(browser.NewCDPPoller(9222)),
 		location.Default(),

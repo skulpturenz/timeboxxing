@@ -24,20 +24,28 @@ const (
 // Metadata is the enriched, human-facing description of a foreground app.
 // Empty fields mean "unknown" — an enricher only fills what it actually found.
 type Metadata struct {
-	FriendlyName  string
-	Description   string
-	CategoryCode  string // normalized taxonomy code, e.g. "development"
-	CategoryLabel string // display label, e.g. "Development"
-	IconPath      string // path to the cached icon file on disk
-	Source        string // origin of the metadata (see Source* constants)
+	FriendlyName string
+	Description  string
+	Category     Category // normalized taxonomy; CategoryUnknown when not resolved
+	IconPath     string   // path to the cached icon file on disk
+	Source       string   // origin of the metadata (see Source* constants)
 }
 
 // empty reports whether the metadata carries no information at all.
 func (m Metadata) empty() bool {
 	return strings.TrimSpace(m.FriendlyName) == "" &&
 		strings.TrimSpace(m.Description) == "" &&
-		strings.TrimSpace(m.CategoryCode) == "" &&
+		m.Category == CategoryUnknown &&
 		strings.TrimSpace(m.IconPath) == ""
+}
+
+// complete reports whether every field a feed enricher could fill is already
+// populated. When true, a network feed has nothing to add and can be skipped.
+func (m Metadata) complete() bool {
+	return strings.TrimSpace(m.FriendlyName) != "" &&
+		strings.TrimSpace(m.Description) != "" &&
+		m.Category != CategoryUnknown &&
+		strings.TrimSpace(m.IconPath) != ""
 }
 
 // mergeInto fills every field that is still empty in dst from src, and returns
@@ -54,10 +62,8 @@ func (src Metadata) mergeInto(dst *Metadata) bool {
 	}
 	fill(&dst.FriendlyName, src.FriendlyName)
 	fill(&dst.Description, src.Description)
-	// Category code and label move together to stay consistent.
-	if strings.TrimSpace(dst.CategoryCode) == "" && strings.TrimSpace(src.CategoryCode) != "" {
-		dst.CategoryCode = strings.TrimSpace(src.CategoryCode)
-		dst.CategoryLabel = strings.TrimSpace(src.CategoryLabel)
+	if dst.Category == CategoryUnknown && src.Category != CategoryUnknown {
+		dst.Category = src.Category
 		changed = true
 	}
 	fill(&dst.IconPath, src.IconPath)

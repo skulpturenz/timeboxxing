@@ -1,8 +1,6 @@
 package appmetadata
 
 import (
-	"bufio"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -11,64 +9,12 @@ import (
 // .desktop file. Kept OS-agnostic (parsing is the same everywhere) so it is
 // unit-testable off Linux.
 type desktopEntry struct {
-	Name           string
-	Comment        string
-	Categories     string
-	Icon           string
-	Exec           string
-	StartupWMClass string
-}
-
-// parseDesktopFile reads the [Desktop Entry] group of a .desktop file. Localized
-// keys (Name[de]) are ignored in favor of the unlocalized value.
-func parseDesktopFile(path string) (desktopEntry, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return desktopEntry{}, err
-	}
-	defer f.Close()
-
-	var entry desktopEntry
-	inGroup := false
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			inGroup = line == "[Desktop Entry]"
-			continue
-		}
-		if !inGroup {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		switch key {
-		case "Name":
-			entry.Name = value
-		case "Comment":
-			entry.Comment = value
-		case "Categories":
-			entry.Categories = value
-		case "Icon":
-			entry.Icon = value
-		case "Exec":
-			entry.Exec = value
-		case "StartupWMClass":
-			entry.StartupWMClass = value
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return desktopEntry{}, err
-	}
-	return entry, nil
+	Name           string `ini:"Name"`
+	Comment        string `ini:"Comment"`
+	Categories     string `ini:"Categories"`
+	Icon           string `ini:"Icon"`
+	Exec           string `ini:"Exec"`
+	StartupWMClass string `ini:"StartupWMClass"`
 }
 
 // desktopMatches reports whether a .desktop entry (with file basename `base`)
@@ -89,8 +35,8 @@ func desktopMatches(entry desktopEntry, base string, idLower string, exeBase str
 	return false
 }
 
-// lastDotSegment returns the final dotted segment ("code" from "com.foo.code").
 func lastDotSegment(s string) string {
+	// final dotted segment ("code" from "com.foo.code").
 	if idx := strings.LastIndex(s, "."); idx >= 0 {
 		return s[idx+1:]
 	}
