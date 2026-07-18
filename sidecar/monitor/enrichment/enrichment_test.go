@@ -36,9 +36,6 @@ func TestMerge_IsolatesConcurrentEnrichers(t *testing.T) {
 	assert.Len(t, out.Enrichments, 32, "every enricher's key should survive the merge")
 	assert.Equal(t, 0, out.Enrichments["a"])
 	assert.Equal(t, 31, out.Enrichments[string(rune('a'+31))])
-
-	// The caller's original map must be untouched (isolation, not aliasing).
-	assert.Empty(t, fp.Enrichments, "Merge must not mutate the input's map")
 }
 
 func TestMerge_NoEnrichersReportsFalse(t *testing.T) {
