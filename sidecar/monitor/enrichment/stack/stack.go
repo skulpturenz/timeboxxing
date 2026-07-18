@@ -8,14 +8,11 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/permission"
 )
 
-// Stack returns the default enrichment pipeline and the OS permissions it needs.
-// The caller (monitor.New) is responsible for requesting the permissions. Only
-// the location enricher needs a permission today; app-metadata and browser do not.
 func Stack() (enrichment.Enricher, []permission.Permission) {
 	locationProvider := location.DefaultLocationProvider()
 
 	enricher := enrichment.Pipe(
-		enrichment.Or(appmetadata.Memoized(appmetadata.LocalMetadataEnricher),
+		enrichment.Merge(appmetadata.Memoized(appmetadata.LocalMetadataEnricher),
 			appmetadata.Memoized(appmetadata.FlathubEnricher),
 			appmetadata.Memoized(appmetadata.WingetEnricher),
 		),

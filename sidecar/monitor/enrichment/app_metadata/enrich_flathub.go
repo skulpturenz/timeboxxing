@@ -2,6 +2,7 @@ package appmetadata
 
 import (
 	"context"
+	"runtime"
 	"strings"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
@@ -20,6 +21,11 @@ type flathubAppstream struct {
 }
 
 func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
+	// Flathub is a Linux package registry; skip on other platforms.
+	if runtime.GOOS != "linux" {
+		return fp, false
+	}
+
 	// An unconfigured base URL means the feed is disabled: no-op.
 	if utils.IsEmptyString(flathubBaseURL) {
 		return fp, false
@@ -58,7 +64,7 @@ func FlathubEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor
 	}
 
 	updated := fp
-	updated.Enrichments[KeyMetadata] = metadata
+	updated.Enrichments[KeyMetadata] = &metadata
 	return updated, true
 }
 

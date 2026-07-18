@@ -3,6 +3,7 @@ package appmetadata
 import (
 	"context"
 	"net/url"
+	"runtime"
 	"strings"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
@@ -30,6 +31,11 @@ type wingetSearch struct {
 // real taxonomy), which local Windows metadata cannot provide. Fill-if-empty;
 // no-op when enabled is false. Compose after the local enrichment.Enricher and wrap in Memoized.
 func WingetEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
+	// winget is a Windows package manager; skip on other platforms.
+	if runtime.GOOS != "windows" {
+		return fp, false
+	}
+
 	// The winget enricher only runs (via Or) when local metadata found nothing, so
 	// the search term is the process's reported app name.
 	query := strings.TrimSpace(utils.Coalesce(fp.AppName, ""))
@@ -62,6 +68,6 @@ func WingetEnricher(ctx context.Context, fp monitor.ForegroundProcess) (monitor.
 	}
 
 	updated := fp
-	updated.Enrichments[KeyMetadata] = metadata
+	updated.Enrichments[KeyMetadata] = &metadata
 	return updated, true
 }

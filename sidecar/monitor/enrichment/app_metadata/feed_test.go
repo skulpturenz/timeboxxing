@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"sync/atomic"
 	"testing"
 
@@ -17,12 +18,15 @@ import (
 // TestFlathub_Live hits the real Flathub endpoint to confirm the response still
 // decodes into our struct. Opt-in (network): set TBX_LIVE_FEEDS=1 to run.
 func TestFlathub_Live(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Flathub enricher only runs on Linux")
+	}
 	if os.Getenv("TBX_LIVE_FEEDS") == "" {
 		t.Skip("set TBX_LIVE_FEEDS=1 to run live feed tests")
 	}
 	out, ok := FlathubEnricher(context.Background(), fpWithID("org.videolan.VLC"))
 	require.True(t, ok, "expected live Flathub enrichment for VLC")
-	md, _ := out.Enrichments[KeyMetadata].(Metadata)
+	md, _ := out.Enrichments[KeyMetadata].(*Metadata)
 	require.NotEmpty(t, md.FriendlyName, "live response under-populated")
 	require.NotEqual(t, CategoryUnknown, md.Category, "live response under-populated")
 	t.Logf("live VLC => name=%q category=%q desc.len=%d", md.FriendlyName, md.Category.Label(), len(md.Description))
@@ -45,6 +49,9 @@ const vlcAppstreamJSON = `{
 }`
 
 func TestFlathub_FillsFromFeed(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Flathub enricher only runs on Linux")
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/org.videolan.VLC" {
 			http.NotFound(w, r)
@@ -61,7 +68,7 @@ func TestFlathub_FillsFromFeed(t *testing.T) {
 
 	out, ok := FlathubEnricher(context.Background(), fpWithID("org.videolan.VLC"))
 	require.True(t, ok, "expected Flathub to enrich")
-	md, _ := out.Enrichments[KeyMetadata].(Metadata)
+	md, _ := out.Enrichments[KeyMetadata].(*Metadata)
 	assert.Equal(t, "VLC", md.FriendlyName)
 	assert.Equal(t, CategoryMedia, md.Category)
 	assert.Equal(t, SourceFlathub, md.Source)
@@ -89,7 +96,7 @@ func TestMemoized_MemoizesByIdentity(t *testing.T) {
 	inner := func(_ context.Context, fp monitor.ForegroundProcess) (monitor.ForegroundProcess, bool) {
 		atomic.AddInt32(&calls, 1)
 		updated := fp
-		updated.Enrichments[KeyMetadata] = Metadata{FriendlyName: "X", Source: SourceBundle}
+		updated.Enrichments[KeyMetadata] = &Metadata{FriendlyName: "X", Source: SourceBundle}
 		return updated, true
 	}
 	enricher := Memoized(inner)
@@ -97,7 +104,7 @@ func TestMemoized_MemoizesByIdentity(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		out, ok := enricher(context.Background(), fpWithID("com.example.app"))
 		require.True(t, ok, "expected enrichment")
-		md, _ := out.Enrichments[KeyMetadata].(Metadata)
+		md, _ := out.Enrichments[KeyMetadata].(*Metadata)
 		assert.Equal(t, "X", md.FriendlyName)
 	}
 	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "inner should be called once (memoized)")

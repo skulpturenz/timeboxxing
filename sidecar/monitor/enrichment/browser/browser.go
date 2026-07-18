@@ -112,7 +112,7 @@ func Enrich(resolver URLResolver) enrichment.Enricher {
 		}
 
 		updated := fp
-		updated.Enrichments[Key] = tab
+		updated.Enrichments[Key] = &tab
 		return updated, true
 	}
 }
@@ -126,8 +126,11 @@ func Get(fp monitor.ForegroundProcess) (Tab, bool) {
 	if !ok {
 		return Tab{}, false
 	}
-	tab, ok := value.(Tab)
-	return tab, ok
+	tab, ok := value.(*Tab)
+	if !ok || tab == nil {
+		return Tab{}, false
+	}
+	return *tab, true
 }
 
 // domainOf extracts the host (minus a leading "www.") from an http(s) URL.

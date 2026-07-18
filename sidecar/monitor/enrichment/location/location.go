@@ -81,7 +81,7 @@ func Enrich(location LocationProvider, publicIP PublicIPProvider) enrichment.Enr
 		if updated.Enrichments == nil {
 			updated.Enrichments = map[string]any{}
 		}
-		updated.Enrichments[Key] = env
+		updated.Enrichments[Key] = &env
 		return updated, true
 	}
 }
@@ -124,6 +124,9 @@ func Get(fp monitor.ForegroundProcess) (Environment, bool) {
 	if !ok {
 		return Environment{}, false
 	}
-	env, ok := value.(Environment)
-	return env, ok
+	env, ok := value.(*Environment)
+	if !ok || env == nil {
+		return Environment{}, false
+	}
+	return *env, true
 }
