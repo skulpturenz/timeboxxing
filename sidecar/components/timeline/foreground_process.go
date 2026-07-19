@@ -154,7 +154,7 @@ func CollectTimeline(stream []ForegroundProcess) *list.List {
 
 	for _, v := range stream {
 		prev := list.Back()
-		if prev != nil && !prev.Value.(ForegroundProcess).IsEqual(v) {
+		if prev == nil || !prev.Value.(ForegroundProcess).IsEqual(v) {
 			list.PushBack(v)
 		}
 	}
