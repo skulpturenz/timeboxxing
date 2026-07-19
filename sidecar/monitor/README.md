@@ -205,7 +205,7 @@ sample stream.
 
 ## Enrichment (`enrichment/`)
 
-`Enricher` ([enrichment.go:9](enrichment/enrichment.go#L9)) is a **type alias**:
+`Enricher` ([enrichment.go:12](enrichment/enrichment.go#L12)) is a **type alias**:
 
 ```go
 type Enricher = func(ctx, monitor.ForegroundProcess) (monitor.ForegroundProcess, bool)
@@ -218,11 +218,13 @@ The `bool` means "did I contribute anything." Three combinators:
 - `Or(...)` — returns the **first** enricher that succeeds (fallback within one
   dimension).
 - `Merge(...)` — like `Pipe` (all apply) but runs the enrichers **concurrently**
-  and folds their results with `mergo.Merge`. Each branch gets an isolated clone of
-  the `Enrichments` map via `utils.ParallelMapWithClone`, so the parallel writes
-  never race on the shared map. This is why enrichers store **pointers** (below):
-  `mergo` needs a pointer to carry a struct value across the merge. `Merge` is not
-  wired into `stack.Stack()` yet — `Pipe` remains the default.
+  and folds their results with `mergo.Merge` (order-preserving: an earlier enricher
+  wins a field, later ones fill only what it left blank). Each branch gets an
+  isolated clone of the `Enrichments` map via `utils.ParallelMapWithClone`, so the
+  parallel writes never race on the shared map. This is why enrichers store
+  **pointers** (below): `mergo` needs a pointer to carry a struct value across the
+  merge. `stack.Stack()` uses `Merge` to run the three `app_metadata` sources
+  concurrently.
 
 Enrichers never touch process identity — they write a **pointer** to a typed
 struct into the `Enrichments map[string]any` bag under well-known keys (pointers so
@@ -231,25 +233,32 @@ return values):
 
 | Enricher | Key | Stored value | External I/O & caching | Permission? |
 | --- | --- | --- | --- | --- |
-| `app_metadata` | `"appmetadata"` | `*Metadata` (friendly name, description, `Category`, icon path) | Local OS metadata (plist/.desktop/PE) first; then HTTP feeds as `Or` fallbacks — **Flathub on Linux only**, **winget on Windows only** (each gated by `runtime.GOOS`). Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
+| `app_metadata` | `"appmetadata"` | `*Metadata` (friendly name, description, `Category`, icon path) | Three sources run concurrently under `Merge` and are combined field-by-field by `mergo`: local OS metadata (plist/.desktop/PE), the **Flathub** feed (**Linux only**), and the **winget** feed (**Windows only**) — each feed gated by `runtime.GOOS`, so at most one supplements local per OS. Local wins each field; a feed fills the gaps (e.g. description/category). Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
 | `browser` | `"browser"` | `*Tab` (browser, title, URL, domain) | Tab title parsed from window title; URL recovered via **Chrome DevTools Protocol** at `localhost:9222`. Self-rate-limited (500 ms), 1 s timeout, no HTTP retries. **Not memoized** (tab changes constantly) | none |
 | `location` | `"location"` | `*Environment` (nullable lat/long + public IP) | Location read non-blockingly from an OS provider on a background thread (macOS CoreLocation, Windows WinRT Geolocator; no-op elsewhere). Public IP via `api.ipify.org`, **memoized 1-hour TTL** | **yes** (location) |
 
 The `location` enricher is the only one that guards against the **nil**
-`Enrichments` map ([location.go:80-83](enrichment/location/location.go#L80-L83)),
+`Enrichments` map ([location.go:81-83](enrichment/location/location.go#L81-L83)),
 because public IP is machine-wide and can reach here on an *idle* sample (whose map
 is nil).
 
 The default pipeline is assembled in one place —
-`stack.Stack()` ([stack.go:14-32](enrichment/stack/stack.go#L14-L32)):
+`stack.Stack()` ([stack.go:11-29](enrichment/stack/stack.go#L11-L29)):
 
 ```go
 enrichment.Pipe(
-    enrichment.Or(Memoized(LocalMetadataEnricher), Memoized(FlathubEnricher), Memoized(WingetEnricher)),
+    enrichment.Merge( // app metadata: all three run concurrently, results merged
+        Memoized(LocalMetadataEnricher),
+        Memoized(FlathubEnricher), // Linux only
+        Memoized(WingetEnricher),  // Windows only
+    ),
     browser.Enrich(browser.NewCDPPoller(9222)),
     location.Enrich(locationProvider, location.NewPublicIPProvider()),
 )
 ```
+
+The top-level combinator is `Pipe` (metadata, browser, and location are orthogonal
+and all apply); `Merge` sits inside it to fan the metadata sources out concurrently.
 
 `Stack` also gathers the permission set — today only `location.Requestable`
 contributes one. This factory is the single seam where sources, the CDP port, TTLs,
