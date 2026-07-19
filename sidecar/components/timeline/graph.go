@@ -79,10 +79,10 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 			prevIdentifier := ""
 			if prevProcess.IsIdle() {
 				prevIdentifier = "idle"
-			} else if prevProcess.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
-				prevIdentifier = *curr.Enrichments.Browser.AppIdentifier
+			} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
+				prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
 			} else {
-				assert.NotNil(prevProcess.Idle)
+				assert.NotNil(prevProcess.AppIdentifier)
 				prevIdentifier = *prevProcess.AppIdentifier
 			}
 			assert.NotEqual(appIdentifier, prevIdentifier)
@@ -185,10 +185,10 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) TimelineGraph {
 					prevIdentifier := ""
 					if prevProcess.IsIdle() {
 						prevIdentifier = "idle"
-					} else if prevProcess.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
-						prevIdentifier = *curr.Enrichments.Browser.AppIdentifier
+					} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
+						prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
 					} else {
-						assert.NotNil(prevProcess.Idle)
+						assert.NotNil(prevProcess.AppIdentifier)
 						prevIdentifier = *prevProcess.AppIdentifier
 					}
 					assert.NotEqual(appIdentifier, prevIdentifier)
@@ -297,6 +297,11 @@ func (graph TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnect
 		for _, v := range intervals {
 			flattened = append(flattened, v...)
 		}
+
+		if len(flattened) == 0 {
+			continue
+		}
+
 		slices.SortFunc(flattened, func(x [2]time.Time, y [2]time.Time) int {
 			return x[0].Compare(y[0])
 		})
@@ -310,7 +315,7 @@ func (graph TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnect
 
 			// without the gap check everything gets merged into one consecutive time
 			// because next will always be after
-			if curr[0].After(prev[1]) && curr[0].Sub(prev[1]) <= 1*time.Minute {
+			if curr[0].Sub(prev[1]) <= 1*time.Minute {
 				if curr[1].After(prev[1]) {
 					prev[1] = curr[1]
 				}

@@ -96,6 +96,10 @@ type UsageSeq struct {
 }
 
 func (foregroundProcess ForegroundProcess) IsIdle() bool {
+	if !foregroundProcess.Idle {
+		return false
+	}
+
 	assert.Nil(foregroundProcess.AppName)
 	assert.Nil(foregroundProcess.AppIdentifier)
 	assert.Nil(foregroundProcess.AppPath)
