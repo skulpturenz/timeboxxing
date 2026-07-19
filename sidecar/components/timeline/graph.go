@@ -18,8 +18,9 @@ type TimelineGraph struct {
 }
 
 type VertexMeta struct {
-	Category enumscategories.Category
-	Duration time.Duration
+	Category  enumscategories.Category
+	Duration  time.Duration
+	Intervals [][2]time.Time
 }
 
 type EdgeMeta struct {
@@ -95,7 +96,10 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 			nextProcess, ok := next.Value.(ForegroundProcess)
 			assert.True(ok)
 
-			vertexMeta.Duration += nextProcess.Timestamp.Sub(curr.Timestamp)
+			if !nextProcess.IsEqual(curr) {
+				vertexMeta.Duration += nextProcess.Timestamp.Sub(curr.Timestamp)
+				vertexMeta.Intervals = append(vertexMeta.Intervals, [2]time.Time{curr.Timestamp, nextProcess.Timestamp})
+			}
 		}
 	}
 
@@ -195,6 +199,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) TimelineGraph {
 					assert.NotNil(prevMeta)
 
 					prevMeta.Duration += curr.Timestamp.Sub(prev.Timestamp)
+					prevMeta.Intervals = append(prevMeta.Intervals, [2]time.Time{prev.Timestamp, curr.Timestamp})
 				}
 
 				prev = &curr
