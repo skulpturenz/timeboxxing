@@ -70,10 +70,12 @@ type AppMetadata struct {
 }
 
 type Browser struct {
-	Browser string
-	Title   string
-	URL     string
-	Domain  string
+	Browser       string
+	Category      *enumscategories.Category // TODO
+	AppIdentifier *string                   // TODO
+	Title         string
+	URL           string
+	Domain        string
 }
 
 type Location struct {

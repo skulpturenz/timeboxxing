@@ -7,6 +7,7 @@ import (
 	"github.com/hmdsefi/gograph"
 	"github.com/negrel/assert"
 	enumscategories "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_categories"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 type TimelineGraph struct {
@@ -38,11 +39,10 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 		assert.True(ok)
 
 		appIdentifier := ""
-		// TODO: we want to also handle browsers separately
-		// the category of the browser app is not what we're interested in
-		// we care about what the website is
 		if curr.IsIdle() {
 			appIdentifier = "idle"
+		} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
+			appIdentifier = *curr.Enrichments.Browser.AppIdentifier
 		} else {
 			assert.NotNil(curr.AppIdentifier)
 			appIdentifier = *curr.AppIdentifier
@@ -51,8 +51,14 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 
 		vertexMeta := vertexMetaMap[appIdentifier]
 		if vertexMeta == nil {
-			vertexMeta = &VertexMeta{
-				Category: curr.Enrichments.Appmetadata.Category,
+			if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
+				vertexMeta = &VertexMeta{
+					Category: *curr.Enrichments.Browser.Category,
+				}
+			} else {
+				vertexMeta = &VertexMeta{
+					Category: curr.Enrichments.Appmetadata.Category,
+				}
 			}
 			vertexMetaMap[appIdentifier] = vertexMeta
 		}
@@ -63,11 +69,10 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 			assert.True(ok)
 
 			prevIdentifier := ""
-			// TODO: we want to also handle browsers separately
-			// the category of the browser app is not what we're interested in
-			// we care about what the website is
 			if prevProcess.IsIdle() {
 				prevIdentifier = "idle"
+			} else if prevProcess.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
+				prevIdentifier = *curr.Enrichments.Browser.AppIdentifier
 			} else {
 				assert.NotNil(prevProcess.Idle)
 				prevIdentifier = *prevProcess.AppIdentifier
