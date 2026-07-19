@@ -28,9 +28,11 @@ require (
 	howett.net/plist v1.0.1
 )
 
-require resty.dev/v3 v3.0.0-rc.3
-
-require dario.cat/mergo v1.0.2 // indirect
+require (
+	dario.cat/mergo v1.0.2
+	github.com/hmdsefi/gograph v0.7.0
+	resty.dev/v3 v3.0.0-rc.3
+)
 
 require (
 	buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.11-20250718181942-e35f9b667443.1 // indirect
