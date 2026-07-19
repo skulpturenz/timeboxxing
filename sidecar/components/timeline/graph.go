@@ -3,9 +3,12 @@ package timeline
 import (
 	"container/list"
 	"context"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/hmdsefi/gograph"
+	"github.com/hmdsefi/gograph/connectivity"
 	"github.com/negrel/assert"
 	enumscategories "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_categories"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
@@ -20,11 +23,13 @@ type TimelineGraph struct {
 type VertexMeta struct {
 	Category  enumscategories.Category
 	Duration  time.Duration
-	Intervals [][2]time.Time
+	Intervals [][2]time.Time // span from curr start -> curr end
+	Count     int
 }
 
 type EdgeMeta struct {
 	Duration time.Duration
+	Count    int
 }
 
 func GraphFrom(timeline *list.List) TimelineGraph {
@@ -65,6 +70,7 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 			vertexMetaMap[appIdentifier] = vertexMeta
 		}
 		assert.NotNil(vertexMetaMap[appIdentifier])
+		vertexMeta.Count += 1
 
 		if prev != nil {
 			prevProcess, ok := prev.Value.(ForegroundProcess)
@@ -90,6 +96,7 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 			assert.NotNil(edgeMetaMap[edge])
 
 			edgeMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
+			edgeMeta.Count += 1
 		}
 
 		if next != nil {
@@ -170,6 +177,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) TimelineGraph {
 					vertexMetaMap[appIdentifier] = vertexMeta
 				}
 				assert.NotNil(vertexMetaMap[appIdentifier])
+				vertexMeta.Count += 1
 
 				if prev != nil {
 					prevProcess := *prev
@@ -194,6 +202,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) TimelineGraph {
 					assert.NotNil(edgeMetaMap[edge])
 
 					edgeMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
+					edgeMeta.Count += 1
 
 					prevMeta := vertexMetaMap[prevIdentifier]
 					assert.NotNil(prevMeta)
@@ -224,4 +233,103 @@ func (graph TimelineGraph) GetEdgeMeta(fromLabel string, toLabel string) (*EdgeM
 	meta, ok := graph.edgeMetaMap[[2]string{fromLabel, toLabel}]
 
 	return meta, ok
+}
+
+type EntrySuggestion struct {
+	AppIdentifiers []string
+	Start          time.Time
+	End            time.Time
+}
+
+func (graph TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnections int) []EntrySuggestion {
+	entries := []EntrySuggestion{}
+
+	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes
+	// easiest to explain with an example:
+	// user is doing FE work and they're switching between chrome, vscode and terminal
+	// in one session they switch between these 3 apps multiple times
+	// want to find these blocks of time
+	for _, vertices := range scss {
+		if len(vertices) < 2 {
+			continue
+		}
+
+		intervals := map[string][][2]time.Time{}
+		labels := map[string]struct{}{}
+		for i, x := range vertices {
+			for j, y := range vertices {
+				if i == j {
+					continue
+				}
+
+				edgeXY := graph.edgeMetaMap[[2]string{x.Label(), y.Label()}]
+				edgeYX := graph.edgeMetaMap[[2]string{y.Label(), x.Label()}]
+				if edgeXY == nil || edgeYX == nil {
+					continue
+				}
+
+				if edgeXY.Count < numMutualConnections || edgeYX.Count < numMutualConnections {
+					continue
+				}
+
+				label := x.Label()
+				labels[label] = struct{}{}
+			}
+		}
+
+		for label := range labels {
+			meta := graph.vertexMetaMap[label]
+			assert.NotNil(meta)
+
+			filtered := [][2]time.Time{}
+			for _, s := range meta.Intervals {
+				if !s[0].After(start) {
+					continue
+				}
+
+				filtered = append(filtered, s)
+			}
+
+			intervals[label] = append(intervals[label], filtered...)
+		}
+
+		flattened := [][2]time.Time{}
+		for _, v := range intervals {
+			flattened = append(flattened, v...)
+		}
+		slices.SortFunc(flattened, func(x [2]time.Time, y [2]time.Time) int {
+			return x[0].Compare(y[0])
+		})
+
+		// flattened has a list of intervals sorted in ascending order of start
+		// we want to find consecutive blocks of time
+		// in these blocks of times, the set of apps are strongly connected
+		consecutive := [][2]time.Time{flattened[0]}
+		for _, curr := range flattened[1:] {
+			prev := &consecutive[len(consecutive)-1]
+
+			// without the gap check everything gets merged into one consecutive time
+			// because next will always be after
+			if curr[0].After(prev[1]) && curr[0].Sub(prev[1]) <= 1*time.Minute {
+				if curr[1].After(prev[1]) {
+					prev[1] = curr[1]
+				}
+			} else {
+				consecutive = append(consecutive, curr)
+			}
+		}
+
+		suggestions := []EntrySuggestion{}
+		for _, i := range consecutive {
+			suggestions = append(suggestions, EntrySuggestion{
+				AppIdentifiers: slices.Collect(maps.Keys(labels)),
+				Start:          i[0],
+				End:            i[1],
+			})
+		}
+
+		entries = append(entries, suggestions...)
+	}
+
+	return entries
 }
