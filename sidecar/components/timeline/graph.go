@@ -2,6 +2,7 @@ package timeline
 
 import (
 	"container/list"
+	"context"
 	"time"
 
 	"github.com/hmdsefi/gograph"
@@ -115,6 +116,91 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 		_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.Duration.Milliseconds())))
 		assert.Nil(err)
 	}
+
+	return TimelineGraph{
+		Graph:         g,
+		vertexMetaMap: vertexMetaMap,
+		edgeMetaMap:   edgeMetaMap,
+	}
+}
+
+func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) TimelineGraph {
+	g := gograph.New[string](gograph.Directed())
+
+	vertexMetaMap := map[string]*VertexMeta{}
+	edgeMetaMap := map[[2]string]*EdgeMeta{}
+
+	go func() {
+		var prev *ForegroundProcess
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case curr := <-ch:
+				if prev != nil && curr.IsEqual(*prev) {
+					continue
+				}
+
+				appIdentifier := ""
+				if curr.IsIdle() {
+					appIdentifier = "idle"
+				} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
+					appIdentifier = *curr.Enrichments.Browser.AppIdentifier
+				} else {
+					assert.NotNil(curr.AppIdentifier)
+					appIdentifier = *curr.AppIdentifier
+				}
+				assert.NotZero(appIdentifier)
+
+				vertexMeta := vertexMetaMap[appIdentifier]
+				if vertexMeta == nil {
+					if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
+						vertexMeta = &VertexMeta{
+							Category: *curr.Enrichments.Browser.Category,
+						}
+					} else {
+						vertexMeta = &VertexMeta{
+							Category: curr.Enrichments.Appmetadata.Category,
+						}
+					}
+					vertexMetaMap[appIdentifier] = vertexMeta
+				}
+				assert.NotNil(vertexMetaMap[appIdentifier])
+
+				if prev != nil {
+					prevProcess := *prev
+
+					prevIdentifier := ""
+					if prevProcess.IsIdle() {
+						prevIdentifier = "idle"
+					} else if prevProcess.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
+						prevIdentifier = *curr.Enrichments.Browser.AppIdentifier
+					} else {
+						assert.NotNil(prevProcess.Idle)
+						prevIdentifier = *prevProcess.AppIdentifier
+					}
+					assert.NotEqual(appIdentifier, prevIdentifier)
+
+					edge := [2]string{prevIdentifier, appIdentifier}
+					edgeMeta := edgeMetaMap[edge]
+					if edgeMeta == nil {
+						edgeMeta = &EdgeMeta{}
+						edgeMetaMap[edge] = edgeMeta
+					}
+					assert.NotNil(edgeMetaMap[edge])
+
+					edgeMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
+
+					prevMeta := vertexMetaMap[prevIdentifier]
+					assert.NotNil(prevMeta)
+
+					prevMeta.Duration += curr.Timestamp.Sub(prev.Timestamp)
+				}
+
+				prev = &curr
+			}
+		}
+	}()
 
 	return TimelineGraph{
 		Graph:         g,
