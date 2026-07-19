@@ -5,6 +5,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/hmdsefi/gograph"
@@ -16,6 +17,7 @@ import (
 
 type TimelineGraph struct {
 	Graph         gograph.Graph[string]
+	mu            sync.RWMutex
 	vertexMetaMap map[string]*VertexMeta
 	edgeMetaMap   map[[2]string]*EdgeMeta
 }
@@ -32,7 +34,7 @@ type EdgeMeta struct {
 	Count    int
 }
 
-func GraphFrom(timeline *list.List) TimelineGraph {
+func GraphFrom(timeline *list.List) *TimelineGraph {
 	g := gograph.New[string](gograph.Directed())
 
 	vertexMetaMap := map[string]*VertexMeta{}
@@ -114,6 +116,7 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 	for v, meta := range vertexMetaMap {
 		vertex := g.AddVertexByLabel(v, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
 
+		assert.NotNil(vertex)
 		vertices[v] = vertex
 	}
 
@@ -128,18 +131,26 @@ func GraphFrom(timeline *list.List) TimelineGraph {
 		assert.Nil(err)
 	}
 
-	return TimelineGraph{
+	timelineGraph := TimelineGraph{
 		Graph:         g,
 		vertexMetaMap: vertexMetaMap,
 		edgeMetaMap:   edgeMetaMap,
 	}
+
+	return &timelineGraph
 }
 
-func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) TimelineGraph {
+func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph {
 	g := gograph.New[string](gograph.Directed())
 
 	vertexMetaMap := map[string]*VertexMeta{}
 	edgeMetaMap := map[[2]string]*EdgeMeta{}
+
+	timelineGraph := TimelineGraph{
+		Graph:         g,
+		vertexMetaMap: vertexMetaMap,
+		edgeMetaMap:   edgeMetaMap,
+	}
 
 	go func() {
 		var prev *ForegroundProcess
@@ -148,88 +159,117 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) TimelineGraph {
 			case <-ctx.Done():
 				return
 			case curr := <-ch:
-				if prev != nil && curr.IsEqual(*prev) {
-					continue
-				}
+				func() {
+					timelineGraph.mu.Lock()
+					defer timelineGraph.mu.Unlock()
 
-				appIdentifier := ""
-				if curr.IsIdle() {
-					appIdentifier = "idle"
-				} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
-					appIdentifier = *curr.Enrichments.Browser.AppIdentifier
-				} else {
-					assert.NotNil(curr.AppIdentifier)
-					appIdentifier = *curr.AppIdentifier
-				}
-				assert.NotZero(appIdentifier)
+					if prev != nil && curr.IsEqual(*prev) {
+						return
+					}
 
-				vertexMeta := vertexMetaMap[appIdentifier]
-				if vertexMeta == nil {
-					if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
-						vertexMeta = &VertexMeta{
-							Category: *curr.Enrichments.Browser.Category,
-						}
+					appIdentifier := ""
+					if curr.IsIdle() {
+						appIdentifier = "idle"
+					} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
+						appIdentifier = *curr.Enrichments.Browser.AppIdentifier
 					} else {
-						vertexMeta = &VertexMeta{
-							Category: curr.Enrichments.Appmetadata.Category,
+						assert.NotNil(curr.AppIdentifier)
+						appIdentifier = *curr.AppIdentifier
+					}
+					assert.NotZero(appIdentifier)
+
+					vertexMeta := vertexMetaMap[appIdentifier]
+					if vertexMeta == nil {
+						if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
+							vertexMeta = &VertexMeta{
+								Category: *curr.Enrichments.Browser.Category,
+							}
+						} else {
+							vertexMeta = &VertexMeta{
+								Category: curr.Enrichments.Appmetadata.Category,
+							}
+						}
+						vertexMetaMap[appIdentifier] = vertexMeta
+					}
+					assert.NotNil(vertexMetaMap[appIdentifier])
+					vertexMeta.Count += 1
+
+					if prev != nil {
+						prevProcess := *prev
+
+						prevIdentifier := ""
+						if prevProcess.IsIdle() {
+							prevIdentifier = "idle"
+						} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
+							prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
+						} else {
+							assert.NotNil(prevProcess.AppIdentifier)
+							prevIdentifier = *prevProcess.AppIdentifier
+						}
+						assert.NotEqual(appIdentifier, prevIdentifier)
+
+						edge := [2]string{prevIdentifier, appIdentifier}
+						edgeMeta := edgeMetaMap[edge]
+						if edgeMeta == nil {
+							edgeMeta = &EdgeMeta{}
+							edgeMetaMap[edge] = edgeMeta
+						}
+						assert.NotNil(edgeMetaMap[edge])
+
+						edgeMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
+						edgeMeta.Count += 1
+
+						prevMeta := vertexMetaMap[prevIdentifier]
+						assert.NotNil(prevMeta)
+
+						prevMeta.Duration += curr.Timestamp.Sub(prev.Timestamp)
+						prevMeta.Intervals = append(prevMeta.Intervals, [2]time.Time{prev.Timestamp, curr.Timestamp})
+					}
+
+					for v, meta := range vertexMetaMap {
+						if g.GetVertexByID(v) == nil {
+							vertex := g.AddVertexByLabel(v, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
+
+							assert.NotNil(vertex)
 						}
 					}
-					vertexMetaMap[appIdentifier] = vertexMeta
-				}
-				assert.NotNil(vertexMetaMap[appIdentifier])
-				vertexMeta.Count += 1
 
-				if prev != nil {
-					prevProcess := *prev
+					for edge, meta := range edgeMetaMap {
+						from := g.GetVertexByID(edge[0])
+						assert.NotNil(from)
 
-					prevIdentifier := ""
-					if prevProcess.IsIdle() {
-						prevIdentifier = "idle"
-					} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
-						prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
-					} else {
-						assert.NotNil(prevProcess.AppIdentifier)
-						prevIdentifier = *prevProcess.AppIdentifier
+						to := g.GetVertexByID(edge[1])
+						assert.NotNil(to)
+
+						if !g.ContainsEdge(from, to) {
+							_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.Duration.Milliseconds())))
+							assert.Nil(err)
+						}
 					}
-					assert.NotEqual(appIdentifier, prevIdentifier)
 
-					edge := [2]string{prevIdentifier, appIdentifier}
-					edgeMeta := edgeMetaMap[edge]
-					if edgeMeta == nil {
-						edgeMeta = &EdgeMeta{}
-						edgeMetaMap[edge] = edgeMeta
-					}
-					assert.NotNil(edgeMetaMap[edge])
+					prev = &curr
+				}()
 
-					edgeMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
-					edgeMeta.Count += 1
-
-					prevMeta := vertexMetaMap[prevIdentifier]
-					assert.NotNil(prevMeta)
-
-					prevMeta.Duration += curr.Timestamp.Sub(prev.Timestamp)
-					prevMeta.Intervals = append(prevMeta.Intervals, [2]time.Time{prev.Timestamp, curr.Timestamp})
-				}
-
-				prev = &curr
 			}
 		}
 	}()
 
-	return TimelineGraph{
-		Graph:         g,
-		vertexMetaMap: vertexMetaMap,
-		edgeMetaMap:   edgeMetaMap,
-	}
+	return &timelineGraph
 }
 
-func (graph TimelineGraph) GetVertexMeta(label string) (*VertexMeta, bool) {
+func (graph *TimelineGraph) GetVertexMeta(label string) (*VertexMeta, bool) {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
 	meta, ok := graph.vertexMetaMap[label]
 
 	return meta, ok
 }
 
-func (graph TimelineGraph) GetEdgeMeta(fromLabel string, toLabel string) (*EdgeMeta, bool) {
+func (graph *TimelineGraph) GetEdgeMeta(fromLabel string, toLabel string) (*EdgeMeta, bool) {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
 	meta, ok := graph.edgeMetaMap[[2]string{fromLabel, toLabel}]
 
 	return meta, ok
@@ -241,7 +281,10 @@ type EntrySuggestion struct {
 	End            time.Time
 }
 
-func (graph TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnections int) []EntrySuggestion {
+func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnections int) []EntrySuggestion {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
 	entries := []EntrySuggestion{}
 
 	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes

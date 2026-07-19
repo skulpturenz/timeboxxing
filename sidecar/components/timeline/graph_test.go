@@ -164,7 +164,7 @@ func TestGraphFrom_BrowserAsPrevLabelsEdgeSource(t *testing.T) {
 		appProc("terminal", 3, enumscategories.CategoryDevelopment, at(20)),
 	)
 
-	var g TimelineGraph
+	var g *TimelineGraph
 	require.NotPanics(t, func() { g = GraphFrom(tl) },
 		"browser-as-prev must not corrupt the edge source (graph.go:82-83)")
 
@@ -193,7 +193,7 @@ func TestGraphFrom_EmptyAndSingle(t *testing.T) {
 
 // mutualCluster builds a vscode<->terminal graph where each direction is switched twice, so both edges
 // pass a threshold of 2 and the pair forms a strongly connected component.
-func mutualCluster(t *testing.T) TimelineGraph {
+func mutualCluster(t *testing.T) *TimelineGraph {
 	t.Helper()
 	return GraphFrom(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
@@ -341,11 +341,14 @@ func TestGetEntrySuggestions_MultipleClustersExcludeNonClusters(t *testing.T) {
 
 // --- GraphChan -------------------------------------------------------------
 
-// GraphChan spawns an unsynchronized goroutine that writes the meta maps and never populates the
-// gograph. This is a best-effort test of the metadata accounting; it is unsafe under -race.
-func TestGraphChan_AccumulatesMetaEventually(t *testing.T) {
+// GraphChan builds both the metadata maps and the gograph itself from an unsynchronized goroutine, so
+// the test is unsafe under -race. To read state without a data race, it relies on the unbuffered
+// channel: sending one more (deduplicated) sample only returns once the goroutine has received it,
+// which means the previous sample's processing — metadata and graph — is fully committed and the
+// goroutine is parked doing no writes.
+func TestGraphChan_BuildsGraphAndMeta(t *testing.T) {
 	if raceEnabled {
-		t.Skip("GraphChan writes the meta maps from an unsynchronized goroutine; unsafe under -race until it exposes a done signal")
+		t.Skip("GraphChan builds the graph from an unsynchronized goroutine; unsafe under -race until it exposes a done signal")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -357,11 +360,14 @@ func TestGraphChan_AccumulatesMetaEventually(t *testing.T) {
 	ch <- appProc("A", 1, enumscategories.CategoryDevelopment, at(0))
 	ch <- appProc("B", 2, enumscategories.CategoryCommunication, at(10))
 	ch <- appProc("A", 1, enumscategories.CategoryDevelopment, at(20))
+	// quiesce: a repeat of the previous sample is deduplicated (no state change); once this send
+	// returns the goroutine has finished processing the A@20 sample above.
+	ch <- appProc("A", 1, enumscategories.CategoryDevelopment, at(30))
 
-	require.Eventually(t, func() bool {
-		meta, ok := g.GetVertexMeta("A")
-		return ok && meta.Count == 2
-	}, time.Second, 5*time.Millisecond, "goroutine should accumulate vertex metadata")
+	// metadata
+	metaA, ok := g.GetVertexMeta("A")
+	require.True(t, ok)
+	assert.Equal(t, 2, metaA.Count)
 
 	metaB, ok := g.GetVertexMeta("B")
 	require.True(t, ok)
@@ -372,6 +378,101 @@ func TestGraphChan_AccumulatesMetaEventually(t *testing.T) {
 	_, ok = g.GetEdgeMeta("B", "A")
 	assert.True(t, ok)
 
-	// GraphChan only fills metadata; the gograph itself is never populated.
-	assert.Equal(t, uint32(0), g.Graph.Order())
+	// the gograph now mirrors the transitions: both vertices and both directed edges
+	assert.Equal(t, uint32(2), g.Graph.Order())
+
+	vA := g.Graph.GetVertexByID("A")
+	vB := g.Graph.GetVertexByID("B")
+	require.NotNil(t, vA)
+	require.NotNil(t, vB)
+
+	assert.NotNil(t, g.Graph.GetEdge(vA, vB), "A->B edge should be in the graph")
+	assert.NotNil(t, g.Graph.GetEdge(vB, vA), "B->A edge should be in the graph")
+}
+
+// A mutual-switching stream fed through GraphChan produces the same cluster suggestion as GraphFrom.
+// GetEntrySuggestions is mutex-protected, so this needs no -race guard; the quiesce send only ensures
+// the goroutine has processed every sample before the suggestions are read.
+func TestGraphChan_FindsMutualCluster(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan ForegroundProcess)
+	g := GraphChan(ctx, ch)
+
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(30))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(40))
+	// quiesce: a repeat of the previous sample is deduplicated (no state change); once this send
+	// returns the goroutine has finished processing the vscode@40 sample above.
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(50))
+
+	suggestions := g.GetEntrySuggestions(at(-1), 2)
+
+	require.Len(t, suggestions, 1, "the mutual vscode/terminal switching should form one cluster")
+	assert.ElementsMatch(t, []string{"vscode", "terminal"}, suggestions[0].AppIdentifiers)
+	assert.Equal(t, at(0), suggestions[0].Start)
+	assert.Equal(t, at(40), suggestions[0].End)
+}
+
+// The multi-cluster scenario from TestGetEntrySuggestions_MultipleClustersExcludeNonClusters, fed
+// through GraphChan: two independent mutual clusters each surface as their own suggestion, and the
+// one-off apps in between are excluded. GetEntrySuggestions is mutex-protected, so no -race guard is
+// needed; the quiesce send only ensures every sample is processed first.
+func TestGraphChan_FindsMultipleMutualClusters(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan ForegroundProcess)
+	g := GraphChan(ctx, ch)
+
+	// cluster A: vscode <-> terminal
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(30))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(40))
+	// non-cluster interlude: each visited once, one-way transitions only
+	ch <- appProc("slack", 3, enumscategories.CategoryCommunication, at(50))
+	ch <- appProc("spotify", 4, enumscategories.CategoryMedia, at(60))
+	// cluster B: figma <-> chrome
+	ch <- appProc("figma", 5, enumscategories.CategoryGraphicsDesign, at(70))
+	ch <- appProc("chrome", 6, enumscategories.CategoryWebBrowsing, at(80))
+	ch <- appProc("figma", 5, enumscategories.CategoryGraphicsDesign, at(90))
+	ch <- appProc("chrome", 6, enumscategories.CategoryWebBrowsing, at(100))
+	ch <- appProc("figma", 5, enumscategories.CategoryGraphicsDesign, at(110))
+	// quiesce: a deduplicated repeat forces the goroutine to finish the figma@110 sample above
+	ch <- appProc("figma", 5, enumscategories.CategoryGraphicsDesign, at(120))
+
+	suggestions := g.GetEntrySuggestions(at(-1), 2)
+
+	require.Len(t, suggestions, 2, "each mutual cluster should yield exactly one suggestion")
+
+	for _, s := range suggestions {
+		assert.NotContains(t, s.AppIdentifiers, "slack", "one-off apps must not be suggested")
+		assert.NotContains(t, s.AppIdentifiers, "spotify", "one-off apps must not be suggested")
+	}
+
+	// match each suggestion to its cluster regardless of the order Tarjan returns components in
+	var coding, design *EntrySuggestion
+	for i := range suggestions {
+		switch {
+		case slices.Contains(suggestions[i].AppIdentifiers, "vscode"):
+			coding = &suggestions[i]
+		case slices.Contains(suggestions[i].AppIdentifiers, "figma"):
+			design = &suggestions[i]
+		}
+	}
+
+	require.NotNil(t, coding, "expected a vscode/terminal suggestion")
+	assert.ElementsMatch(t, []string{"vscode", "terminal"}, coding.AppIdentifiers)
+	assert.Equal(t, at(0), coding.Start)
+	assert.Equal(t, at(50), coding.End)
+
+	require.NotNil(t, design, "expected a figma/chrome suggestion")
+	assert.ElementsMatch(t, []string{"figma", "chrome"}, design.AppIdentifiers)
+	assert.Equal(t, at(70), design.Start)
+	assert.Equal(t, at(110), design.End)
 }
