@@ -339,6 +339,85 @@ func TestGetEntrySuggestions_MultipleClustersExcludeNonClusters(t *testing.T) {
 	assert.Equal(t, at(110), design.End)
 }
 
+// The same set of apps switched in two separate sessions (with an idle gap in between) yields one
+// suggestion per session rather than a single merged block. The idle sample joins the SCC via the
+// vscode<->idle cycle but is excluded from the labels by the mutual-connection threshold.
+func TestGetEntrySuggestions_SameAppsAcrossSessions(t *testing.T) {
+	g := GraphFrom(listOf(
+		// morning session: vscode <-> terminal
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(30)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(40)),
+		// away from keyboard for over a minute
+		idleProc(at(50)),
+		// afternoon session: the same two apps again
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(180)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(190)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(200)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(210)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(220)),
+	))
+
+	suggestions := g.GetEntrySuggestions(at(-1), 2)
+
+	require.Len(t, suggestions, 2, "each session should be its own suggestion")
+	for _, s := range suggestions {
+		assert.ElementsMatch(t, []string{"vscode", "terminal"}, s.AppIdentifiers)
+	}
+
+	// blocks come out ordered by start (flattened is sorted ascending)
+	assert.Equal(t, at(0), suggestions[0].Start)
+	assert.Equal(t, at(50), suggestions[0].End)
+	assert.Equal(t, at(180), suggestions[1].Start)
+	assert.Equal(t, at(220), suggestions[1].End)
+}
+
+// A single session cycling among three apps several times forms one three-app cluster. vscode is the
+// hub the user returns to, so vscode<->terminal and vscode<->chrome are each mutual well above the
+// threshold; that pulls all three into the same SCC and the same suggestion. (A pure round-robin
+// vscode->terminal->chrome->vscode would instead have only one-way edges and yield no suggestion.)
+func TestGetEntrySuggestions_ThreeAppCycleRepeated(t *testing.T) {
+	// vscode <-> terminal and vscode <-> chrome, three full rounds
+	procs := []ForegroundProcess{}
+	second := 0
+	push := func(id string, pid int32) {
+		procs = append(procs, appProc(id, pid, enumscategories.CategoryDevelopment, at(second)))
+		second += 10
+	}
+	for round := 0; round < 3; round++ {
+		push("vscode", 1)
+		push("terminal", 2)
+		push("vscode", 1)
+		push("chrome", 3)
+	}
+	push("vscode", 1) // trailing sample so the last chrome interval closes
+
+	g := GraphFrom(listOf(procs...))
+
+	suggestions := g.GetEntrySuggestions(at(-1), 2)
+
+	require.Len(t, suggestions, 1, "the repeated three-app session should be one suggestion")
+	assert.ElementsMatch(t, []string{"vscode", "terminal", "chrome"}, suggestions[0].AppIdentifiers)
+	assert.Equal(t, at(0), suggestions[0].Start)
+	assert.Equal(t, at(120), suggestions[0].End) // 13 samples, 10s apart
+
+	// each mutual pair through the hub was traversed once per round, in both directions
+	vt, ok := g.GetEdgeMeta("vscode", "terminal")
+	require.True(t, ok)
+	assert.Equal(t, 3, vt.Count)
+	tv, ok := g.GetEdgeMeta("terminal", "vscode")
+	require.True(t, ok)
+	assert.Equal(t, 3, tv.Count)
+	vc, ok := g.GetEdgeMeta("vscode", "chrome")
+	require.True(t, ok)
+	assert.Equal(t, 3, vc.Count)
+	cv, ok := g.GetEdgeMeta("chrome", "vscode")
+	require.True(t, ok)
+	assert.Equal(t, 3, cv.Count)
+}
+
 // --- GraphChan -------------------------------------------------------------
 
 // GraphChan builds both the metadata maps and the gograph itself from an unsynchronized goroutine, so
@@ -475,4 +554,89 @@ func TestGraphChan_FindsMultipleMutualClusters(t *testing.T) {
 	assert.ElementsMatch(t, []string{"figma", "chrome"}, design.AppIdentifiers)
 	assert.Equal(t, at(70), design.Start)
 	assert.Equal(t, at(110), design.End)
+}
+
+// The same-apps-across-sessions scenario fed through GraphChan: switching between the same two apps in
+// two sessions separated by an idle gap yields one suggestion per session.
+func TestGraphChan_SameAppsAcrossSessions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan ForegroundProcess)
+	g := GraphChan(ctx, ch)
+
+	// morning session: vscode <-> terminal
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(30))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(40))
+	// away from keyboard for over a minute
+	ch <- idleProc(at(50))
+	// afternoon session: the same two apps again
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(180))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(190))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(200))
+	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(210))
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(220))
+	// quiesce: a deduplicated repeat forces the goroutine to finish the vscode@220 sample above
+	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(230))
+
+	suggestions := g.GetEntrySuggestions(at(-1), 2)
+
+	require.Len(t, suggestions, 2, "each session should be its own suggestion")
+	for _, s := range suggestions {
+		assert.ElementsMatch(t, []string{"vscode", "terminal"}, s.AppIdentifiers)
+	}
+
+	assert.Equal(t, at(0), suggestions[0].Start)
+	assert.Equal(t, at(50), suggestions[0].End)
+	assert.Equal(t, at(180), suggestions[1].Start)
+	assert.Equal(t, at(220), suggestions[1].End)
+}
+
+// The repeated three-app session fed through GraphChan: cycling among vscode/terminal/chrome several
+// times (with vscode as the hub) forms one three-app cluster, mirroring
+// TestGetEntrySuggestions_ThreeAppCycleRepeated.
+func TestGraphChan_ThreeAppCycleRepeated(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan ForegroundProcess)
+	g := GraphChan(ctx, ch)
+
+	second := 0
+	send := func(id string, pid int32) {
+		ch <- appProc(id, pid, enumscategories.CategoryDevelopment, at(second))
+		second += 10
+	}
+	// vscode <-> terminal and vscode <-> chrome, three full rounds
+	for round := 0; round < 3; round++ {
+		send("vscode", 1)
+		send("terminal", 2)
+		send("vscode", 1)
+		send("chrome", 3)
+	}
+	send("vscode", 1) // trailing sample so the last chrome interval closes
+	send("vscode", 1) // quiesce: deduplicated repeat forces the goroutine to finish the prior sample
+
+	suggestions := g.GetEntrySuggestions(at(-1), 2)
+
+	require.Len(t, suggestions, 1, "the repeated three-app session should be one suggestion")
+	assert.ElementsMatch(t, []string{"vscode", "terminal", "chrome"}, suggestions[0].AppIdentifiers)
+	assert.Equal(t, at(0), suggestions[0].Start)
+	assert.Equal(t, at(120), suggestions[0].End)
+
+	vt, ok := g.GetEdgeMeta("vscode", "terminal")
+	require.True(t, ok)
+	assert.Equal(t, 3, vt.Count)
+	tv, ok := g.GetEdgeMeta("terminal", "vscode")
+	require.True(t, ok)
+	assert.Equal(t, 3, tv.Count)
+	vc, ok := g.GetEdgeMeta("vscode", "chrome")
+	require.True(t, ok)
+	assert.Equal(t, 3, vc.Count)
+	cv, ok := g.GetEdgeMeta("chrome", "vscode")
+	require.True(t, ok)
+	assert.Equal(t, 3, cv.Count)
 }

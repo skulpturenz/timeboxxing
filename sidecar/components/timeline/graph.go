@@ -15,17 +15,21 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
+type Edge = [2]string // [from, to]
+
 type TimelineGraph struct {
 	Graph         gograph.Graph[string]
 	mu            sync.RWMutex
 	vertexMetaMap map[string]*VertexMeta
-	edgeMetaMap   map[[2]string]*EdgeMeta
+	edgeMetaMap   map[Edge]*EdgeMeta
 }
+
+type TimeSpan = [2]time.Time
 
 type VertexMeta struct {
 	Category  enumscategories.Category
 	Duration  time.Duration
-	Intervals [][2]time.Time // span from curr start -> curr end
+	Intervals []TimeSpan // span from curr start -> curr end
 	Count     int
 }
 
@@ -38,7 +42,7 @@ func GraphFrom(timeline *list.List) *TimelineGraph {
 	g := gograph.New[string](gograph.Directed())
 
 	vertexMetaMap := map[string]*VertexMeta{}
-	edgeMetaMap := map[[2]string]*EdgeMeta{}
+	edgeMetaMap := map[Edge]*EdgeMeta{}
 
 	for e := timeline.Front(); e != nil; e = e.Next() {
 		prev := e.Prev()
@@ -89,7 +93,7 @@ func GraphFrom(timeline *list.List) *TimelineGraph {
 			}
 			assert.NotEqual(appIdentifier, prevIdentifier)
 
-			edge := [2]string{prevIdentifier, appIdentifier}
+			edge := Edge{prevIdentifier, appIdentifier}
 			edgeMeta := edgeMetaMap[edge]
 			if edgeMeta == nil {
 				edgeMeta = &EdgeMeta{}
@@ -107,7 +111,7 @@ func GraphFrom(timeline *list.List) *TimelineGraph {
 
 			if !nextProcess.IsEqual(curr) {
 				vertexMeta.Duration += nextProcess.Timestamp.Sub(curr.Timestamp)
-				vertexMeta.Intervals = append(vertexMeta.Intervals, [2]time.Time{curr.Timestamp, nextProcess.Timestamp})
+				vertexMeta.Intervals = append(vertexMeta.Intervals, TimeSpan{curr.Timestamp, nextProcess.Timestamp})
 			}
 		}
 	}
@@ -144,7 +148,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph 
 	g := gograph.New[string](gograph.Directed())
 
 	vertexMetaMap := map[string]*VertexMeta{}
-	edgeMetaMap := map[[2]string]*EdgeMeta{}
+	edgeMetaMap := map[Edge]*EdgeMeta{}
 
 	timelineGraph := TimelineGraph{
 		Graph:         g,
@@ -208,7 +212,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph 
 						}
 						assert.NotEqual(appIdentifier, prevIdentifier)
 
-						edge := [2]string{prevIdentifier, appIdentifier}
+						edge := Edge{prevIdentifier, appIdentifier}
 						edgeMeta := edgeMetaMap[edge]
 						if edgeMeta == nil {
 							edgeMeta = &EdgeMeta{}
@@ -223,7 +227,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph 
 						assert.NotNil(prevMeta)
 
 						prevMeta.Duration += curr.Timestamp.Sub(prev.Timestamp)
-						prevMeta.Intervals = append(prevMeta.Intervals, [2]time.Time{prev.Timestamp, curr.Timestamp})
+						prevMeta.Intervals = append(prevMeta.Intervals, TimeSpan{prev.Timestamp, curr.Timestamp})
 					}
 
 					for v, meta := range vertexMetaMap {
@@ -270,7 +274,7 @@ func (graph *TimelineGraph) GetEdgeMeta(fromLabel string, toLabel string) (*Edge
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
-	meta, ok := graph.edgeMetaMap[[2]string{fromLabel, toLabel}]
+	meta, ok := graph.edgeMetaMap[Edge{fromLabel, toLabel}]
 
 	return meta, ok
 }
@@ -297,7 +301,7 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 			continue
 		}
 
-		intervals := map[string][][2]time.Time{}
+		intervals := map[string][]TimeSpan{}
 		labels := map[string]struct{}{}
 		for i, x := range vertices {
 			for j, y := range vertices {
@@ -305,8 +309,8 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 					continue
 				}
 
-				edgeXY := graph.edgeMetaMap[[2]string{x.Label(), y.Label()}]
-				edgeYX := graph.edgeMetaMap[[2]string{y.Label(), x.Label()}]
+				edgeXY := graph.edgeMetaMap[Edge{x.Label(), y.Label()}]
+				edgeYX := graph.edgeMetaMap[Edge{y.Label(), x.Label()}]
 				if edgeXY == nil || edgeYX == nil {
 					continue
 				}
@@ -324,7 +328,7 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 			meta := graph.vertexMetaMap[label]
 			assert.NotNil(meta)
 
-			filtered := [][2]time.Time{}
+			filtered := []TimeSpan{}
 			for _, s := range meta.Intervals {
 				if !s[0].After(start) {
 					continue
@@ -336,7 +340,7 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 			intervals[label] = append(intervals[label], filtered...)
 		}
 
-		flattened := [][2]time.Time{}
+		flattened := []TimeSpan{}
 		for _, v := range intervals {
 			flattened = append(flattened, v...)
 		}
@@ -345,14 +349,14 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 			continue
 		}
 
-		slices.SortFunc(flattened, func(x [2]time.Time, y [2]time.Time) int {
+		slices.SortFunc(flattened, func(x TimeSpan, y TimeSpan) int {
 			return x[0].Compare(y[0])
 		})
 
 		// flattened has a list of intervals sorted in ascending order of start
 		// we want to find consecutive blocks of time
 		// in these blocks of times, the set of apps are strongly connected
-		consecutive := [][2]time.Time{flattened[0]}
+		consecutive := []TimeSpan{flattened[0]}
 		for _, curr := range flattened[1:] {
 			prev := &consecutive[len(consecutive)-1]
 
