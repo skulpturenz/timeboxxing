@@ -387,6 +387,9 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 }
 
 func (graph *TimelineGraph) GetTimeToProductive() time.Duration {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
 	durationsToProductive := []time.Duration{}
 
 	for _, v := range graph.Graph.GetAllVertices() {
@@ -429,7 +432,10 @@ func (graph *TimelineGraph) GetTimeToProductive() time.Duration {
 	return total / time.Duration(len(durationsToProductive))
 }
 
-func (graph *TimelineGraph) GetProductiveDuration() time.Duration {
+func (graph *TimelineGraph) GetAverageProductiveDuration() time.Duration {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
 	spans := []TimeSpan{}
 
 	for _, v := range graph.Graph.GetAllVertices() {
@@ -452,10 +458,13 @@ func (graph *TimelineGraph) GetProductiveDuration() time.Duration {
 		duration += s[1].Sub(s[0])
 	}
 
-	return duration
+	return duration / time.Duration(len(spans))
 }
 
-func (graph *TimelineGraph) GetUnproductiveDuration() time.Duration {
+func (graph *TimelineGraph) GetAverageUnproductiveDuration() time.Duration {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
 	spans := []TimeSpan{}
 
 	for _, v := range graph.Graph.GetAllVertices() {
@@ -478,5 +487,20 @@ func (graph *TimelineGraph) GetUnproductiveDuration() time.Duration {
 		duration += s[1].Sub(s[0])
 	}
 
-	return duration
+	return duration / time.Duration(len(spans))
+}
+
+func (graph *TimelineGraph) GetFocusScores() int {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
+	// TODO: not sure if this is right
+	// want to find: of the time a user spends on the app, how much of that is focused (long sessions) work?
+	// lots of outgoing edges = not focused
+	// what if it's part of a loop (like with GetEntrySuggestions)?
+	// because there'd be a lot of outgoing edges but is focused just not on one app
+	// TODO: how to get a score? it would have to be relative to other apps?
+	// TODO: `Count` should be equal to `len(intervals)`. so we can weight each count based on how long the interval is
+
+	return 0
 }
