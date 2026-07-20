@@ -504,6 +504,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 	// we have a bunch of durations. find the top x% of durations, how many sessions (nth(interval)) are there in that range?
 	// number of sessions / count is percentage of focused sessions. count = len(intervals)
 	// relative	to y: (percentageY - percentageX) /	percentage x
+	// `GetEntrySuggestions` gives us the cycles. any spans within that range is also a focused session
 
 	return 0
 }
