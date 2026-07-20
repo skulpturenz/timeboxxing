@@ -385,3 +385,46 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 
 	return entries
 }
+
+func (graph *TimelineGraph) GetTimeToProductive() time.Duration {
+	spansToProductive := []time.Duration{}
+
+	for _, v := range graph.Graph.GetAllVertices() {
+		vertexMeta := graph.vertexMetaMap[v.Label()]
+		assert.NotNil(vertexMeta)
+
+		if vertexMeta.Category.IsProductive() {
+			continue
+		}
+
+		edges := graph.Graph.EdgesOf(v)
+		if len(edges) == 0 {
+			continue
+		}
+
+		for _, e := range edges {
+			to := e.Destination()
+			assert.NotNil(to)
+
+			toMeta := graph.vertexMetaMap[to.Label()]
+			assert.NotNil(toMeta)
+
+			if !toMeta.Category.IsProductive() {
+				continue
+			}
+
+			spansToProductive = append(spansToProductive, toMeta.Duration)
+		}
+	}
+
+	if len(spansToProductive) == 0 {
+		return 0 * time.Millisecond // always productive!
+	}
+
+	total := 0 * time.Millisecond
+	for _, t := range spansToProductive {
+		total += t
+	}
+
+	return total / time.Duration(len(spansToProductive))
+}

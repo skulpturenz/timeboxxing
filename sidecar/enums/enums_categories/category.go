@@ -62,6 +62,23 @@ func (category Category) Label() string {
 	return labels[category]
 }
 
+func (category Category) IsProductive() bool {
+	switch category {
+	case CategoryDevelopment:
+		fallthrough
+	case CategoryProductivity:
+		fallthrough
+	case CategoryGraphicsDesign:
+		fallthrough
+	case CategoryBusiness:
+		fallthrough
+	case CategoryEducation:
+		return true
+	}
+
+	return false
+}
+
 func Parse(code string) (Category, error) {
 	switch strings.ToLower(strings.TrimSpace(code)) {
 	case "development":
