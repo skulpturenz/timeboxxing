@@ -501,6 +501,9 @@ func (graph *TimelineGraph) GetFocusScores() int {
 	// because there'd be a lot of outgoing edges but is focused just not on one app
 	// TODO: how to get a score? it would have to be relative to other apps?
 	// TODO: `Count` should be equal to `len(intervals)`. so we can weight each count based on how long the interval is
+	// we have a bunch of durations. find the top x% of durations, how many sessions (nth(interval)) are there in that range?
+	// number of sessions / count is percentage of focused sessions. count = len(intervals)
+	// relative	to y: (percentageY - percentageX) /	percentage x
 
 	return 0
 }
