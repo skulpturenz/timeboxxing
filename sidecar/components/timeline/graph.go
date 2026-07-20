@@ -387,7 +387,7 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 }
 
 func (graph *TimelineGraph) GetTimeToProductive() time.Duration {
-	spansToProductive := []time.Duration{}
+	durationsToProductive := []time.Duration{}
 
 	for _, v := range graph.Graph.GetAllVertices() {
 		vertexMeta := graph.vertexMetaMap[v.Label()]
@@ -413,18 +413,70 @@ func (graph *TimelineGraph) GetTimeToProductive() time.Duration {
 				continue
 			}
 
-			spansToProductive = append(spansToProductive, toMeta.Duration)
+			durationsToProductive = append(durationsToProductive, toMeta.Duration)
 		}
 	}
 
-	if len(spansToProductive) == 0 {
+	if len(durationsToProductive) == 0 {
 		return 0 * time.Millisecond // always productive!
 	}
 
 	total := 0 * time.Millisecond
-	for _, t := range spansToProductive {
+	for _, t := range durationsToProductive {
 		total += t
 	}
 
-	return total / time.Duration(len(spansToProductive))
+	return total / time.Duration(len(durationsToProductive))
+}
+
+func (graph *TimelineGraph) GetProductiveDuration() time.Duration {
+	spans := []TimeSpan{}
+
+	for _, v := range graph.Graph.GetAllVertices() {
+		meta := graph.vertexMetaMap[v.Label()]
+		assert.NotNil(meta)
+
+		if !meta.Category.IsProductive() {
+			continue
+		}
+
+		spans = append(spans, meta.Intervals...)
+	}
+
+	if len(spans) == 0 {
+		return 0 * time.Millisecond
+	}
+
+	duration := 0 * time.Millisecond
+	for _, s := range spans {
+		duration += s[1].Sub(s[0])
+	}
+
+	return duration
+}
+
+func (graph *TimelineGraph) GetUnproductiveDuration() time.Duration {
+	spans := []TimeSpan{}
+
+	for _, v := range graph.Graph.GetAllVertices() {
+		meta := graph.vertexMetaMap[v.Label()]
+		assert.NotNil(meta)
+
+		if meta.Category.IsProductive() {
+			continue
+		}
+
+		spans = append(spans, meta.Intervals...)
+	}
+
+	if len(spans) == 0 {
+		return 0 * time.Millisecond
+	}
+
+	duration := 0 * time.Millisecond
+	for _, s := range spans {
+		duration += s[1].Sub(s[0])
+	}
+
+	return duration
 }
