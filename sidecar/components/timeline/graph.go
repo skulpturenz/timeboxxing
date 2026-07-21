@@ -615,6 +615,9 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				//    - = abs(-2 * nCycleOutgoingXY / 2)
 				//    - = abs(-1 * nCycleOutgoingXY)
 				//    - = nCycleOutgoingXY
+				// idea is that xy + yx will have 2 cycle components. xy - yx will remove the cycle component
+				// so if the vertex has a cycle, then subtracting the two will remove the non cycle components and leave us with the cycle component only
+				// if its zero then there are no cycles
 				nCycles := math.Abs((float64(edgeXY.Count+edgeYX.Count) - float64(edgeXY.Count-edgeYX.Count)) / 2.0)
 				nCyclesRound := int(math.Round(nCycles))
 				assert.NotZero(nCyclesRound) // TODO: still not sure
