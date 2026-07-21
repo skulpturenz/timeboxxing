@@ -321,6 +321,7 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 				}
 
 				label := x.Label()
+				assert.NotZero(label)
 				labels[label] = struct{}{}
 			}
 		}
@@ -510,7 +511,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 	spans := map[*gograph.Vertex[string]][]TimeSpan{}
 	incomingEdgeCounts := map[*gograph.Vertex[string]]int{}
 	outgoingSpans := map[*gograph.Vertex[string]][]TimeSpan{}
-	outgoingDurations := map[*gograph.Vertex[string]][]time.Duration{}
+	// outgoingDurations := map[*gograph.Vertex[string]][]time.Duration{}
 	for _, v := range graph.Graph.GetAllVertices() {
 		meta := graph.vertexMetaMap[v.Label()]
 		assert.NotNil(meta)
@@ -536,7 +537,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				//   - since len(outgoingSpans[v]) = number of outgoing edges
 				idx := i - incomingEdgeCounts[v]
 				outgoingSpans[v] = append(outgoingSpans[v], s[idx]) // len(outgoingSpans[v]) = number of outgoing edges
-				outgoingDurations[v] = append(outgoingDurations[v], s[idx][1].Sub(s[idx][0]))
+				// outgoingDurations[v] = append(outgoingDurations[v], s[idx][1].Sub(s[idx][0]))
 			}
 
 			// TODO: to consider cycles, we need to know how many outgoing edges are due to the cycle
@@ -550,14 +551,123 @@ func (graph *TimelineGraph) GetFocusScores() int {
 		}
 	}
 
+	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes
+	cycles := map[*gograph.Vertex[string]][]TimeSpan{}
+	cycleCounts := map[*gograph.Vertex[string]]int{}
+	// TODO: refactor: most of this is from `GetEntrySuggestions`
+	for _, vertices := range scss {
+		if len(vertices) < 2 {
+			continue
+		}
+
+		intervals := map[string][]TimeSpan{}
+		labels := map[string]*gograph.Vertex[string]{}
+		numMutualConnections := 3 // TODO
+		for i, x := range vertices {
+			for j, y := range vertices {
+				if i == j {
+					continue
+				}
+
+				edgeXY := graph.edgeMetaMap[Edge{x.Label(), y.Label()}]
+				edgeYX := graph.edgeMetaMap[Edge{y.Label(), x.Label()}]
+				if edgeXY == nil || edgeYX == nil {
+					continue
+				}
+
+				if edgeXY.Count < numMutualConnections || edgeYX.Count < numMutualConnections {
+					continue
+				}
+
+				label := x.Label()
+				assert.NotZero(label)
+				labels[label] = x
+
+				// TODO: new
+				// cycle, so incoming = outgoing
+				assert.Equal(edgeXY.Count, edgeYX.Count) // TODO: should be but not 100%
+				cycleCounts[x] += edgeXY.Count
+				cycleCounts[y] += edgeYX.Count
+			}
+		}
+
+		for label := range labels {
+			meta := graph.vertexMetaMap[label]
+			assert.NotNil(meta)
+
+			filtered := []TimeSpan{}
+			for _, s := range meta.Intervals {
+				filtered = append(filtered, s)
+			}
+
+			intervals[label] = append(intervals[label], filtered...)
+		}
+
+		flattened := []TimeSpan{}
+		for _, v := range intervals {
+			flattened = append(flattened, v...)
+		}
+
+		if len(flattened) == 0 {
+			continue
+		}
+
+		slices.SortFunc(flattened, func(x TimeSpan, y TimeSpan) int {
+			return x[0].Compare(y[0])
+		})
+
+		// flattened has a list of intervals sorted in ascending order of start
+		// we want to find consecutive blocks of time
+		// in these blocks of times, the set of apps are strongly connected
+		consecutive := []TimeSpan{flattened[0]}
+		for _, curr := range flattened[1:] {
+			prev := &consecutive[len(consecutive)-1]
+
+			// without the gap check everything gets merged into one consecutive time
+			// because next will always be after
+			if curr[0].Sub(prev[1]) <= 1*time.Minute {
+				if curr[1].After(prev[1]) {
+					prev[1] = curr[1]
+				}
+			} else {
+				consecutive = append(consecutive, curr)
+			}
+		}
+
+		for _, v := range labels {
+			cycles[v] = append(cycles[v], consecutive...)
+		}
+	}
+
 	focusScores := map[*gograph.Vertex[string]]float64{}
 	topN := utils.TopN(cmp.Compare[time.Duration], 10)
 
+	outgoingDurations := map[*gograph.Vertex[string]][]time.Duration{}
+	for v, d := range outgoingSpans {
+		cs := cycles[v]
+
+		for _, span := range d {
+			for _, c := range cs {
+				if (span[0].Equal(c[0]) || span[0].After(c[0])) && (span[1].Equal(c[1]) || span[1].Before(c[1])) {
+					continue
+				}
+
+				outgoingDurations[v] = append(outgoingDurations[v], span[1].Sub(span[0]))
+			}
+		}
+	}
+
 	for v, d := range outgoingDurations {
 		ts := topN(d)
-		nSessions := len(ts) // we did not distinct durations
+		nSessions := len(ts)
 
-		focusScores[v] = float64(nSessions) / (float64(incomingEdgeCounts[v] + len(outgoingDurations[v])))
+		// cycleCounts[v] gives us the total number of incoming and outgoing edges from a cycle
+		// since we're collapsing cycles, we remove all of them and
+		// len(cycles[v]) gives us the number of consecutive sessions
+		incomingEdges := incomingEdgeCounts[v] - cycleCounts[v] + len(cycles[v])
+		outgoingEdges := len(outgoingDurations[v]) - cycleCounts[v] + len(cycles[v])
+
+		focusScores[v] = float64(nSessions) / (float64(incomingEdges + outgoingEdges))
 	}
 
 	return 0
