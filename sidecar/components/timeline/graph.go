@@ -586,22 +586,25 @@ func (graph *TimelineGraph) GetFocusScores() int {
 
 				// TODO: new
 				// cycle, so incoming = outgoing
-				// ncycles = ((xy + yx) - abs(xy - yx)) / 2
-				//    - if there are cycles, then abs(outgoing) = abs(incoming)
+				// ncycles = abs(((xy + yx) - (xy - yx)) / 2)
+				//    - if there are cycles, then abs(outgoing) = abs(incoming). outgoing = -1 * incoming
 				//    - but of the total count on an edge, only some of it are cycles
 				//    - xy + yx = nCycles + outgoingX + incomingX
 				//    - then xy - yx = (nCycleOutgoingXY + nRemainderOutgoingXY) - (nCycleIncomingYX + nRemainderIncomingYX)
 				//    -              = (nCycleOutgoingXY - nCycleIncomingXY) + (nRemainderOutgoingXY + nRemainderIncomingYX)
-				//    -              = nRemainderOutgoingXY + nRemainderIncomingYX
+				//    -              = 2CycleOutgoingXY + nRemainderOutgoingXY + nRemainderIncomingYX
 				//    - if xy + yx = nCycles + outgoingXY + incomingYX
 				//    -            = (nCycleOutgoingXY + nRemainderOutgoingXY) + (nCycleIncomingYX + nRemainderIncomingYX)
-				//    - since nCycleOutgoingXY = nCycleIncomingYX = z
-				//    - then: 2z + nRemainderOutgoingXY + nRemainderIncomingYX (no direction)
-				//    - so: ((xy + yx) - abs(xy - yx)) / 2
-				//    - = ((2z + nRemainderOutgoingXY + nRemainderIncomingYX)  - (nRemainderOutgoingXY + nRemainderIncomingYX)) / 2
-				//    - = 2z / 2 = z
+				//.   -            = (nCycleOutgoingXY + nCycleIncomingYX) + (nRemainderOutgoingXY + nRemainderIncomingYX)
+				//    -            = (nCycleOutgoingXY - nCycleOutgoingXY) + (nRemainderOutgoingXY + nRemainderIncomingYX)
+				//    -            = nRemainderOutgoingXY + nRemainderIncomingYX
+				//    - so:  abs(((xy + yx) - (xy - yx)) / 2)
+				//    - = abs(((nRemainderOutgoingXY + nRemainderIncomingYX)  - (2CycleOutgoingXY + nRemainderOutgoingXY + nRemainderIncomingYX)) / 2)
+				//    - = abs((-2CycleOutgoingXY + (nRemainderOutgoingXY - nRemainderOutgoingXY) + (nRemainderIncomingYX - nRemainderIncomingYX)) / 2)
+				//    - = abs(-2CycleOutgoingXY / 2)
+				//    - = CycleOutgoingXY
 				//    - ... nCycles = z
-				nCycles := (float64((edgeXY.Count + edgeYX.Count)) - math.Abs(float64(edgeXY.Count-edgeYX.Count))) / 2
+				nCycles := math.Abs((float64(edgeXY.Count+edgeYX.Count) - float64(edgeXY.Count-edgeYX.Count)) / 2.0)
 				nCyclesRound := int(math.Round(nCycles))
 				assert.NotZero(nCyclesRound) // TODO: still not sure
 				cycleCounts[x] += nCyclesRound
