@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"context"
 	"maps"
+	"math"
 	"slices"
 	"sync"
 	"time"
@@ -585,9 +586,26 @@ func (graph *TimelineGraph) GetFocusScores() int {
 
 				// TODO: new
 				// cycle, so incoming = outgoing
-				assert.Equal(edgeXY.Count, edgeYX.Count) // TODO: should be but not 100%
-				cycleCounts[x] += edgeXY.Count
-				cycleCounts[y] += edgeYX.Count
+				// ncycles = ((xy + yx) - abs(xy - yx)) / 2
+				//    - if there are cycles, then abs(outgoing) = abs(incoming)
+				//    - but of the total count on an edge, only some of it are cycles
+				//    - xy + yx = nCycles + outgoingX + incomingX
+				//    - then xy - yx = (nCycleOutgoingXY + nRemainderOutgoingXY) - (nCycleIncomingYX + nRemainderIncomingYX)
+				//    -              = (nCycleOutgoingXY - nCycleIncomingXY) + (nRemainderOutgoingXY + nRemainderIncomingYX)
+				//    -              = nRemainderOutgoingXY + nRemainderIncomingYX
+				//    - if xy + yx = nCycles + outgoingXY + incomingYX
+				//    -            = (nCycleOutgoingXY + nRemainderOutgoingXY) + (nCycleIncomingYX + nRemainderIncomingYX)
+				//    - since nCycleOutgoingXY = nCycleIncomingYX = z
+				//    - then: 2z + nRemainderOutgoingXY + nRemainderIncomingYX (no direction)
+				//    - so: ((xy + yx) - abs(xy - yx)) / 2
+				//    - = (2z + nRemainderOutgoingXY + nRemainderIncomingYX  - (nRemainderOutgoingXY + nRemainderIncomingYX)) / 2
+				//    - = 2z / 2 = z
+				//    - ... nCycles = z
+				nCycles := (float64((edgeXY.Count + edgeYX.Count)) - math.Abs(float64(edgeXY.Count-edgeYX.Count))) / 2
+				nCyclesRound := int(math.Round(nCycles))
+				assert.NotZero(nCyclesRound) // TODO: still not sure
+				cycleCounts[x] += nCyclesRound
+				cycleCounts[y] += nCyclesRound
 			}
 		}
 
