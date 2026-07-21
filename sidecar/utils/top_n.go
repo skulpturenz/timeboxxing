@@ -6,8 +6,10 @@ import (
 	"slices"
 )
 
-func TopN[T comparable](cmp func(a T, b T) int, percentile float64) func([]T) []T {
-	return func(xs []T) []T {
+type resultTopN[T comparable] []T
+
+func TopN[T comparable](cmp func(a T, b T) int, percentile float64) func([]T) resultTopN[T] {
+	return func(xs []T) resultTopN[T] {
 		result := []T{}
 
 		if len(xs) == 0 {
@@ -44,4 +46,13 @@ func TopN[T comparable](cmp func(a T, b T) int, percentile float64) func([]T) []
 
 		return result
 	}
+}
+
+func (t resultTopN[T]) Distinct() []T {
+	topSet := map[T]struct{}{}
+	for _, t := range t {
+		topSet[t] = struct{}{}
+	}
+
+	return slices.Collect(maps.Keys(topSet))
 }
