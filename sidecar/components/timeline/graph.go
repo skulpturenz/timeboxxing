@@ -598,7 +598,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				//    - since nCycleOutgoingXY = nCycleIncomingYX = z
 				//    - then: 2z + nRemainderOutgoingXY + nRemainderIncomingYX (no direction)
 				//    - so: ((xy + yx) - abs(xy - yx)) / 2
-				//    - = (2z + nRemainderOutgoingXY + nRemainderIncomingYX  - (nRemainderOutgoingXY + nRemainderIncomingYX)) / 2
+				//    - = ((2z + nRemainderOutgoingXY + nRemainderIncomingYX)  - (nRemainderOutgoingXY + nRemainderIncomingYX)) / 2
 				//    - = 2z / 2 = z
 				//    - ... nCycles = z
 				nCycles := (float64((edgeXY.Count + edgeYX.Count)) - math.Abs(float64(edgeXY.Count-edgeYX.Count))) / 2
