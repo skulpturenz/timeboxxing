@@ -530,8 +530,13 @@ func (graph *TimelineGraph) GetFocusScores() int {
 			if e.Destination().Label() == v.Label() { // incoming
 				incomingEdgeCounts[v] += 1 // incoming edges create an interval on the source
 			} else { // outgoing
-				outgoingSpans[v] = append(outgoingSpans[v], s[i]) // len(outgoingSpans[v]) = number of outgoing edges
-				outgoingDurations[v] = append(outgoingDurations[v], s[i][1].Sub(s[i][0]))
+				// 0         1         2         3         4         5
+				// outgoing, incoming, incoming, outgoing, incoming, outgoing
+				// at 3: idx = 3 - n(incomingEdgesBefore) = 3 - 2 = 1
+				//   - since len(outgoingSpans[v]) = number of outgoing edges
+				idx := i - incomingEdgeCounts[v]
+				outgoingSpans[v] = append(outgoingSpans[v], s[idx]) // len(outgoingSpans[v]) = number of outgoing edges
+				outgoingDurations[v] = append(outgoingDurations[v], s[idx][1].Sub(s[idx][0]))
 			}
 
 			// TODO: to consider cycles, we need to know how many outgoing edges are due to the cycle
