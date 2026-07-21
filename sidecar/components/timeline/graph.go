@@ -1,6 +1,7 @@
 package timeline
 
 import (
+	"cmp"
 	"container/list"
 	"context"
 	"maps"
@@ -505,6 +506,54 @@ func (graph *TimelineGraph) GetFocusScores() int {
 	// number of sessions / count is percentage of focused sessions. count = len(intervals)
 	// relative	to y: (percentageY - percentageX) /	percentage x
 	// `GetEntrySuggestions` gives us the cycles. any spans within that range is also a focused session
+
+	spans := map[*gograph.Vertex[string]][]TimeSpan{}
+	incomingEdgeCounts := map[*gograph.Vertex[string]]int{}
+	outgoingSpans := map[*gograph.Vertex[string]][]TimeSpan{}
+	outgoingDurations := map[*gograph.Vertex[string]][]time.Duration{}
+	for _, v := range graph.Graph.GetAllVertices() {
+		meta := graph.vertexMetaMap[v.Label()]
+		assert.NotNil(meta)
+
+		spans[v] = append(spans[v], meta.Intervals...)
+	}
+
+	if len(spans) == 0 {
+		// TODO
+	}
+
+	for v, s := range spans {
+		// assumption: order is preserved
+		// to have an interval, there needs to be an outgoing edge
+		// so if the order of edges is preserved, then span[i] is how long the app was used for before switching to outgoingEdge[i].Destination()
+		for i, e := range graph.Graph.EdgesOf(v) {
+			if e.Destination().Label() == v.Label() { // incoming
+				incomingEdgeCounts[v] += 1 // incoming edges create an interval on the source
+			} else { // outgoing
+				outgoingSpans[v] = append(outgoingSpans[v], s[i]) // len(outgoingSpans[v]) = number of outgoing edges
+				outgoingDurations[v] = append(outgoingDurations[v], s[i][1].Sub(s[i][0]))
+			}
+
+			// TODO: to consider cycles, we need to know how many outgoing edges are due to the cycle
+			// and we want to consider the entire cycle time as one span
+			// - we need to remove incomings during the cycle too (??)
+			// - think we can collapse all intervals from cycle start - cycle end into one
+			//   - number of outgoing edges after removing cycles: nOutgoingEdges - nIntervals (which are collapsed)
+			//   - number of incoming edges after removing cycles: ??
+			//      - nIncomingEdges - number of incoming edges from apps in cycle
+			//         - number of incoming edges from apps in cycle but only within the timespan of the cycle
+		}
+	}
+
+	focusScores := map[*gograph.Vertex[string]]float64{}
+	topN := utils.TopN(cmp.Compare[time.Duration], 10)
+
+	for v, d := range outgoingDurations {
+		ts := topN(d)
+		nSessions := len(ts) // we did not distinct durations
+
+		focusScores[v] = float64(nSessions) / (float64(incomingEdgeCounts[v] + len(outgoingDurations[v])))
+	}
 
 	return 0
 }
