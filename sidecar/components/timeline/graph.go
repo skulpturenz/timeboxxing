@@ -586,35 +586,26 @@ func (graph *TimelineGraph) GetFocusScores() int {
 
 				// TODO: new
 				// cycle, so incoming = outgoing
-				// ncycles = abs(((xy + yx) - (xy - yx)) / 2)
-				//    - if there are cycles, then abs(outgoing) = abs(incoming). outgoing = -1 * incoming
-				//    - but of the total count on an edge, only some of it are cycles
+				// when an edge contains cycles, the number of outgoing edges will be equal to the number of incoming edges
+				// the count on these edges are not purely due to cycles. we have to find the number of counts due to cycles
 				//
-				//    - xy + yx = nCycles + outgoingX + incomingX
-				//    - = (nCycleOutgoingXY + nRemainderOutgoingXY) + (nCycleIncomingYX + nRemainderIncomingYX)
-				//    - = (nCycleOutgoingXY + nCycleIncomingYX) + (nRemainderOutgoingXY + nRemainderIncomingYX)
-				//    - = (nCycleOutgoingXY - nCycleOutgoingXY) + (nRemainderOutgoingXY + nRemainderIncomingYX)
-				//    - = 0 + (nRemainderOutgoingXY + nRemainderIncomingYX)
-				//    - = nRemainderOutgoingXY + nRemainderIncomingYX
-				//    - noting that: nCycleOutgoingXY = -1 * nCycleIncomingYX. same magnitude, opposite direction
+				// xy = nRemainderXY + nOutgoingCycleXY
+				// yx = nRemainderYX + nIncomingCycleYX
+				// outgoing: positive
 				//
-				//    - xy - yx
-				//    - = (nCycleOutgoingXY + nRemainderOutgoingXY) - (nCycleIncomingYX + nRemainderIncomingYX)
-				//    - = (nCycleOutgoingXY - nCycleIncomingYX) + (nRemainderOutgoingXY - nRemainderIncomingYX)
-				//    - = (nCycleOutgoingXY + nCycleOutgoingXY) + (nRemainderOutgoingXY - nRemainderIncomingYX)
-				//    - = (2 * nCycleOutgoingXY) + (nRemainderOutgoingXY - nRemainderIncomingYX)
-				//    - noting that: nCycleOutgoingXY = -1 * nCycleIncomingYX. same magnitude, opposite direction
+				// xy + yx = (nRemainderXY + nOutgoingCycleXY) + -1 * (nRemainderYX + nIncomingCycleYX)
+				// xy + yx = (nRemainderXY + nOutgoingCycleXY) - (nRemainderYX - nOutgoingCycleXY)
+				// xy + yx = nRemainderXY - nRemainderYX + 2nOutgoingCycleXY (1)
 				//
-				//    - (xy + yx) - (xy - yx)
-				//    - = (nRemainderOutgoingXY + nRemainderIncomingYX) - ((2 * nCycleOutgoingXY) + (nRemainderOutgoingXY - nRemainderIncomingYX))
-				//    - = (-2 * nCycleOutgoingXY) + (nRemainderOutgoingXY - nRemainderOutgoingXY) + (nRemainderIncomingYX - nRemainderIncomingYX)
-				//    - = (-2 * nCycleOutgoingXY) + 0 + 0
-				//    - = -2 * nCycleOutgoingXY
+				// xy - yx = (nRemainderXY + nOutgoingCycleXY) - (-1 * (nRemainderYX + nIncomingCycleYX))
+				// xy - yx = (nRemainderXY + nOutgoingCycleXY) + (nRemainderYX + nIncomingCycleYX)
+				// xy - yx = (nRemainderXY + nOutgoingCycleXY) + (nRemainderYX - nOutgoingCycleXY)
+				// xy - yx = (nRemainderXY + nRemainderYX) + (nOutgoingCycleXY - nOutgoingCycleXY)
+				// xy - yx = (nRemainderXY + nRemainderYX) + 0
+				// xy - yx = nRemainderXY + nRemainderYX (2)
 				//
-				//    - so: abs(((xy + yx) - (xy - yx)) / 2)
-				//    - = abs(-2 * nCycleOutgoingXY / 2)
-				//    - = abs(-1 * nCycleOutgoingXY)
-				//    - = nCycleOutgoingXY
+				// TODO: two equations, three variables. need another equation to find number of cycles
+				//
 				// idea is that xy + yx will have 2 cycle components. xy - yx will remove the cycle component
 				// so if the vertex has a cycle, then subtracting the two will remove the non cycle components and leave us with the cycle component only
 				// if its zero then there are no cycles
