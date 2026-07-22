@@ -30,14 +30,14 @@ type TimeSpan = [2]time.Time
 
 type VertexMeta struct {
 	Category  enumscategories.Category
-	Duration  time.Duration
-	Intervals []TimeSpan // span from curr start -> curr end
-	Count     int
+	Duration  time.Duration // total usage time
+	Intervals []TimeSpan    // span from curr start -> curr end
+	Count     int           // number of times app was used
 }
 
 type EdgeMeta struct {
-	Duration time.Duration
-	Count    int
+	IncomingDuration time.Duration // time spent on A before switching to B
+	IncomingCount    int           // number of A->B
 }
 
 func GraphFrom(timeline *list.List) *TimelineGraph {
@@ -103,8 +103,8 @@ func GraphFrom(timeline *list.List) *TimelineGraph {
 			}
 			assert.NotNil(edgeMetaMap[edge])
 
-			edgeMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
-			edgeMeta.Count += 1
+			edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
+			edgeMeta.IncomingCount += 1
 		}
 
 		if next != nil {
@@ -133,7 +133,8 @@ func GraphFrom(timeline *list.List) *TimelineGraph {
 		to := vertices[edge[1]]
 		assert.NotNil(to)
 
-		_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.Duration.Milliseconds())))
+		// pairs well: spends a lot of time on `from` before switching `to`
+		_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.IncomingDuration.Milliseconds())))
 		assert.Nil(err)
 	}
 
@@ -222,8 +223,8 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph 
 						}
 						assert.NotNil(edgeMetaMap[edge])
 
-						edgeMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
-						edgeMeta.Count += 1
+						edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
+						edgeMeta.IncomingCount += 1
 
 						prevMeta := vertexMetaMap[prevIdentifier]
 						assert.NotNil(prevMeta)
@@ -248,7 +249,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph 
 						assert.NotNil(to)
 
 						if !g.ContainsEdge(from, to) {
-							_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.Duration.Milliseconds())))
+							_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.IncomingDuration.Milliseconds())))
 							assert.Nil(err)
 						}
 					}
@@ -317,7 +318,7 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 					continue
 				}
 
-				if edgeXY.Count < numMutualConnections || edgeYX.Count < numMutualConnections {
+				if edgeXY.IncomingCount < numMutualConnections || edgeYX.IncomingCount < numMutualConnections {
 					continue
 				}
 
@@ -576,7 +577,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 					continue
 				}
 
-				if edgeXY.Count < numMutualConnections || edgeYX.Count < numMutualConnections {
+				if edgeXY.IncomingCount < numMutualConnections || edgeYX.IncomingCount < numMutualConnections {
 					continue
 				}
 
@@ -591,6 +592,11 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				//
 				// xy = nRemainderXY + nOutgoingCycleXY
 				// yx = nRemainderYX + nIncomingCycleYX
+				// nRemainderXY = (1 - (intervals within cycle / total intervals)) * xy
+				//    - (1 - (spans within cycle / total spans)) is the percentage of spans which is not due to cycles
+				//    - percentage of span within cycle == percentage of count due to cycle?
+				//    - every time we add to duration on the edge, also capture the span
+				//    - len(spans) == Count
 				// outgoing: positive
 				//
 				// xy + yx = (nRemainderXY + nOutgoingCycleXY) + -1 * (nRemainderYX + nIncomingCycleYX)
@@ -609,7 +615,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				// idea is that xy + yx will have 2 cycle components. xy - yx will remove the cycle component
 				// so if the vertex has a cycle, then subtracting the two will remove the non cycle components and leave us with the cycle component only
 				// if its zero then there are no cycles
-				nCycles := math.Abs((float64(edgeXY.Count+edgeYX.Count) - float64(edgeXY.Count-edgeYX.Count)) / 2.0)
+				nCycles := math.Abs((float64(edgeXY.IncomingCount+edgeYX.IncomingCount) - float64(edgeXY.IncomingCount-edgeYX.IncomingCount)) / 2.0)
 				nCyclesRound := int(math.Round(nCycles))
 				assert.NotZero(nCyclesRound) // TODO: still not sure
 				cycleCounts[x] += nCyclesRound

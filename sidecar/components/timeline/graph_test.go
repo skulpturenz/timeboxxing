@@ -90,13 +90,13 @@ func TestGraphFrom_BuildsVerticesEdgesAndCounts(t *testing.T) {
 
 	edgeAB, ok := g.GetEdgeMeta("A", "B")
 	require.True(t, ok)
-	assert.Equal(t, 2, edgeAB.Count)
-	assert.Equal(t, 20*time.Second, edgeAB.Duration)
+	assert.Equal(t, 2, edgeAB.IncomingCount)
+	assert.Equal(t, 20*time.Second, edgeAB.IncomingDuration)
 
 	edgeBA, ok := g.GetEdgeMeta("B", "A")
 	require.True(t, ok)
-	assert.Equal(t, 1, edgeBA.Count)
-	assert.Equal(t, 10*time.Second, edgeBA.Duration)
+	assert.Equal(t, 1, edgeBA.IncomingCount)
+	assert.Equal(t, 10*time.Second, edgeBA.IncomingDuration)
 
 	// gograph surface mirrors the metadata.
 	assert.Equal(t, uint32(2), g.Graph.Order())
@@ -124,11 +124,11 @@ func TestGraphFrom_IdleVertexAndEdges(t *testing.T) {
 
 	edgeAIdle, ok := g.GetEdgeMeta("A", "idle")
 	require.True(t, ok)
-	assert.Equal(t, 1, edgeAIdle.Count)
+	assert.Equal(t, 1, edgeAIdle.IncomingCount)
 
 	edgeIdleB, ok := g.GetEdgeMeta("idle", "B")
 	require.True(t, ok)
-	assert.Equal(t, 1, edgeIdleB.Count)
+	assert.Equal(t, 1, edgeIdleB.IncomingCount)
 
 	assert.Equal(t, uint32(3), g.Graph.Order())
 }
@@ -406,16 +406,16 @@ func TestGetEntrySuggestions_ThreeAppCycleRepeated(t *testing.T) {
 	// each mutual pair through the hub was traversed once per round, in both directions
 	vt, ok := g.GetEdgeMeta("vscode", "terminal")
 	require.True(t, ok)
-	assert.Equal(t, 3, vt.Count)
+	assert.Equal(t, 3, vt.IncomingCount)
 	tv, ok := g.GetEdgeMeta("terminal", "vscode")
 	require.True(t, ok)
-	assert.Equal(t, 3, tv.Count)
+	assert.Equal(t, 3, tv.IncomingCount)
 	vc, ok := g.GetEdgeMeta("vscode", "chrome")
 	require.True(t, ok)
-	assert.Equal(t, 3, vc.Count)
+	assert.Equal(t, 3, vc.IncomingCount)
 	cv, ok := g.GetEdgeMeta("chrome", "vscode")
 	require.True(t, ok)
-	assert.Equal(t, 3, cv.Count)
+	assert.Equal(t, 3, cv.IncomingCount)
 }
 
 // --- GraphChan -------------------------------------------------------------
@@ -629,14 +629,14 @@ func TestGraphChan_ThreeAppCycleRepeated(t *testing.T) {
 
 	vt, ok := g.GetEdgeMeta("vscode", "terminal")
 	require.True(t, ok)
-	assert.Equal(t, 3, vt.Count)
+	assert.Equal(t, 3, vt.IncomingCount)
 	tv, ok := g.GetEdgeMeta("terminal", "vscode")
 	require.True(t, ok)
-	assert.Equal(t, 3, tv.Count)
+	assert.Equal(t, 3, tv.IncomingCount)
 	vc, ok := g.GetEdgeMeta("vscode", "chrome")
 	require.True(t, ok)
-	assert.Equal(t, 3, vc.Count)
+	assert.Equal(t, 3, vc.IncomingCount)
 	cv, ok := g.GetEdgeMeta("chrome", "vscode")
 	require.True(t, ok)
-	assert.Equal(t, 3, cv.Count)
+	assert.Equal(t, 3, cv.IncomingCount)
 }
