@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"context"
 	"maps"
-	"math"
 	"slices"
 	"sync"
 	"time"
@@ -38,6 +37,7 @@ type VertexMeta struct {
 type EdgeMeta struct {
 	IncomingDuration time.Duration // time spent on A before switching to B
 	IncomingCount    int           // number of A->B
+	spans            []TimeSpan
 }
 
 func GraphFrom(timeline *list.List) *TimelineGraph {
@@ -104,6 +104,7 @@ func GraphFrom(timeline *list.List) *TimelineGraph {
 			assert.NotNil(edgeMetaMap[edge])
 
 			edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
+			edgeMeta.spans = append(edgeMeta.spans, TimeSpan{prevProcess.Timestamp, curr.Timestamp})
 			edgeMeta.IncomingCount += 1
 		}
 
@@ -555,7 +556,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 
 	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes
 	cycles := map[*gograph.Vertex[string]][]TimeSpan{}
-	cycleCounts := map[*gograph.Vertex[string]]int{}
+	cycleCounts := map[string]int{}
 	// TODO: refactor: most of this is from `GetEntrySuggestions`
 	for _, vertices := range scss {
 		if len(vertices) < 2 {
@@ -565,6 +566,7 @@ func (graph *TimelineGraph) GetFocusScores() int {
 		intervals := map[string][]TimeSpan{}
 		labels := map[string]*gograph.Vertex[string]{}
 		numMutualConnections := 3 // TODO
+		edges := []Edge{}
 		for i, x := range vertices {
 			for j, y := range vertices {
 				if i == j {
@@ -584,6 +586,8 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				label := x.Label()
 				assert.NotZero(label)
 				labels[label] = x
+				// cycle, so incoming = outgoing. including XY and YX would double count
+				edges = append(edges, Edge{x.Label(), y.Label()})
 
 				// TODO: new
 				// cycle, so incoming = outgoing
@@ -615,11 +619,11 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				// idea is that xy + yx will have 2 cycle components. xy - yx will remove the cycle component
 				// so if the vertex has a cycle, then subtracting the two will remove the non cycle components and leave us with the cycle component only
 				// if its zero then there are no cycles
-				nCycles := math.Abs((float64(edgeXY.IncomingCount+edgeYX.IncomingCount) - float64(edgeXY.IncomingCount-edgeYX.IncomingCount)) / 2.0)
-				nCyclesRound := int(math.Round(nCycles))
-				assert.NotZero(nCyclesRound) // TODO: still not sure
-				cycleCounts[x] += nCyclesRound
-				cycleCounts[y] += nCyclesRound
+				// nCycles := math.Abs((float64(edgeXY.IncomingCount+edgeYX.IncomingCount) - float64(edgeXY.IncomingCount-edgeYX.IncomingCount)) / 2.0)
+				// nCyclesRound := int(math.Round(nCycles))
+				// assert.NotZero(nCyclesRound) // TODO: still not sure
+				// cycleCounts[x] += nCyclesRound
+				// cycleCounts[y] += nCyclesRound
 			}
 		}
 
@@ -669,6 +673,19 @@ func (graph *TimelineGraph) GetFocusScores() int {
 		for _, v := range labels {
 			cycles[v] = append(cycles[v], consecutive...)
 		}
+
+		for _, e := range edges {
+			meta := graph.edgeMetaMap[e]
+
+			for _, c := range consecutive {
+				for _, s := range meta.spans {
+					if (c[0].Equal(s[0]) || s[0].After(c[0])) && (c[1].Equal(s[1]) || s[1].After(c[1])) {
+						cycleCounts[e[0]] += 1
+						cycleCounts[e[1]] += 1
+					}
+				}
+			}
+		}
 	}
 
 	focusScores := map[*gograph.Vertex[string]]float64{}
@@ -696,8 +713,8 @@ func (graph *TimelineGraph) GetFocusScores() int {
 		// cycleCounts[v] gives us the total number of incoming and outgoing edges from a cycle
 		// since we're collapsing cycles, we remove all of them and
 		// len(cycles[v]) gives us the number of consecutive sessions
-		incomingEdges := incomingEdgeCounts[v] - cycleCounts[v] + len(cycles[v])
-		outgoingEdges := len(outgoingDurations[v]) - cycleCounts[v] + len(cycles[v])
+		incomingEdges := incomingEdgeCounts[v] - cycleCounts[v.Label()] + len(cycles[v])
+		outgoingEdges := len(outgoingDurations[v]) - cycleCounts[v.Label()] + len(cycles[v])
 
 		focusScores[v] = float64(nSessions) / (float64(incomingEdges + outgoingEdges))
 	}
