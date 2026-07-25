@@ -21,7 +21,7 @@ type Edge = [2]string // [from, to]
 
 type ApplicationGraph struct {
 	Graph         gograph.Graph[string]
-	mu            sync.RWMutex
+	RWMu          sync.RWMutex
 	vertexMetaMap map[string]*applicationGraphVertexMeta
 	edgeMetaMap   map[Edge]*applicationGraphEdgeMeta
 	activeProcess *ForegroundProcess
@@ -53,12 +53,14 @@ func GraphFrom(timeline *list.List) *ApplicationGraph {
 		vertexMetaMap: vertexMetaMap,
 		edgeMetaMap:   edgeMetaMap,
 	}
+	timelineGraph.RWMu.Lock()
+	defer timelineGraph.RWMu.Unlock()
 
 	for e := timeline.Front(); e != nil; e = e.Next() {
 		curr, ok := e.Value.(ForegroundProcess)
 		assert.True(ok)
 
-		timelineGraph.addVertex(curr)
+		timelineGraph.addVertexMeta(curr)
 	}
 	timelineGraph.buildGraph()
 
@@ -76,6 +78,8 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGra
 		vertexMetaMap: vertexMetaMap,
 		edgeMetaMap:   edgeMetaMap,
 	}
+	timelineGraph.RWMu.Lock()
+	defer timelineGraph.RWMu.Unlock()
 
 	go func() {
 		for {
@@ -91,11 +95,7 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGra
 	return &timelineGraph
 }
 
-func (graph *ApplicationGraph) addVertex(curr ForegroundProcess) (bool, bool) {
-	// breaks acquiring locks at the top but for reuse
-	graph.mu.Lock()
-	defer graph.mu.Unlock()
-
+func (graph *ApplicationGraph) addVertexMeta(curr ForegroundProcess) (bool, bool) {
 	prevProcess := graph.activeProcess
 
 	if prevProcess != nil && curr.IsEqual(*prevProcess) {
@@ -166,10 +166,6 @@ func (graph *ApplicationGraph) addVertex(curr ForegroundProcess) (bool, bool) {
 }
 
 func (graph *ApplicationGraph) buildGraph() {
-	// breaks acquiring locks at the top but for reuse
-	graph.mu.Lock()
-	defer graph.mu.Unlock()
-
 	for v, m := range graph.vertexMetaMap {
 		vertex := graph.Graph.AddVertexByLabel(v, gograph.WithVertexWeight(float64(m.Duration.Milliseconds())))
 		assert.NotNil(vertex)
@@ -191,64 +187,82 @@ func (graph *ApplicationGraph) buildGraph() {
 func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 	prevProcess := graph.activeProcess
 
-	ok, exists := graph.addVertex(curr)
+	ok, _ := graph.addVertexMeta(curr)
 	if !ok {
 		return
 	}
 
-	if graph.Graph.Size() == 0 {
+	if graph.Graph.Order() == 0 {
 		graph.buildGraph()
+	} else if prevProcess != nil {
+		graph.addVertexAndEdge(*prevProcess, curr)
 	}
+}
 
-	if exists && prevProcess != nil {
-		graph.mu.Lock()
-		defer graph.mu.Unlock()
+func (graph *ApplicationGraph) addVertexAndEdge(prev ForegroundProcess, curr ForegroundProcess) {
+	appIdentifier := ""
+	if curr.IsIdle() {
+		appIdentifier = "idle"
+	} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
+		appIdentifier = *curr.Enrichments.Browser.AppIdentifier
+	} else {
+		assert.NotNil(curr.AppIdentifier)
+		appIdentifier = *curr.AppIdentifier
+	}
+	assert.NotZero(appIdentifier)
 
-		prevIdentifier := ""
-		if prevProcess.IsIdle() {
-			prevIdentifier = "idle"
-		} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
-			prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
-		} else {
-			assert.NotNil(prevProcess.AppIdentifier)
-			prevIdentifier = *prevProcess.AppIdentifier
+	prevIdentifier := ""
+	if prev.IsIdle() {
+		prevIdentifier = "idle"
+	} else if prev.IsBrowser() && !utils.IsZero(prev.Enrichments.Browser.AppIdentifier) {
+		prevIdentifier = *prev.Enrichments.Browser.AppIdentifier
+	} else {
+		assert.NotNil(prev.AppIdentifier)
+		prevIdentifier = *prev.AppIdentifier
+	}
+	assert.NotZero(prevIdentifier)
+
+	if graph.Graph.GetVertexByID(appIdentifier) == nil {
+		currMeta := graph.vertexMetaMap[appIdentifier]
+		assert.NotNil(currMeta)
+
+		currVertex := graph.Graph.AddVertexByLabel(appIdentifier, gograph.WithVertexWeight(float64(currMeta.Duration.Milliseconds())))
+		assert.NotNil(currVertex)
+	} // no else, the duration on a vertex is only updated when the edge is outgoing
+
+	meta := graph.vertexMetaMap[prevIdentifier]
+	assert.NotNil(meta)
+
+	// we need to drop vertex and rebuild it to update weights
+	vertex := graph.Graph.GetVertexByID(prevIdentifier)
+	assert.NotNil(vertex)
+
+	graph.Graph.RemoveEdges(graph.Graph.EdgesOf(vertex)...)
+	graph.Graph.RemoveVertices(vertex)
+
+	vertex = graph.Graph.AddVertexByLabel(prevIdentifier, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
+	assert.NotNil(vertex)
+
+	for edge, edgeMeta := range graph.edgeMetaMap {
+		if edge[0] != prevIdentifier && edge[1] != prevIdentifier {
+			continue
 		}
-		assert.NotZero(prevIdentifier)
 
-		meta := graph.vertexMetaMap[prevIdentifier]
-		assert.NotNil(meta)
+		from := graph.Graph.GetVertexByID(edge[0])
+		assert.NotNil(from)
 
-		// we need to drop vertex and rebuild it to update weights
-		vertex := graph.Graph.GetVertexByID(prevIdentifier)
-		assert.NotNil(vertex)
+		to := graph.Graph.GetVertexByID(edge[1])
+		assert.NotNil(to)
 
-		graph.Graph.RemoveEdges(graph.Graph.EdgesOf(vertex)...)
-		graph.Graph.RemoveVertices(vertex)
-
-		vertex = graph.Graph.AddVertexByLabel(prevIdentifier, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
-		assert.NotNil(vertex)
-
-		for edge, edgeMeta := range graph.edgeMetaMap {
-			if edge[0] != prevIdentifier && edge[1] != prevIdentifier {
-				continue
-			}
-
-			from := graph.Graph.GetVertexByID(edge[0])
-			assert.NotNil(from)
-
-			to := graph.Graph.GetVertexByID(edge[1])
-			assert.NotNil(to)
-
-			// pairs well: spends a lot of time on `from` before switching `to`
-			_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(edgeMeta.IncomingDuration.Milliseconds())))
-			assert.Nil(err)
-		}
+		// pairs well: spends a lot of time on `from` before switching `to`
+		_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(edgeMeta.IncomingDuration.Milliseconds())))
+		assert.Nil(err)
 	}
 }
 
 func (graph *ApplicationGraph) GetVertexMeta(label string) (*applicationGraphVertexMeta, bool) {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.RWMu.RLock()
+	defer graph.RWMu.RUnlock()
 
 	meta, ok := graph.vertexMetaMap[label]
 
@@ -256,8 +270,8 @@ func (graph *ApplicationGraph) GetVertexMeta(label string) (*applicationGraphVer
 }
 
 func (graph *ApplicationGraph) GetEdgeMeta(fromLabel string, toLabel string) (*applicationGraphEdgeMeta, bool) {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.RWMu.RLock()
+	defer graph.RWMu.RUnlock()
 
 	meta, ok := graph.edgeMetaMap[Edge{fromLabel, toLabel}]
 
@@ -390,8 +404,8 @@ type EntrySuggestion struct {
 }
 
 func (graph *ApplicationGraph) GetEntrySuggestions(start time.Time, numMutualConnections int) []EntrySuggestion {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.RWMu.RLock()
+	defer graph.RWMu.RUnlock()
 
 	stronglyConnectedApps := graph.getStronglyConnectedApps(numMutualConnections)
 
@@ -426,8 +440,8 @@ func (graph *ApplicationGraph) GetEntrySuggestions(start time.Time, numMutualCon
 }
 
 func (graph *ApplicationGraph) GetTimeToProductive() time.Duration {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.RWMu.RLock()
+	defer graph.RWMu.RUnlock()
 
 	durationsToProductive := []time.Duration{}
 
@@ -472,8 +486,8 @@ func (graph *ApplicationGraph) GetTimeToProductive() time.Duration {
 }
 
 func (graph *ApplicationGraph) GetAverageProductiveDuration() time.Duration {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.RWMu.RLock()
+	defer graph.RWMu.RUnlock()
 
 	spans := []TimeSpan{}
 
@@ -501,8 +515,8 @@ func (graph *ApplicationGraph) GetAverageProductiveDuration() time.Duration {
 }
 
 func (graph *ApplicationGraph) GetAverageUnproductiveDuration() time.Duration {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.RWMu.RLock()
+	defer graph.RWMu.RUnlock()
 
 	spans := []TimeSpan{}
 
@@ -530,8 +544,8 @@ func (graph *ApplicationGraph) GetAverageUnproductiveDuration() time.Duration {
 }
 
 func (graph *ApplicationGraph) GetFocusScores(numMutualConnections int) map[string]float64 {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.RWMu.RLock()
+	defer graph.RWMu.RUnlock()
 
 	stronglyConnectedApps := graph.getStronglyConnectedApps(numMutualConnections)
 
