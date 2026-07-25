@@ -30,7 +30,7 @@ type GetLatestTimelineEntryRow struct {
 	TimelineID                 int64
 	InitialForegroundProcessID *int64
 	EndForegroundProcessID     *int64
-	InitialPid                 int64
+	InitialPid                 *int64
 	InitialCreatedAt           time.Time
 	InitialTab                 *string
 	InitialIdle                *bool

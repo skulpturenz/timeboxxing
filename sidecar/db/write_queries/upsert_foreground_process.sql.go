@@ -21,7 +21,7 @@ RETURNING id
 
 type UpsertForegroundProcessParams struct {
 	ApplicationID *int64
-	Pid           int64
+	Pid           *int64
 	CreatedAtUtc  time.Time
 }
 

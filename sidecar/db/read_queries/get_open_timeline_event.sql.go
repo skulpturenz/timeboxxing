@@ -43,7 +43,7 @@ type GetOpenTimelineEventRow struct {
 	Idle                  *bool
 	CdpUrl                *string
 	ApplicationID         *int64
-	Pid                   int64
+	Pid                   *int64
 }
 
 func (q *Queries) GetOpenTimelineEvent(ctx context.Context) (GetOpenTimelineEventRow, error) {

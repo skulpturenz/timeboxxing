@@ -41,9 +41,14 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 			}
 		}
 
+		var pid int64
+		if !c.ActiveProcess.IsIdle() {
+			pid = int64(*c.ActiveProcess.PID)
+		}
+
 		id, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 			ApplicationID: utils.ZeroNil(applicationId),
-			Pid:           int64(*c.ActiveProcess.PID),
+			Pid:           utils.ZeroNil(pid),
 			CreatedAtUtc:  c.ActiveProcess.Timestamp,
 		})
 		if err != nil {

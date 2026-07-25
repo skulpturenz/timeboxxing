@@ -44,7 +44,7 @@ type GetTransitionEventRow struct {
 	Idle                  *bool
 	CdpUrl                *string
 	ApplicationID         *int64
-	Pid                   int64
+	Pid                   *int64
 }
 
 func (q *Queries) GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error) {
