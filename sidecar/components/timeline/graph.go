@@ -192,7 +192,9 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 	prevProcess := graph.activeProcess
 
 	ok, exists := graph.addVertex(curr)
-	assert.True(ok)
+	if !ok {
+		return
+	}
 
 	if graph.Graph.Size() == 0 {
 		graph.buildGraph()
@@ -208,38 +210,36 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 			assert.NotNil(prevProcess.AppIdentifier)
 			prevIdentifier = *prevProcess.AppIdentifier
 		}
+		assert.NotZero(prevIdentifier)
 
-		graph.rebuildVertex(prevIdentifier)
-	}
-}
+		meta := graph.vertexMetaMap[prevIdentifier]
+		assert.NotNil(meta)
 
-func (graph *ApplicationGraph) rebuildVertex(label string) {
-	meta := graph.vertexMetaMap[label]
-	assert.NotNil(meta)
+		// we need to drop vertex and rebuild it to update weights
+		vertex := graph.Graph.GetVertexByID(prevIdentifier)
+		assert.NotNil(vertex)
 
-	vertex := graph.Graph.GetVertexByID(label)
-	assert.NotNil(vertex)
+		graph.Graph.RemoveEdges(graph.Graph.EdgesOf(vertex)...)
+		graph.Graph.RemoveVertices(vertex)
 
-	graph.Graph.RemoveEdges(graph.Graph.EdgesOf(vertex)...)
-	graph.Graph.RemoveVertices(vertex)
+		vertex = graph.Graph.AddVertexByLabel(prevIdentifier, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
+		assert.NotNil(vertex)
 
-	vertex = graph.Graph.AddVertexByLabel(label, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
-	assert.NotNil(vertex)
+		for edge, edgeMeta := range graph.edgeMetaMap {
+			if edge[0] != prevIdentifier && edge[1] != prevIdentifier {
+				continue
+			}
 
-	for edge, edgeMeta := range graph.edgeMetaMap {
-		if edge[0] != label && edge[1] != label {
-			continue
+			from := graph.Graph.GetVertexByID(edge[0])
+			assert.NotNil(from)
+
+			to := graph.Graph.GetVertexByID(edge[1])
+			assert.NotNil(to)
+
+			// pairs well: spends a lot of time on `from` before switching `to`
+			_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(edgeMeta.IncomingDuration.Milliseconds())))
+			assert.Nil(err)
 		}
-
-		from := graph.Graph.GetVertexByID(edge[0])
-		assert.NotNil(from)
-
-		to := graph.Graph.GetVertexByID(edge[1])
-		assert.NotNil(to)
-
-		// pairs well: spends a lot of time on `from` before switching `to`
-		_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(edgeMeta.IncomingDuration.Milliseconds())))
-		assert.Nil(err)
 	}
 }
 
