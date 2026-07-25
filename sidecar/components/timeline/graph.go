@@ -78,8 +78,6 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGra
 		vertexMetaMap: vertexMetaMap,
 		edgeMetaMap:   edgeMetaMap,
 	}
-	timelineGraph.RWMu.Lock()
-	defer timelineGraph.RWMu.Unlock()
 
 	go func() {
 		for {
@@ -185,6 +183,9 @@ func (graph *ApplicationGraph) buildGraph() {
 }
 
 func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
+	graph.RWMu.Lock()
+	defer graph.RWMu.Unlock()
+
 	prevProcess := graph.activeProcess
 
 	ok, _ := graph.addVertexMeta(curr)
