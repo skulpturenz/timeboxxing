@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
@@ -38,12 +37,12 @@ type ListTransitionEventDocumentSourcesForWindowParams struct {
 
 type ListTransitionEventDocumentSourcesForWindowRow struct {
 	TransitionEventID int64
-	ApplicationName   sql.NullString
+	ApplicationName   *string
 	StartedAt         time.Time
 	EndedAt           time.Time
-	Browser           sql.NullBool
+	Browser           *bool
 	Tab               *string
-	Idle              sql.NullBool
+	Idle              *bool
 	CdpUrl            *string
 }
 

@@ -54,12 +54,6 @@ func (s *SerialWriteQuerier) WithWriteConn(fn func(*sql.DB) error) error {
 	return fn(s.conn)
 }
 
-func (s *SerialWriteQuerier) CreateForegroundProcessMetadata(ctx context.Context, arg writequeries.CreateForegroundProcessMetadataParams) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.querier.CreateForegroundProcessMetadata(ctx, arg)
-}
-
 func (s *SerialWriteQuerier) CreateLedgerItem(ctx context.Context, arg writequeries.CreateLedgerItemParams) (writequeries.LedgerItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -90,12 +84,6 @@ func (s *SerialWriteQuerier) CreateProjectDetails(ctx context.Context, arg write
 	return s.querier.CreateProjectDetails(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateTimeline(ctx context.Context, arg writequeries.CreateTimelineParams) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.querier.CreateTimeline(ctx, arg)
-}
-
 func (s *SerialWriteQuerier) CreateTimelineEmbedding(ctx context.Context, arg writequeries.CreateTimelineEmbeddingParams) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,16 +108,16 @@ func (s *SerialWriteQuerier) DeleteTimeline(ctx context.Context, id int64) error
 	return s.querier.DeleteTimeline(ctx, id)
 }
 
-func (s *SerialWriteQuerier) DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID sql.NullInt64) error {
+func (s *SerialWriteQuerier) DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID *int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.DeleteTimelineEmbedding(ctx, timelineSemanticDocumentsID)
 }
 
-func (s *SerialWriteQuerier) UpdateTimelineEnd(ctx context.Context, arg writequeries.UpdateTimelineEndParams) error {
+func (s *SerialWriteQuerier) UpsertTimeline(ctx context.Context, arg writequeries.UpsertTimelineParams) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.querier.UpdateTimelineEnd(ctx, arg)
+	return s.querier.UpsertTimeline(ctx, arg)
 }
 
 func (s *SerialWriteQuerier) EnsureLedger(ctx context.Context) error {
@@ -154,6 +142,12 @@ func (s *SerialWriteQuerier) UpsertForegroundProcess(ctx context.Context, arg wr
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.UpsertForegroundProcess(ctx, arg)
+}
+
+func (s *SerialWriteQuerier) InsertForegroundProcessMetadata(ctx context.Context, arg writequeries.InsertForegroundProcessMetadataParams) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.InsertForegroundProcessMetadata(ctx, arg)
 }
 
 func (s *SerialWriteQuerier) UpsertTimelineSemanticDocument(ctx context.Context, arg writequeries.UpsertTimelineSemanticDocumentParams) (int64, error) {

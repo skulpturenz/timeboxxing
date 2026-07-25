@@ -7,7 +7,6 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const createTimelineEmbedding = `-- name: CreateTimelineEmbedding :exec
@@ -22,9 +21,9 @@ VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateTimelineEmbeddingParams struct {
-	TimelineID                  sql.NullInt64
-	TimelineSemanticDocumentsID sql.NullInt64
-	EmbeddingModelID            sql.NullInt64
+	TimelineID                  *int64
+	TimelineSemanticDocumentsID *int64
+	EmbeddingModelID            *int64
 	Dimension                   int64
 	Embedding                   []byte
 }

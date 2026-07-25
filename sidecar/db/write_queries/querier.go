@@ -6,27 +6,25 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 )
 
 type Querier interface {
-	CreateForegroundProcessMetadata(ctx context.Context, arg CreateForegroundProcessMetadataParams) error
 	CreateLedgerItem(ctx context.Context, arg CreateLedgerItemParams) (LedgerItem, error)
 	CreateLedgerItemTimelineEntry(ctx context.Context, arg CreateLedgerItemTimelineEntryParams) error
 	CreateProject(ctx context.Context, name string) (int64, error)
 	CreateProjectCost(ctx context.Context, arg CreateProjectCostParams) error
 	CreateProjectDetails(ctx context.Context, arg CreateProjectDetailsParams) error
-	CreateTimeline(ctx context.Context, arg CreateTimelineParams) (int64, error)
 	CreateTimelineEmbedding(ctx context.Context, arg CreateTimelineEmbeddingParams) error
 	DeleteLedgerItem(ctx context.Context, id int64) error
 	DeleteProject(ctx context.Context, id int64) error
 	DeleteTimeline(ctx context.Context, id int64) error
-	DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID sql.NullInt64) error
+	DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID *int64) error
 	EnsureLedger(ctx context.Context) error
-	UpdateTimelineEnd(ctx context.Context, arg UpdateTimelineEndParams) error
+	InsertForegroundProcessMetadata(ctx context.Context, arg InsertForegroundProcessMetadataParams) (int64, error)
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
 	UpsertApplicationSettings(ctx context.Context, arg UpsertApplicationSettingsParams) error
 	UpsertForegroundProcess(ctx context.Context, arg UpsertForegroundProcessParams) (int64, error)
+	UpsertTimeline(ctx context.Context, arg UpsertTimelineParams) (int64, error)
 	UpsertTimelineSemanticDocument(ctx context.Context, arg UpsertTimelineSemanticDocumentParams) (int64, error)
 }
 

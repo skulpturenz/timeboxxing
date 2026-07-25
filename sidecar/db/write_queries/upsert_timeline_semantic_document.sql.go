@@ -7,7 +7,6 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const upsertTimelineSemanticDocument = `-- name: UpsertTimelineSemanticDocument :one
@@ -22,8 +21,8 @@ RETURNING id
 
 type UpsertTimelineSemanticDocumentParams struct {
 	DocumentKey string
-	TimelineID  sql.NullInt64
-	Type        sql.NullInt64
+	TimelineID  *int64
+	Type        *int64
 	Content     string
 }
 

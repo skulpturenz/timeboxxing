@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
@@ -29,12 +28,12 @@ LIMIT 1
 
 type GetLatestTimelineEntryRow struct {
 	TimelineID                 int64
-	InitialForegroundProcessID sql.NullInt64
-	EndForegroundProcessID     sql.NullInt64
+	InitialForegroundProcessID *int64
+	EndForegroundProcessID     *int64
 	InitialPid                 int64
 	InitialCreatedAt           time.Time
 	InitialTab                 *string
-	InitialIdle                sql.NullBool
+	InitialIdle                *bool
 }
 
 func (q *Queries) GetLatestTimelineEntry(ctx context.Context) (GetLatestTimelineEntryRow, error) {

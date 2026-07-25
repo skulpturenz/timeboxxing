@@ -7,7 +7,7 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
+	"time"
 )
 
 const createLedgerItem = `-- name: CreateLedgerItem :one
@@ -26,9 +26,9 @@ RETURNING
 type CreateLedgerItemParams struct {
 	Billable     bool
 	Title        string
-	Notes        sql.NullString
-	StartedAtUtc sql.NullTime
-	EndedAtUtc   sql.NullTime
+	Notes        *string
+	StartedAtUtc *time.Time
+	EndedAtUtc   *time.Time
 }
 
 func (q *Queries) CreateLedgerItem(ctx context.Context, arg CreateLedgerItemParams) (LedgerItem, error) {
@@ -58,8 +58,8 @@ VALUES (?, ?)
 `
 
 type CreateLedgerItemTimelineEntryParams struct {
-	LedgerItemsID sql.NullInt64
-	TimelineID    sql.NullInt64
+	LedgerItemsID *int64
+	TimelineID    *int64
 }
 
 func (q *Queries) CreateLedgerItemTimelineEntry(ctx context.Context, arg CreateLedgerItemTimelineEntryParams) error {
@@ -73,10 +73,10 @@ VALUES (?, ?, ?, ?)
 `
 
 type CreateProjectCostParams struct {
-	LedgerItemsID sql.NullInt64
-	ProjectsID    sql.NullInt64
-	CostingTypeID sql.NullInt64
-	Rate          sql.NullInt64
+	LedgerItemsID *int64
+	ProjectsID    *int64
+	CostingTypeID *int64
+	Rate          *int64
 }
 
 func (q *Queries) CreateProjectCost(ctx context.Context, arg CreateProjectCostParams) error {

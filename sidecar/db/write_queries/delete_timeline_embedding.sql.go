@@ -7,7 +7,6 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const deleteTimelineEmbedding = `-- name: DeleteTimelineEmbedding :exec
@@ -15,7 +14,7 @@ DELETE FROM timeline_embeddings
 WHERE timeline_semantic_documents_id = ?
 `
 
-func (q *Queries) DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID sql.NullInt64) error {
+func (q *Queries) DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID *int64) error {
 	_, err := q.db.ExecContext(ctx, deleteTimelineEmbedding, timelineSemanticDocumentsID)
 	return err
 }

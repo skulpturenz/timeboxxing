@@ -7,7 +7,6 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const createProject = `-- name: CreateProject :one
@@ -29,10 +28,10 @@ VALUES (?, ?, ?, ?)
 `
 
 type CreateProjectDetailsParams struct {
-	ProjectsID      sql.NullInt64
-	ProjectColorsID sql.NullInt64
-	CostingTypeID   sql.NullInt64
-	Rate            sql.NullInt64
+	ProjectsID      *int64
+	ProjectColorsID *int64
+	CostingTypeID   *int64
+	Rate            *int64
 }
 
 func (q *Queries) CreateProjectDetails(ctx context.Context, arg CreateProjectDetailsParams) error {

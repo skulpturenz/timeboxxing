@@ -74,6 +74,7 @@ type Browser struct {
 	Category      *enumscategories.Category // TODO
 	AppIdentifier *string                   // TODO
 	Title         string
+	Tab           string
 	URL           string
 	Domain        string
 }

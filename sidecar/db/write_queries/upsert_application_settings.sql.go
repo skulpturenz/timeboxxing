@@ -7,7 +7,6 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const upsertApplicationSettings = `-- name: UpsertApplicationSettings :exec
@@ -29,11 +28,11 @@ ON CONFLICT(id) DO UPDATE SET
 `
 
 type UpsertApplicationSettingsParams struct {
-	ModelProviderID      sql.NullInt64
-	ModelProviderBaseUrl sql.NullString
+	ModelProviderID      *int64
+	ModelProviderBaseUrl *string
 	EmbeddingModelID     int64
 	SemanticModelID      int64
-	ReleaseChannel       sql.NullInt64
+	ReleaseChannel       *int64
 }
 
 func (q *Queries) UpsertApplicationSettings(ctx context.Context, arg UpsertApplicationSettingsParams) error {

@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
@@ -48,16 +47,16 @@ WHERE timeline.id = ?
 
 type GetSemanticEventDocumentSourceRow struct {
 	TransitionEventID int64
-	ApplicationName   sql.NullString
-	ApplicationID     sql.NullInt64
+	ApplicationName   *string
+	ApplicationID     *int64
 	StartedAt         time.Time
 	EndedAt           time.Time
-	Browser           sql.NullBool
+	Browser           *bool
 	Tab               *string
-	Idle              sql.NullBool
+	Idle              *bool
 	CdpUrl            *string
-	PrevApplicationID sql.NullInt64
-	PrevIdle          sql.NullBool
+	PrevApplicationID *int64
+	PrevIdle          *bool
 }
 
 func (q *Queries) GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error) {

@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const listMissingSemanticEventDocumentIDs = `-- name: ListMissingSemanticEventDocumentIDs :many
@@ -26,7 +25,7 @@ LIMIT ?
 `
 
 type ListMissingSemanticEventDocumentIDsParams struct {
-	EmbeddingModelID sql.NullInt64
+	EmbeddingModelID *int64
 	Limit            int64
 }
 
