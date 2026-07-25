@@ -1,4 +1,4 @@
-package timeline
+package applicationgraph
 
 import (
 	"container/list"
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
 	enumscategories "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_categories"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,7 +33,7 @@ func appProc(identifier string, pid int32, cat enumscategories.Category, at time
 		AppPath:       ptr("/" + identifier),
 		PID:           &pid,
 		Timestamp:     at,
-		Enrichments:   Enrichments{Appmetadata: AppMetadata{Category: cat}},
+		Enrichments:   timeline.Enrichments{Appmetadata: timeline.AppMetadata{Category: cat}},
 	}
 }
 
@@ -50,8 +51,8 @@ func browserProc(tabID string, cat enumscategories.Category, pid int32, at time.
 		AppIdentifier: ptr("com.google.Chrome"),
 		PID:           &pid,
 		Timestamp:     at,
-		Enrichments: Enrichments{
-			Browser: Browser{Browser: "chrome", AppIdentifier: &tabID, Category: &c},
+		Enrichments: timeline.Enrichments{
+			Browser: timeline.Browser{Browser: "chrome", AppIdentifier: &tabID, Category: &c},
 		},
 	}
 }

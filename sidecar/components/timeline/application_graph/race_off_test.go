@@ -1,6 +1,6 @@
-//go:build race
+//go:build !race
 
-package timeline
+package applicationgraph
 
 // raceEnabled reports whether the test binary was built with -race.
-const raceEnabled = true
+const raceEnabled = false
