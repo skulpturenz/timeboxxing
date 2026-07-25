@@ -6,7 +6,7 @@ import (
 	"github.com/negrel/assert"
 )
 
-type StreamFn[T any] = func(ctx context.Context, page int, pageSize int) []T
+type StreamFn[T any] = func(ctx context.Context, pageSize int) []T
 
 func Stream[T any](ctx context.Context, pageSize int, fn StreamFn[T]) <-chan T {
 	assert.Positive(pageSize)
@@ -25,7 +25,7 @@ func Stream[T any](ctx context.Context, pageSize int, fn StreamFn[T]) <-chan T {
 			case <-ctx.Done():
 				return
 			default:
-				items := fn(ctx, page, pageSize)
+				items := fn(ctx, pageSize)
 				if len(items) == 0 {
 					return
 				}

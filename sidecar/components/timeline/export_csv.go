@@ -16,9 +16,9 @@ type QueryExportCSV struct {
 	Timeline list.List
 }
 
-func (c QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, any]) (string, error) {
+func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, any]) (string, error) {
 	fps := []ForegroundProcess{}
-	for v, i := c.Timeline.Front(), 0; v != nil; v, i = v.Next(), i+1 {
+	for v, i := q.Timeline.Front(), 0; v != nil; v, i = v.Next(), i+1 {
 		c, ok := v.Value.(ForegroundProcess)
 		assert.True(ok)
 		if !ok {
