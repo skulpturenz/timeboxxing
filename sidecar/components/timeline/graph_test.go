@@ -3,6 +3,7 @@ package timeline
 import (
 	"container/list"
 	"context"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -98,8 +99,10 @@ func TestGraphFrom_BuildsVerticesEdgesAndCounts(t *testing.T) {
 	assert.Equal(t, 1, edgeBA.IncomingCount)
 	assert.Equal(t, 10*time.Second, edgeBA.IncomingDuration)
 
-	// gograph surface mirrors the metadata.
+	// gograph surface mirrors the metadata. Size() is exact only because the rebuild drops a
+	// vertex's edges explicitly before removing it; RemoveVertices alone leaks the edge count.
 	assert.Equal(t, uint32(2), g.Graph.Order())
+	assert.Equal(t, uint32(2), g.Graph.Size(), "A->B and B->A, counted once each")
 	vA := g.Graph.GetVertexByID("A")
 	vB := g.Graph.GetVertexByID("B")
 	require.NotNil(t, vA)
@@ -131,6 +134,7 @@ func TestGraphFrom_IdleVertexAndEdges(t *testing.T) {
 	assert.Equal(t, 1, edgeIdleB.IncomingCount)
 
 	assert.Equal(t, uint32(3), g.Graph.Order())
+	assert.Equal(t, uint32(2), g.Graph.Size(), "A->idle and idle->B should both be in the graph")
 }
 
 func TestGraphFrom_BrowserVertexUsesTabIdentifier(t *testing.T) {
@@ -639,4 +643,116 @@ func TestGraphChan_ThreeAppCycleRepeated(t *testing.T) {
 	cv, ok := g.GetEdgeMeta("chrome", "vscode")
 	require.True(t, ok)
 	assert.Equal(t, 3, cv.IncomingCount)
+}
+
+// --- GetFocusScores --------------------------------------------------------
+
+// focusScoreOf reads an app's score, or fails if it was not scored at all.
+func focusScoreOf(t *testing.T, scores map[string]float64, identifier string) float64 {
+	t.Helper()
+
+	score, ok := scores[identifier]
+	require.True(t, ok, "expected %q to be scored, got %v", identifier, scores)
+
+	return score
+}
+
+// The regression guard for the ordering bug. GetFocusScores used to pair outgoing edges with
+// intervals by index off Graph.EdgesOf, which ranges over Go maps; the SCC bookkeeping also
+// walked a map and let whichever app was visited first claim the shared cycle. Go randomises
+// map iteration per range, so the scores themselves drifted between calls on one graph.
+func TestGetFocusScores_IsDeterministic(t *testing.T) {
+	g := GraphFrom(listOf(
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(30)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(40)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(50)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(60)),
+		appProc("slack", 3, enumscategories.CategoryCommunication, at(1000)),
+	))
+
+	want := g.GetFocusScores(3)
+	require.NotEmpty(t, want)
+
+	for i := range 20 {
+		assert.Equal(t, want, g.GetFocusScores(3), "call %d differed", i)
+	}
+}
+
+// Collapsing a mutual cluster is the point of the cycle bookkeeping: switching between vscode
+// and a terminal is one piece of work, so the whole block counts as a single focused session
+// instead of six short distracted ones. The same timeline is scored twice, once with the
+// cluster recognised and once with the threshold raised past it.
+func TestGetFocusScores_CollapsesMutualCluster(t *testing.T) {
+	// vscode <-> terminal three times each way, then a long solo vscode session
+	g := GraphFrom(listOf(
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(30)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(40)),
+		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(50)),
+		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(60)),
+		appProc("slack", 3, enumscategories.CategoryCommunication, at(1000)),
+	))
+
+	// threshold 3: the cluster is recognised, so [0,1000] collapses to one session. vscode
+	// keeps its one transition out to slack, so it clears 3 transitions rather than 7.
+	collapsed := g.GetFocusScores(3)
+	assert.InDelta(t, 1.0/3.0, focusScoreOf(t, collapsed, "vscode"), 1e-9)
+	assert.InDelta(t, 1.0/2.0, focusScoreOf(t, collapsed, "terminal"), 1e-9)
+
+	// threshold 4: no cluster, so every switch counts against vscode individually
+	split := g.GetFocusScores(4)
+	assert.InDelta(t, 1.0/7.0, focusScoreOf(t, split, "vscode"), 1e-9)
+
+	assert.Greater(t, focusScoreOf(t, collapsed, "vscode"), focusScoreOf(t, split, "vscode"),
+		"collapsing the cluster should stop counting its switches as distraction")
+
+	// slack is the last sample, so it was never switched away from and has no session
+	assert.NotContains(t, collapsed, "slack",
+		"an app that was never switched away from has nothing to score")
+}
+
+// Regression guard: the cycle filter used to iterate the app's cycle blocks and append a
+// duration inside that loop, so an app in no cycle at all had the loop body never run and
+// silently received no sessions and no score.
+func TestGetFocusScores_ScoresAppsWithoutCycles(t *testing.T) {
+	g := GraphFrom(listOf(
+		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
+		appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
+		appProc("C", 3, enumscategories.CategoryMedia, at(20)),
+	))
+
+	scores := g.GetFocusScores(2)
+
+	// A: one session, one transition out. B: one session, one in and one out.
+	assert.InDelta(t, 1.0, focusScoreOf(t, scores, "A"), 1e-9)
+	assert.InDelta(t, 0.5, focusScoreOf(t, scores, "B"), 1e-9)
+}
+
+// Exactly the apps that were switched away from at least once are scored: a session is only
+// closed by leaving the app, so the app the timeline ends on has nothing to measure.
+func TestGetFocusScores_ScoresEveryAppWithASession(t *testing.T) {
+	g := GraphFrom(listOf(
+		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
+		appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
+		appProc("C", 3, enumscategories.CategoryMedia, at(20)),
+		appProc("D", 4, enumscategories.CategoryDevelopment, at(30)),
+	))
+
+	scores := g.GetFocusScores(2)
+
+	assert.ElementsMatch(t, []string{"A", "B", "C"}, slices.Collect(maps.Keys(scores)),
+		"D is the last sample, so it has no closed session")
+}
+
+func TestGetFocusScores_EmptyAndSingle(t *testing.T) {
+	assert.Empty(t, GraphFrom(list.New()).GetFocusScores(2))
+
+	// a lone sample is never switched away from, so it has no session to score
+	single := GraphFrom(listOf(appProc("A", 1, enumscategories.CategoryDevelopment, base)))
+	assert.Empty(t, single.GetFocusScores(2))
 }

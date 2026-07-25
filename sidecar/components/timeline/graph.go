@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"container/list"
 	"context"
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -59,8 +58,9 @@ func GraphFrom(timeline *list.List) *ApplicationGraph {
 		curr, ok := e.Value.(ForegroundProcess)
 		assert.True(ok)
 
-		timelineGraph.upsertForegroundProcess(curr)
+		timelineGraph.addVertex(curr)
 	}
+	timelineGraph.buildGraph()
 
 	return &timelineGraph
 }
@@ -91,14 +91,15 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGra
 	return &timelineGraph
 }
 
-func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
+func (graph *ApplicationGraph) addVertex(curr ForegroundProcess) (bool, bool) {
+	// breaks acquiring locks at the top but for reuse
 	graph.mu.Lock()
 	defer graph.mu.Unlock()
 
 	prevProcess := graph.activeProcess
 
 	if prevProcess != nil && curr.IsEqual(*prevProcess) {
-		return
+		return false, true
 	}
 
 	appIdentifier := ""
@@ -150,6 +151,7 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 
 		edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
 		edgeMeta.IncomingCount += 1
+		edgeMeta.spans = append(edgeMeta.spans, TimeSpan{prevProcess.Timestamp, curr.Timestamp})
 
 		prevMeta := graph.vertexMetaMap[prevIdentifier]
 		assert.NotNil(prevMeta)
@@ -158,36 +160,87 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 		prevMeta.Intervals = append(prevMeta.Intervals, TimeSpan{prevProcess.Timestamp, curr.Timestamp})
 	}
 
-	vertices := map[string]*gograph.Vertex[string]{}
-	for v, meta := range graph.vertexMetaMap {
-		if vertexExists { // if the vertex already exists, adding it again returns nil instead of updating the weights
-			existing := graph.Graph.GetVertexByID(v)
-			assert.NotNil(existing)
+	graph.activeProcess = &curr
 
-			graph.Graph.RemoveVertices(existing)
-		}
+	return true, vertexExists
+}
 
-		vertex := graph.Graph.AddVertexByLabel(v, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
+func (graph *ApplicationGraph) buildGraph() {
+	// breaks acquiring locks at the top but for reuse
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
+	for v, m := range graph.vertexMetaMap {
+		vertex := graph.Graph.AddVertexByLabel(v, gograph.WithVertexWeight(float64(m.Duration.Milliseconds())))
 		assert.NotNil(vertex)
-
-		vertices[v] = vertex
 	}
 
-	for edge, meta := range graph.edgeMetaMap {
-		from := vertices[edge[0]]
+	for e, m := range graph.edgeMetaMap {
+		from := graph.Graph.GetVertexByID(e[0])
 		assert.NotNil(from)
 
-		to := vertices[edge[1]]
+		to := graph.Graph.GetVertexByID(e[1])
 		assert.NotNil(to)
 
 		// pairs well: spends a lot of time on `from` before switching `to`
-		_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.IncomingDuration.Milliseconds())))
-		assert.Condition(func() bool {
-			return vertexExists || err == nil
-		})
+		_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(m.IncomingDuration.Milliseconds())))
+		assert.Nil(err)
+	}
+}
+
+func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
+	prevProcess := graph.activeProcess
+
+	ok, exists := graph.addVertex(curr)
+	assert.True(ok)
+
+	if graph.Graph.Size() == 0 {
+		graph.buildGraph()
 	}
 
-	graph.activeProcess = &curr
+	if exists && prevProcess != nil {
+		prevIdentifier := ""
+		if prevProcess.IsIdle() {
+			prevIdentifier = "idle"
+		} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
+			prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
+		} else {
+			assert.NotNil(prevProcess.AppIdentifier)
+			prevIdentifier = *prevProcess.AppIdentifier
+		}
+
+		graph.rebuildVertex(prevIdentifier)
+	}
+}
+
+func (graph *ApplicationGraph) rebuildVertex(label string) {
+	meta := graph.vertexMetaMap[label]
+	assert.NotNil(meta)
+
+	vertex := graph.Graph.GetVertexByID(label)
+	assert.NotNil(vertex)
+
+	graph.Graph.RemoveEdges(graph.Graph.EdgesOf(vertex)...)
+	graph.Graph.RemoveVertices(vertex)
+
+	vertex = graph.Graph.AddVertexByLabel(label, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
+	assert.NotNil(vertex)
+
+	for edge, edgeMeta := range graph.edgeMetaMap {
+		if edge[0] != label && edge[1] != label {
+			continue
+		}
+
+		from := graph.Graph.GetVertexByID(edge[0])
+		assert.NotNil(from)
+
+		to := graph.Graph.GetVertexByID(edge[1])
+		assert.NotNil(to)
+
+		// pairs well: spends a lot of time on `from` before switching `to`
+		_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(edgeMeta.IncomingDuration.Milliseconds())))
+		assert.Nil(err)
+	}
 }
 
 func (graph *ApplicationGraph) GetVertexMeta(label string) (*applicationGraphVertexMeta, bool) {
@@ -215,9 +268,6 @@ type StronglyConnectedEdgesMeta struct {
 }
 
 func (graph *ApplicationGraph) getStronglyConnectedApps(numMutualConnections int) map[string][]StronglyConnectedEdgesMeta {
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
-
 	stronglyConnectedApps := map[string][]StronglyConnectedEdgesMeta{}
 
 	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes
@@ -232,7 +282,8 @@ func (graph *ApplicationGraph) getStronglyConnectedApps(numMutualConnections int
 
 		intervals := map[string][]TimeSpan{}
 		labels := map[string]struct{}{}
-		edges := []Edge{}
+		// these edges participate in a cycle. used for cyckle counts so that we don't double count
+		edgesSet := map[Edge]struct{}{}
 		for i, x := range vertices {
 			for j, y := range vertices {
 				if i == j {
@@ -255,7 +306,8 @@ func (graph *ApplicationGraph) getStronglyConnectedApps(numMutualConnections int
 				label := x.Label()
 				assert.NotZero(label)
 				labels[label] = struct{}{}
-				edges = append(edges, edgeXY, edgeYX)
+				edgesSet[edgeXY] = struct{}{}
+				edgesSet[edgeYX] = struct{}{}
 			}
 		}
 
@@ -301,7 +353,7 @@ func (graph *ApplicationGraph) getStronglyConnectedApps(numMutualConnections int
 		appIdentifiers := slices.Sorted(maps.Keys(labels))
 
 		edgeCounts := map[Edge]int{}
-		for _, edge := range edges {
+		for edge := range edgesSet {
 			meta := graph.edgeMetaMap[edge]
 			assert.NotNil(meta)
 
@@ -335,6 +387,9 @@ type EntrySuggestion struct {
 }
 
 func (graph *ApplicationGraph) GetEntrySuggestions(start time.Time, numMutualConnections int) []EntrySuggestion {
+	graph.mu.RLock()
+	defer graph.mu.RUnlock()
+
 	stronglyConnectedApps := graph.getStronglyConnectedApps(numMutualConnections)
 
 	entries := []EntrySuggestion{}
@@ -471,98 +526,80 @@ func (graph *ApplicationGraph) GetAverageUnproductiveDuration() time.Duration {
 	return duration / time.Duration(len(spans))
 }
 
-func (graph *ApplicationGraph) GetFocusScores() int {
+func (graph *ApplicationGraph) GetFocusScores(numMutualConnections int) map[string]float64 {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
-	spans := map[*gograph.Vertex[string]][]TimeSpan{}
-	incomingEdgeCounts := map[*gograph.Vertex[string]]int{}
-	outgoingSpans := map[*gograph.Vertex[string]][]TimeSpan{}
-	for _, v := range graph.Graph.GetAllVertices() {
-		meta := graph.vertexMetaMap[v.Label()]
-		assert.NotNil(meta)
+	stronglyConnectedApps := graph.getStronglyConnectedApps(numMutualConnections)
 
-		spans[v] = append(spans[v], meta.Intervals...)
+	focusScores := map[string]float64{}
+
+	if len(graph.vertexMetaMap) == 0 {
+		return focusScores
 	}
 
-	if len(spans) == 0 {
-		// TODO
+	outgoingSpans := map[string][]TimeSpan{}
+	for label, meta := range graph.vertexMetaMap {
+		outgoingSpans[label] = append(outgoingSpans[label], meta.Intervals...)
 	}
 
-	for v, s := range spans {
-		// assumption: order is preserved
-		// to have an interval, there needs to be an outgoing edge
-		// so if the order of edges is preserved, then span[i] is how long the app was used for before switching to outgoingEdge[i].Destination()
-		for i, e := range graph.Graph.EdgesOf(v) {
-			if e.Destination().Label() == v.Label() { // incoming
-				incomingEdgeCounts[v] += 1 // incoming edges create an interval on the source
-			} else { // outgoing
-				// 0         1         2         3         4         5
-				// outgoing, incoming, incoming, outgoing, incoming, outgoing
-				// at 3: idx = 3 - n(incomingEdgesBefore) = 3 - 2 = 1
-				//   - since len(outgoingSpans[v]) = number of outgoing edges
-				idx := i - incomingEdgeCounts[v]
-				outgoingSpans[v] = append(outgoingSpans[v], s[idx]) // len(outgoingSpans[v]) = number of outgoing edges
-			}
-		}
+	incomingCounts := map[string]int{}
+	outgoingCounts := map[string]int{}
+	for edge, meta := range graph.edgeMetaMap {
+		outgoingCounts[edge[0]] += meta.IncomingCount
+		incomingCounts[edge[1]] += meta.IncomingCount
 	}
 
-	stronglyConnectedApps := graph.getStronglyConnectedApps(3)
-	seenEdgesSet := map[string]struct{}{}
-	cycles := map[string][]TimeSpan{}
-	cycleCounts := map[string]int{}
-	for identifier, v := range stronglyConnectedApps {
-		for _, meta := range v {
+	appCycleSpanMap := map[string][]TimeSpan{}
+	appCycleIncomingCounts := map[string]int{}
+	appCycleOutgoingCounts := map[string]int{}
+	for label, metas := range stronglyConnectedApps {
+		for _, meta := range metas {
+			appCycleSpanMap[label] = append(appCycleSpanMap[label], meta.Spans...)
+
 			for edge, count := range meta.EdgeCounts {
-				keyAB := fmt.Sprintf("%v,%v", edge[0], edge[1])
-				if _, ok := seenEdgesSet[keyAB]; ok {
-					continue
+				if edge[0] == label {
+					appCycleOutgoingCounts[label] += count
 				}
 
-				keyBA := fmt.Sprintf("%v,%v", edge[1], edge[0])
-				if _, ok := seenEdgesSet[keyBA]; ok {
-					continue
+				if edge[1] == label {
+					appCycleIncomingCounts[label] += count
 				}
-
-				cycles[identifier] = append(cycles[identifier], meta.Spans...)
-				cycleCounts[identifier] += count
-				// cycle so n(A->B) = n(B->A)
-				seenEdgesSet[keyAB] = struct{}{}
-				seenEdgesSet[keyBA] = struct{}{}
 			}
 		}
 	}
 
-	focusScores := map[*gograph.Vertex[string]]float64{}
+	durations := map[string][]time.Duration{}
+	// collapse spans for each app which are part of a cycle
+	for label, spans := range outgoingSpans {
+		blocks := appCycleSpanMap[label]
+
+		for _, span := range spans {
+			if slices.ContainsFunc(blocks, span.Between) {
+				continue
+			}
+
+			durations[label] = append(durations[label], span[1].Sub(span[0]))
+		}
+
+		for _, block := range blocks {
+			durations[label] = append(durations[label], block[1].Sub(block[0]))
+		}
+	}
+
 	topN := utils.TopN(cmp.Compare[time.Duration], 10)
 
-	outgoingDurations := map[*gograph.Vertex[string]][]time.Duration{}
-	for v, d := range outgoingSpans {
-		cs := cycles[v.Label()]
+	for label, d := range durations {
+		incoming := incomingCounts[label] - appCycleIncomingCounts[label] + len(appCycleSpanMap[label])
+		outgoing := outgoingCounts[label] - appCycleOutgoingCounts[label] + len(appCycleSpanMap[label])
 
-		for _, span := range d {
-			for _, c := range cs {
-				if span.Between(c) {
-					continue
-				}
-
-				outgoingDurations[v] = append(outgoingDurations[v], span[1].Sub(span[0]))
-			}
+		totalEdges := incoming + outgoing
+		if totalEdges <= 0 {
+			continue
 		}
+
+		focusScores[label] = float64(len(topN(d))) / float64(totalEdges)
 	}
 
-	for v, d := range outgoingDurations {
-		ts := topN(d)
-		nSessions := len(ts)
-
-		// cycleCounts[v] gives us the total number of incoming and outgoing edges from a cycle
-		// since we're collapsing cycles, we remove all of them and
-		// len(cycles[v]) gives us the number of consecutive sessions
-		incomingEdges := incomingEdgeCounts[v] - cycleCounts[v.Label()] + len(cycles[v.Label()])
-		outgoingEdges := len(outgoingDurations[v]) - cycleCounts[v.Label()] + len(cycles[v.Label()])
-
-		focusScores[v] = float64(nSessions) / (float64(incomingEdges + outgoingEdges))
-	}
-
-	return 0
+	return focusScores
 }
