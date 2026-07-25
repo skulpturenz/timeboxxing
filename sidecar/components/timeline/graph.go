@@ -167,8 +167,8 @@ func (graph *ApplicationGraph) addVertex(curr ForegroundProcess) (bool, bool) {
 
 func (graph *ApplicationGraph) buildGraph() {
 	// breaks acquiring locks at the top but for reuse
-	graph.mu.RLock()
-	defer graph.mu.RUnlock()
+	graph.mu.Lock()
+	defer graph.mu.Unlock()
 
 	for v, m := range graph.vertexMetaMap {
 		vertex := graph.Graph.AddVertexByLabel(v, gograph.WithVertexWeight(float64(m.Duration.Milliseconds())))
@@ -201,6 +201,9 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 	}
 
 	if exists && prevProcess != nil {
+		graph.mu.Lock()
+		defer graph.mu.Unlock()
+
 		prevIdentifier := ""
 		if prevProcess.IsIdle() {
 			prevIdentifier = "idle"
