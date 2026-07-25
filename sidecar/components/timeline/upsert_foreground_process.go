@@ -28,18 +28,21 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 	}
 
 	err = writeQuerier.Unwrap().WriteTx(ctx, func(q *writequeries.Queries) error {
-		applicationId, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
-			Name:              *c.ActiveProcess.AppName,
-			Identifier:        c.ActiveProcess.AppIdentifier,
-			OperatingSystemID: int64(os),
-			Path:              c.ActiveProcess.AppPath,
-		})
-		if err != nil {
-			return err
+		var applicationId int64
+		if !c.ActiveProcess.IsIdle() {
+			applicationId, err = q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+				Name:              *c.ActiveProcess.AppName,
+				Identifier:        c.ActiveProcess.AppIdentifier,
+				OperatingSystemID: int64(os),
+				Path:              c.ActiveProcess.AppPath,
+			})
+			if err != nil {
+				return err
+			}
 		}
 
 		id, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
-			ApplicationID: &applicationId,
+			ApplicationID: utils.ZeroNil(applicationId),
 			Pid:           int64(*c.ActiveProcess.PID),
 			CreatedAtUtc:  c.ActiveProcess.Timestamp,
 		})
