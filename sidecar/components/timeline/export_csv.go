@@ -1,0 +1,61 @@
+package timeline
+
+import (
+	"container/list"
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/negrel/assert"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
+)
+
+type QueryExportCSV struct {
+	Timeline list.List
+}
+
+func (c QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, any]) (string, error) {
+	fps := []ForegroundProcess{}
+	for v, i := c.Timeline.Front(), 0; v != nil; v, i = v.Next(), i+1 {
+		c, ok := v.Value.(ForegroundProcess)
+		assert.True(ok)
+		if !ok {
+			return "", fmt.Errorf(fmt.Sprintf("command flush: item %v is not valid", i))
+		}
+
+		fps = append(fps, c)
+	}
+
+	var csvBuilder strings.Builder
+	csvBuilder.Grow(len(fps) + 1)
+
+	headers := []string{"appName",
+		"appIdentifier",
+		"appPath",
+		"pid",
+		"windowTitle",
+		"titleSource",
+		"timestamp",
+		"idle",
+		"killed"}
+	csvBuilder.WriteString(fmt.Sprintf("%v\n", strings.Join(headers, ",")))
+
+	for _, fp := range fps {
+		row := []string{
+			utils.Coalesce(fp.AppIdentifier, ""),
+			utils.Coalesce(fp.AppPath, ""),
+			fmt.Sprintf("%v", utils.Coalesce(fp.PID, 0)),
+			utils.Coalesce(fp.WindowTitle, ""),
+			fmt.Sprintf("%v", utils.Coalesce(fp.TitleSource, TitleSourceUnknown)),
+			fmt.Sprintf("%v", fp.Timestamp.Format(time.RFC3339)),
+			fmt.Sprintf("%v", fp.Idle),
+			fmt.Sprintf("%v", fp.Killed),
+		}
+
+		csvBuilder.WriteString(fmt.Sprintf("%v\n", strings.Join(row, ",")))
+	}
+
+	return csvBuilder.String(), nil
+}

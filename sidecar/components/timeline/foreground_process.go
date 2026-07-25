@@ -9,7 +9,6 @@ import (
 
 	"github.com/negrel/assert"
 	enumscategories "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_categories"
-	"github.com/skulpturenz/timeboxxing/sidecar/monitor/platform"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
@@ -24,7 +23,7 @@ const (
 )
 
 func (titlteSource TitleSource) String() string {
-	return []string{"ax", "osascript", "window_api", "none"}[titlteSource]
+	return []string{"unknown", "ax", "osascript", "window_api", "none"}[titlteSource]
 }
 
 func ParseTitleSource(code string) (TitleSource, error) {
@@ -48,7 +47,7 @@ type ForegroundProcess struct {
 	AppPath       *string
 	PID           *int32
 	WindowTitle   *string
-	TitleSource   *platform.TitleSource
+	TitleSource   *TitleSource
 	Timestamp     time.Time
 	Idle          bool
 	Killed        bool
