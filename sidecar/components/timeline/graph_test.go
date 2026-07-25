@@ -80,13 +80,13 @@ func TestGraphFrom_BuildsVerticesEdgesAndCounts(t *testing.T) {
 	assert.Equal(t, 2, metaA.Count)
 	assert.Equal(t, enumscategories.CategoryDevelopment, metaA.Category)
 	assert.Equal(t, 20*time.Second, metaA.Duration)
-	assert.Equal(t, [][2]time.Time{{at(0), at(10)}, {at(20), at(30)}}, metaA.Intervals)
+	assert.Equal(t, []TimeSpan{{at(0), at(10)}, {at(20), at(30)}}, metaA.Intervals)
 
 	metaB, ok := g.GetVertexMeta("B")
 	require.True(t, ok)
 	assert.Equal(t, 2, metaB.Count)
 	assert.Equal(t, 10*time.Second, metaB.Duration)
-	assert.Equal(t, [][2]time.Time{{at(10), at(20)}}, metaB.Intervals)
+	assert.Equal(t, []TimeSpan{{at(10), at(20)}}, metaB.Intervals)
 
 	edgeAB, ok := g.GetEdgeMeta("A", "B")
 	require.True(t, ok)
@@ -164,7 +164,7 @@ func TestGraphFrom_BrowserAsPrevLabelsEdgeSource(t *testing.T) {
 		appProc("terminal", 3, enumscategories.CategoryDevelopment, at(20)),
 	)
 
-	var g *TimelineGraph
+	var g *ApplicationGraph
 	require.NotPanics(t, func() { g = GraphFrom(tl) },
 		"browser-as-prev must not corrupt the edge source (graph.go:82-83)")
 
@@ -193,7 +193,7 @@ func TestGraphFrom_EmptyAndSingle(t *testing.T) {
 
 // mutualCluster builds a vscode<->terminal graph where each direction is switched twice, so both edges
 // pass a threshold of 2 and the pair forms a strongly connected component.
-func mutualCluster(t *testing.T) *TimelineGraph {
+func mutualCluster(t *testing.T) *ApplicationGraph {
 	t.Helper()
 	return GraphFrom(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),

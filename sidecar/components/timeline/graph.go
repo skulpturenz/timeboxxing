@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"container/list"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,246 +20,70 @@ import (
 
 type Edge = [2]string // [from, to]
 
-type TimelineGraph struct {
+type ApplicationGraph struct {
 	Graph         gograph.Graph[string]
 	mu            sync.RWMutex
-	vertexMetaMap map[string]*VertexMeta
-	edgeMetaMap   map[Edge]*EdgeMeta
+	vertexMetaMap map[string]*applicationGraphVertexMeta
+	edgeMetaMap   map[Edge]*applicationGraphEdgeMeta
+	activeProcess *ForegroundProcess
 }
 
-type TimeSpan = [2]time.Time
+type TimeSpan = utils.TimeSpan
 
-type VertexMeta struct {
+type applicationGraphVertexMeta struct {
 	Category  enumscategories.Category
 	Duration  time.Duration // total usage time
 	Intervals []TimeSpan    // span from curr start -> curr end
 	Count     int           // number of times app was used
 }
 
-type EdgeMeta struct {
+type applicationGraphEdgeMeta struct {
 	IncomingDuration time.Duration // time spent on A before switching to B
 	IncomingCount    int           // number of A->B
 	spans            []TimeSpan
 }
 
-func GraphFrom(timeline *list.List) *TimelineGraph {
+func GraphFrom(timeline *list.List) *ApplicationGraph {
 	g := gograph.New[string](gograph.Directed())
 
-	vertexMetaMap := map[string]*VertexMeta{}
-	edgeMetaMap := map[Edge]*EdgeMeta{}
+	vertexMetaMap := map[string]*applicationGraphVertexMeta{}
+	edgeMetaMap := map[Edge]*applicationGraphEdgeMeta{}
 
-	for e := timeline.Front(); e != nil; e = e.Next() {
-		prev := e.Prev()
-		next := e.Next()
-
-		curr, ok := e.Value.(ForegroundProcess)
-		assert.True(ok)
-
-		appIdentifier := ""
-		if curr.IsIdle() {
-			appIdentifier = "idle"
-		} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
-			appIdentifier = *curr.Enrichments.Browser.AppIdentifier
-		} else {
-			assert.NotNil(curr.AppIdentifier)
-			appIdentifier = *curr.AppIdentifier
-		}
-		assert.NotZero(appIdentifier)
-
-		vertexMeta := vertexMetaMap[appIdentifier]
-		if vertexMeta == nil {
-			if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
-				vertexMeta = &VertexMeta{
-					Category: *curr.Enrichments.Browser.Category,
-				}
-			} else {
-				vertexMeta = &VertexMeta{
-					Category: curr.Enrichments.Appmetadata.Category,
-				}
-			}
-			vertexMetaMap[appIdentifier] = vertexMeta
-		}
-		assert.NotNil(vertexMetaMap[appIdentifier])
-		vertexMeta.Count += 1
-
-		if prev != nil {
-			prevProcess, ok := prev.Value.(ForegroundProcess)
-			assert.True(ok)
-
-			prevIdentifier := ""
-			if prevProcess.IsIdle() {
-				prevIdentifier = "idle"
-			} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
-				prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
-			} else {
-				assert.NotNil(prevProcess.AppIdentifier)
-				prevIdentifier = *prevProcess.AppIdentifier
-			}
-			assert.NotEqual(appIdentifier, prevIdentifier)
-
-			edge := Edge{prevIdentifier, appIdentifier}
-			edgeMeta := edgeMetaMap[edge]
-			if edgeMeta == nil {
-				edgeMeta = &EdgeMeta{}
-				edgeMetaMap[edge] = edgeMeta
-			}
-			assert.NotNil(edgeMetaMap[edge])
-
-			edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
-			edgeMeta.spans = append(edgeMeta.spans, TimeSpan{prevProcess.Timestamp, curr.Timestamp})
-			edgeMeta.IncomingCount += 1
-		}
-
-		if next != nil {
-			nextProcess, ok := next.Value.(ForegroundProcess)
-			assert.True(ok)
-
-			if !nextProcess.IsEqual(curr) {
-				vertexMeta.Duration += nextProcess.Timestamp.Sub(curr.Timestamp)
-				vertexMeta.Intervals = append(vertexMeta.Intervals, TimeSpan{curr.Timestamp, nextProcess.Timestamp})
-			}
-		}
-	}
-
-	vertices := map[string]*gograph.Vertex[string]{}
-	for v, meta := range vertexMetaMap {
-		vertex := g.AddVertexByLabel(v, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
-
-		assert.NotNil(vertex)
-		vertices[v] = vertex
-	}
-
-	for edge, meta := range edgeMetaMap {
-		from := vertices[edge[0]]
-		assert.NotNil(from)
-
-		to := vertices[edge[1]]
-		assert.NotNil(to)
-
-		// pairs well: spends a lot of time on `from` before switching `to`
-		_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.IncomingDuration.Milliseconds())))
-		assert.Nil(err)
-	}
-
-	timelineGraph := TimelineGraph{
+	timelineGraph := ApplicationGraph{
 		Graph:         g,
 		vertexMetaMap: vertexMetaMap,
 		edgeMetaMap:   edgeMetaMap,
 	}
 
+	for e := timeline.Front(); e != nil; e = e.Next() {
+		curr, ok := e.Value.(ForegroundProcess)
+		assert.True(ok)
+
+		timelineGraph.upsertForegroundProcess(curr)
+	}
+
 	return &timelineGraph
 }
 
-func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph {
+func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGraph {
 	g := gograph.New[string](gograph.Directed())
 
-	vertexMetaMap := map[string]*VertexMeta{}
-	edgeMetaMap := map[Edge]*EdgeMeta{}
+	vertexMetaMap := map[string]*applicationGraphVertexMeta{}
+	edgeMetaMap := map[Edge]*applicationGraphEdgeMeta{}
 
-	timelineGraph := TimelineGraph{
+	timelineGraph := ApplicationGraph{
 		Graph:         g,
 		vertexMetaMap: vertexMetaMap,
 		edgeMetaMap:   edgeMetaMap,
 	}
 
 	go func() {
-		var prev *ForegroundProcess
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case curr := <-ch:
-				func() {
-					timelineGraph.mu.Lock()
-					defer timelineGraph.mu.Unlock()
-
-					if prev != nil && curr.IsEqual(*prev) {
-						return
-					}
-
-					appIdentifier := ""
-					if curr.IsIdle() {
-						appIdentifier = "idle"
-					} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
-						appIdentifier = *curr.Enrichments.Browser.AppIdentifier
-					} else {
-						assert.NotNil(curr.AppIdentifier)
-						appIdentifier = *curr.AppIdentifier
-					}
-					assert.NotZero(appIdentifier)
-
-					vertexMeta := vertexMetaMap[appIdentifier]
-					if vertexMeta == nil {
-						if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
-							vertexMeta = &VertexMeta{
-								Category: *curr.Enrichments.Browser.Category,
-							}
-						} else {
-							vertexMeta = &VertexMeta{
-								Category: curr.Enrichments.Appmetadata.Category,
-							}
-						}
-						vertexMetaMap[appIdentifier] = vertexMeta
-					}
-					assert.NotNil(vertexMetaMap[appIdentifier])
-					vertexMeta.Count += 1
-
-					if prev != nil {
-						prevProcess := *prev
-
-						prevIdentifier := ""
-						if prevProcess.IsIdle() {
-							prevIdentifier = "idle"
-						} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
-							prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
-						} else {
-							assert.NotNil(prevProcess.AppIdentifier)
-							prevIdentifier = *prevProcess.AppIdentifier
-						}
-						assert.NotEqual(appIdentifier, prevIdentifier)
-
-						edge := Edge{prevIdentifier, appIdentifier}
-						edgeMeta := edgeMetaMap[edge]
-						if edgeMeta == nil {
-							edgeMeta = &EdgeMeta{}
-							edgeMetaMap[edge] = edgeMeta
-						}
-						assert.NotNil(edgeMetaMap[edge])
-
-						edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
-						edgeMeta.IncomingCount += 1
-
-						prevMeta := vertexMetaMap[prevIdentifier]
-						assert.NotNil(prevMeta)
-
-						prevMeta.Duration += curr.Timestamp.Sub(prev.Timestamp)
-						prevMeta.Intervals = append(prevMeta.Intervals, TimeSpan{prev.Timestamp, curr.Timestamp})
-					}
-
-					for v, meta := range vertexMetaMap {
-						if g.GetVertexByID(v) == nil {
-							vertex := g.AddVertexByLabel(v, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
-
-							assert.NotNil(vertex)
-						}
-					}
-
-					for edge, meta := range edgeMetaMap {
-						from := g.GetVertexByID(edge[0])
-						assert.NotNil(from)
-
-						to := g.GetVertexByID(edge[1])
-						assert.NotNil(to)
-
-						if !g.ContainsEdge(from, to) {
-							_, err := g.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.IncomingDuration.Milliseconds())))
-							assert.Nil(err)
-						}
-					}
-
-					prev = &curr
-				}()
-
+				timelineGraph.upsertForegroundProcess(curr)
 			}
 		}
 	}()
@@ -265,7 +91,106 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *TimelineGraph 
 	return &timelineGraph
 }
 
-func (graph *TimelineGraph) GetVertexMeta(label string) (*VertexMeta, bool) {
+func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
+	graph.mu.Lock()
+	defer graph.mu.Unlock()
+
+	prevProcess := graph.activeProcess
+
+	if prevProcess != nil && curr.IsEqual(*prevProcess) {
+		return
+	}
+
+	appIdentifier := ""
+	if curr.IsIdle() {
+		appIdentifier = "idle"
+	} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
+		appIdentifier = *curr.Enrichments.Browser.AppIdentifier
+	} else {
+		assert.NotNil(curr.AppIdentifier)
+		appIdentifier = *curr.AppIdentifier
+	}
+	assert.NotZero(appIdentifier)
+
+	vertexMeta, vertexExists := graph.vertexMetaMap[appIdentifier]
+	if vertexMeta == nil {
+		if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
+			vertexMeta = &applicationGraphVertexMeta{
+				Category: *curr.Enrichments.Browser.Category,
+			}
+		} else {
+			vertexMeta = &applicationGraphVertexMeta{
+				Category: curr.Enrichments.Appmetadata.Category,
+			}
+		}
+		graph.vertexMetaMap[appIdentifier] = vertexMeta
+	}
+	assert.NotNil(graph.vertexMetaMap[appIdentifier])
+	vertexMeta.Count += 1
+
+	if prevProcess != nil {
+		prevIdentifier := ""
+		if prevProcess.IsIdle() {
+			prevIdentifier = "idle"
+		} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
+			prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
+		} else {
+			assert.NotNil(prevProcess.AppIdentifier)
+			prevIdentifier = *prevProcess.AppIdentifier
+		}
+		assert.NotEqual(appIdentifier, prevIdentifier)
+
+		edge := Edge{prevIdentifier, appIdentifier}
+		edgeMeta := graph.edgeMetaMap[edge]
+		if edgeMeta == nil {
+			edgeMeta = &applicationGraphEdgeMeta{}
+			graph.edgeMetaMap[edge] = edgeMeta
+		}
+		assert.NotNil(graph.edgeMetaMap[edge])
+
+		edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
+		edgeMeta.IncomingCount += 1
+
+		prevMeta := graph.vertexMetaMap[prevIdentifier]
+		assert.NotNil(prevMeta)
+
+		prevMeta.Duration += curr.Timestamp.Sub(prevProcess.Timestamp)
+		prevMeta.Intervals = append(prevMeta.Intervals, TimeSpan{prevProcess.Timestamp, curr.Timestamp})
+	}
+
+	vertices := map[string]*gograph.Vertex[string]{}
+	for v, meta := range graph.vertexMetaMap {
+		if vertexExists { // if the vertex already exists, adding it again returns nil instead of updating the weights
+			existing := graph.Graph.GetVertexByID(v)
+			assert.NotNil(existing)
+
+			graph.Graph.RemoveVertices(existing)
+		}
+
+		vertex := graph.Graph.AddVertexByLabel(v, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
+		assert.NotNil(vertex)
+
+		vertices[v] = vertex
+	}
+
+	for edge, meta := range graph.edgeMetaMap {
+		from := vertices[edge[0]]
+		assert.NotNil(from)
+
+		to := vertices[edge[1]]
+		assert.NotNil(to)
+
+		// pairs well: spends a lot of time on `from` before switching `to`
+		_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(meta.IncomingDuration.Milliseconds())))
+		assert.Condition(func() bool {
+			return vertexExists || err == nil
+		})
+	}
+
+	graph.activeProcess = &curr
+}
+
+func (graph *ApplicationGraph) GetVertexMeta(label string) (*applicationGraphVertexMeta, bool) {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
@@ -274,7 +199,7 @@ func (graph *TimelineGraph) GetVertexMeta(label string) (*VertexMeta, bool) {
 	return meta, ok
 }
 
-func (graph *TimelineGraph) GetEdgeMeta(fromLabel string, toLabel string) (*EdgeMeta, bool) {
+func (graph *ApplicationGraph) GetEdgeMeta(fromLabel string, toLabel string) (*applicationGraphEdgeMeta, bool) {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
@@ -283,17 +208,17 @@ func (graph *TimelineGraph) GetEdgeMeta(fromLabel string, toLabel string) (*Edge
 	return meta, ok
 }
 
-type EntrySuggestion struct {
+type StronglyConnectedEdgesMeta struct {
 	AppIdentifiers []string
-	Start          time.Time
-	End            time.Time
+	Spans          []TimeSpan
+	EdgeCounts     map[Edge]int
 }
 
-func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnections int) []EntrySuggestion {
+func (graph *ApplicationGraph) getStronglyConnectedApps(numMutualConnections int) map[string][]StronglyConnectedEdgesMeta {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
-	entries := []EntrySuggestion{}
+	stronglyConnectedApps := map[string][]StronglyConnectedEdgesMeta{}
 
 	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes
 	// easiest to explain with an example:
@@ -307,25 +232,30 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 
 		intervals := map[string][]TimeSpan{}
 		labels := map[string]struct{}{}
+		edges := []Edge{}
 		for i, x := range vertices {
 			for j, y := range vertices {
 				if i == j {
 					continue
 				}
 
-				edgeXY := graph.edgeMetaMap[Edge{x.Label(), y.Label()}]
-				edgeYX := graph.edgeMetaMap[Edge{y.Label(), x.Label()}]
-				if edgeXY == nil || edgeYX == nil {
+				edgeXY := Edge{x.Label(), y.Label()}
+				edgeYX := Edge{y.Label(), x.Label()}
+
+				edgeXYMeta := graph.edgeMetaMap[edgeXY]
+				edgeYXMeta := graph.edgeMetaMap[edgeYX]
+				if edgeXYMeta == nil || edgeYXMeta == nil {
 					continue
 				}
 
-				if edgeXY.IncomingCount < numMutualConnections || edgeYX.IncomingCount < numMutualConnections {
+				if edgeXYMeta.IncomingCount < numMutualConnections || edgeYXMeta.IncomingCount < numMutualConnections {
 					continue
 				}
 
 				label := x.Label()
 				assert.NotZero(label)
 				labels[label] = struct{}{}
+				edges = append(edges, edgeXY, edgeYX)
 			}
 		}
 
@@ -333,16 +263,7 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 			meta := graph.vertexMetaMap[label]
 			assert.NotNil(meta)
 
-			filtered := []TimeSpan{}
-			for _, s := range meta.Intervals {
-				if !s[0].After(start) {
-					continue
-				}
-
-				filtered = append(filtered, s)
-			}
-
-			intervals[label] = append(intervals[label], filtered...)
+			intervals[label] = append(intervals[label], meta.Intervals...)
 		}
 
 		flattened := []TimeSpan{}
@@ -376,22 +297,77 @@ func (graph *TimelineGraph) GetEntrySuggestions(start time.Time, numMutualConnec
 			}
 		}
 
-		suggestions := []EntrySuggestion{}
-		for _, i := range consecutive {
-			suggestions = append(suggestions, EntrySuggestion{
-				AppIdentifiers: slices.Collect(maps.Keys(labels)),
-				Start:          i[0],
-				End:            i[1],
-			})
+		// sorted so the identifiers, and any key derived from them, are stable across runs
+		appIdentifiers := slices.Sorted(maps.Keys(labels))
+
+		edgeCounts := map[Edge]int{}
+		for _, edge := range edges {
+			meta := graph.edgeMetaMap[edge]
+			assert.NotNil(meta)
+
+			for _, s := range meta.spans {
+				for _, c := range consecutive {
+					if s.Between(c) {
+						edgeCounts[edge] += 1
+					}
+				}
+			}
 		}
 
-		entries = append(entries, suggestions...)
+		for a := range labels {
+			meta := StronglyConnectedEdgesMeta{
+				AppIdentifiers: appIdentifiers,
+				Spans:          consecutive,
+				EdgeCounts:     edgeCounts,
+			}
+
+			stronglyConnectedApps[a] = append(stronglyConnectedApps[a], meta)
+		}
+	}
+
+	return stronglyConnectedApps
+}
+
+type EntrySuggestion struct {
+	AppIdentifiers []string
+	Start          time.Time
+	End            time.Time
+}
+
+func (graph *ApplicationGraph) GetEntrySuggestions(start time.Time, numMutualConnections int) []EntrySuggestion {
+	stronglyConnectedApps := graph.getStronglyConnectedApps(numMutualConnections)
+
+	entries := []EntrySuggestion{}
+	set := map[string]struct{}{}
+	for _, v := range stronglyConnectedApps {
+		for _, m := range v {
+			k := strings.Join(m.AppIdentifiers, ",")
+			if _, ok := set[k]; ok {
+				continue
+			}
+
+			for _, s := range m.Spans {
+				if s[0].Before(start) {
+					continue
+				}
+
+				suggestion := EntrySuggestion{
+					AppIdentifiers: m.AppIdentifiers,
+					Start:          s[0],
+					End:            s[1],
+				}
+
+				entries = append(entries, suggestion)
+			}
+
+			set[k] = struct{}{}
+		}
 	}
 
 	return entries
 }
 
-func (graph *TimelineGraph) GetTimeToProductive() time.Duration {
+func (graph *ApplicationGraph) GetTimeToProductive() time.Duration {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
@@ -437,7 +413,7 @@ func (graph *TimelineGraph) GetTimeToProductive() time.Duration {
 	return total / time.Duration(len(durationsToProductive))
 }
 
-func (graph *TimelineGraph) GetAverageProductiveDuration() time.Duration {
+func (graph *ApplicationGraph) GetAverageProductiveDuration() time.Duration {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
@@ -466,7 +442,7 @@ func (graph *TimelineGraph) GetAverageProductiveDuration() time.Duration {
 	return duration / time.Duration(len(spans))
 }
 
-func (graph *TimelineGraph) GetAverageUnproductiveDuration() time.Duration {
+func (graph *ApplicationGraph) GetAverageUnproductiveDuration() time.Duration {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
 
@@ -495,26 +471,13 @@ func (graph *TimelineGraph) GetAverageUnproductiveDuration() time.Duration {
 	return duration / time.Duration(len(spans))
 }
 
-func (graph *TimelineGraph) GetFocusScores() int {
+func (graph *ApplicationGraph) GetFocusScores() int {
 	graph.mu.RLock()
 	defer graph.mu.RUnlock()
-
-	// TODO: not sure if this is right
-	// want to find: of the time a user spends on the app, how much of that is focused (long sessions) work?
-	// lots of outgoing edges = not focused
-	// what if it's part of a loop (like with GetEntrySuggestions)?
-	// because there'd be a lot of outgoing edges but is focused just not on one app
-	// TODO: how to get a score? it would have to be relative to other apps?
-	// TODO: `Count` should be equal to `len(intervals)`. so we can weight each count based on how long the interval is
-	// we have a bunch of durations. find the top x% of durations, how many sessions (nth(interval)) are there in that range?
-	// number of sessions / count is percentage of focused sessions. count = len(intervals)
-	// relative	to y: (percentageY - percentageX) /	percentage x
-	// `GetEntrySuggestions` gives us the cycles. any spans within that range is also a focused session
 
 	spans := map[*gograph.Vertex[string]][]TimeSpan{}
 	incomingEdgeCounts := map[*gograph.Vertex[string]]int{}
 	outgoingSpans := map[*gograph.Vertex[string]][]TimeSpan{}
-	// outgoingDurations := map[*gograph.Vertex[string]][]time.Duration{}
 	for _, v := range graph.Graph.GetAllVertices() {
 		meta := graph.vertexMetaMap[v.Label()]
 		assert.NotNil(meta)
@@ -540,150 +503,32 @@ func (graph *TimelineGraph) GetFocusScores() int {
 				//   - since len(outgoingSpans[v]) = number of outgoing edges
 				idx := i - incomingEdgeCounts[v]
 				outgoingSpans[v] = append(outgoingSpans[v], s[idx]) // len(outgoingSpans[v]) = number of outgoing edges
-				// outgoingDurations[v] = append(outgoingDurations[v], s[idx][1].Sub(s[idx][0]))
 			}
-
-			// TODO: to consider cycles, we need to know how many outgoing edges are due to the cycle
-			// and we want to consider the entire cycle time as one span
-			// - we need to remove incomings during the cycle too (??)
-			// - think we can collapse all intervals from cycle start - cycle end into one
-			//   - number of outgoing edges after removing cycles: nOutgoingEdges - nIntervals (which are collapsed)
-			//   - number of incoming edges after removing cycles: ??
-			//      - nIncomingEdges - number of incoming edges from apps in cycle
-			//         - number of incoming edges from apps in cycle but only within the timespan of the cycle
 		}
 	}
 
-	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes
-	cycles := map[*gograph.Vertex[string]][]TimeSpan{}
+	stronglyConnectedApps := graph.getStronglyConnectedApps(3)
+	seenEdgesSet := map[string]struct{}{}
+	cycles := map[string][]TimeSpan{}
 	cycleCounts := map[string]int{}
-	// TODO: refactor: most of this is from `GetEntrySuggestions`
-	for _, vertices := range scss {
-		if len(vertices) < 2 {
-			continue
-		}
-
-		intervals := map[string][]TimeSpan{}
-		labels := map[string]*gograph.Vertex[string]{}
-		numMutualConnections := 3 // TODO
-		edges := []Edge{}
-		for i, x := range vertices {
-			for j, y := range vertices {
-				if i == j {
+	for identifier, v := range stronglyConnectedApps {
+		for _, meta := range v {
+			for edge, count := range meta.EdgeCounts {
+				keyAB := fmt.Sprintf("%v,%v", edge[0], edge[1])
+				if _, ok := seenEdgesSet[keyAB]; ok {
 					continue
 				}
 
-				edgeXY := graph.edgeMetaMap[Edge{x.Label(), y.Label()}]
-				edgeYX := graph.edgeMetaMap[Edge{y.Label(), x.Label()}]
-				if edgeXY == nil || edgeYX == nil {
+				keyBA := fmt.Sprintf("%v,%v", edge[1], edge[0])
+				if _, ok := seenEdgesSet[keyBA]; ok {
 					continue
 				}
 
-				if edgeXY.IncomingCount < numMutualConnections || edgeYX.IncomingCount < numMutualConnections {
-					continue
-				}
-
-				label := x.Label()
-				assert.NotZero(label)
-				labels[label] = x
-				// cycle, so incoming = outgoing. including XY and YX would double count
-				edges = append(edges, Edge{x.Label(), y.Label()})
-
-				// TODO: new
-				// cycle, so incoming = outgoing
-				// when an edge contains cycles, the number of outgoing edges will be equal to the number of incoming edges
-				// the count on these edges are not purely due to cycles. we have to find the number of counts due to cycles
-				//
-				// xy = nRemainderXY + nOutgoingCycleXY
-				// yx = nRemainderYX + nIncomingCycleYX
-				// nRemainderXY = (1 - (intervals within cycle / total intervals)) * xy
-				//    - (1 - (spans within cycle / total spans)) is the percentage of spans which is not due to cycles
-				//    - percentage of span within cycle == percentage of count due to cycle?
-				//    - every time we add to duration on the edge, also capture the span
-				//    - len(spans) == Count
-				// outgoing: positive
-				//
-				// xy + yx = (nRemainderXY + nOutgoingCycleXY) + -1 * (nRemainderYX + nIncomingCycleYX)
-				// xy + yx = (nRemainderXY + nOutgoingCycleXY) - (nRemainderYX - nOutgoingCycleXY)
-				// xy + yx = nRemainderXY - nRemainderYX + 2nOutgoingCycleXY (1)
-				//
-				// xy - yx = (nRemainderXY + nOutgoingCycleXY) - (-1 * (nRemainderYX + nIncomingCycleYX))
-				// xy - yx = (nRemainderXY + nOutgoingCycleXY) + (nRemainderYX + nIncomingCycleYX)
-				// xy - yx = (nRemainderXY + nOutgoingCycleXY) + (nRemainderYX - nOutgoingCycleXY)
-				// xy - yx = (nRemainderXY + nRemainderYX) + (nOutgoingCycleXY - nOutgoingCycleXY)
-				// xy - yx = (nRemainderXY + nRemainderYX) + 0
-				// xy - yx = nRemainderXY + nRemainderYX (2)
-				//
-				// TODO: two equations, three variables. need another equation to find number of cycles
-				//
-				// idea is that xy + yx will have 2 cycle components. xy - yx will remove the cycle component
-				// so if the vertex has a cycle, then subtracting the two will remove the non cycle components and leave us with the cycle component only
-				// if its zero then there are no cycles
-				// nCycles := math.Abs((float64(edgeXY.IncomingCount+edgeYX.IncomingCount) - float64(edgeXY.IncomingCount-edgeYX.IncomingCount)) / 2.0)
-				// nCyclesRound := int(math.Round(nCycles))
-				// assert.NotZero(nCyclesRound) // TODO: still not sure
-				// cycleCounts[x] += nCyclesRound
-				// cycleCounts[y] += nCyclesRound
-			}
-		}
-
-		for label := range labels {
-			meta := graph.vertexMetaMap[label]
-			assert.NotNil(meta)
-
-			filtered := []TimeSpan{}
-			for _, s := range meta.Intervals {
-				filtered = append(filtered, s)
-			}
-
-			intervals[label] = append(intervals[label], filtered...)
-		}
-
-		flattened := []TimeSpan{}
-		for _, v := range intervals {
-			flattened = append(flattened, v...)
-		}
-
-		if len(flattened) == 0 {
-			continue
-		}
-
-		slices.SortFunc(flattened, func(x TimeSpan, y TimeSpan) int {
-			return x[0].Compare(y[0])
-		})
-
-		// flattened has a list of intervals sorted in ascending order of start
-		// we want to find consecutive blocks of time
-		// in these blocks of times, the set of apps are strongly connected
-		consecutive := []TimeSpan{flattened[0]}
-		for _, curr := range flattened[1:] {
-			prev := &consecutive[len(consecutive)-1]
-
-			// without the gap check everything gets merged into one consecutive time
-			// because next will always be after
-			if curr[0].Sub(prev[1]) <= 1*time.Minute {
-				if curr[1].After(prev[1]) {
-					prev[1] = curr[1]
-				}
-			} else {
-				consecutive = append(consecutive, curr)
-			}
-		}
-
-		for _, v := range labels {
-			cycles[v] = append(cycles[v], consecutive...)
-		}
-
-		for _, e := range edges {
-			meta := graph.edgeMetaMap[e]
-
-			for _, c := range consecutive {
-				for _, s := range meta.spans {
-					if (c[0].Equal(s[0]) || s[0].After(c[0])) && (c[1].Equal(s[1]) || s[1].After(c[1])) {
-						cycleCounts[e[0]] += 1
-						cycleCounts[e[1]] += 1
-					}
-				}
+				cycles[identifier] = append(cycles[identifier], meta.Spans...)
+				cycleCounts[identifier] += count
+				// cycle so n(A->B) = n(B->A)
+				seenEdgesSet[keyAB] = struct{}{}
+				seenEdgesSet[keyBA] = struct{}{}
 			}
 		}
 	}
@@ -693,11 +538,11 @@ func (graph *TimelineGraph) GetFocusScores() int {
 
 	outgoingDurations := map[*gograph.Vertex[string]][]time.Duration{}
 	for v, d := range outgoingSpans {
-		cs := cycles[v]
+		cs := cycles[v.Label()]
 
 		for _, span := range d {
 			for _, c := range cs {
-				if (span[0].Equal(c[0]) || span[0].After(c[0])) && (span[1].Equal(c[1]) || span[1].Before(c[1])) {
+				if span.Between(c) {
 					continue
 				}
 
@@ -713,8 +558,8 @@ func (graph *TimelineGraph) GetFocusScores() int {
 		// cycleCounts[v] gives us the total number of incoming and outgoing edges from a cycle
 		// since we're collapsing cycles, we remove all of them and
 		// len(cycles[v]) gives us the number of consecutive sessions
-		incomingEdges := incomingEdgeCounts[v] - cycleCounts[v.Label()] + len(cycles[v])
-		outgoingEdges := len(outgoingDurations[v]) - cycleCounts[v.Label()] + len(cycles[v])
+		incomingEdges := incomingEdgeCounts[v] - cycleCounts[v.Label()] + len(cycles[v.Label()])
+		outgoingEdges := len(outgoingDurations[v]) - cycleCounts[v.Label()] + len(cycles[v.Label()])
 
 		focusScores[v] = float64(nSessions) / (float64(incomingEdges + outgoingEdges))
 	}
