@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/negrel/assert"
+	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
@@ -17,9 +18,9 @@ type QueryExportCSV struct {
 }
 
 func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, any]) (string, error) {
-	fps := []ForegroundProcess{}
+	fps := []models.ForegroundProcess{}
 	for v, i := q.Timeline.Front(), 0; v != nil; v, i = v.Next(), i+1 {
-		c, ok := v.Value.(ForegroundProcess)
+		c, ok := v.Value.(models.ForegroundProcess)
 		assert.True(ok)
 		if !ok {
 			return "", fmt.Errorf(fmt.Sprintf("command flush: item %v is not valid", i))
@@ -48,7 +49,7 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 			utils.Coalesce(fp.AppPath, ""),
 			fmt.Sprintf("%v", utils.Coalesce(fp.PID, 0)),
 			utils.Coalesce(fp.WindowTitle, ""),
-			fmt.Sprintf("%v", utils.Coalesce(fp.TitleSource, TitleSourceUnknown)),
+			fmt.Sprintf("%v", utils.Coalesce(fp.TitleSource, models.TitleSourceUnknown)),
 			fmt.Sprintf("%v", fp.Timestamp.Format(time.RFC3339)),
 			fmt.Sprintf("%v", fp.Idle),
 			fmt.Sprintf("%v", fp.Killed),

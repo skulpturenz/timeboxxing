@@ -8,13 +8,13 @@ import (
 
 	"github.com/hmdsefi/gograph"
 	"github.com/negrel/assert"
-	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
+	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	enumscategories "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_categories"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 type Edge = [2]string // [from, to]
-type ForegroundProcess = timeline.ForegroundProcess
+type ForegroundProcess = models.ForegroundProcess
 
 type ApplicationGraph struct {
 	Graph         gograph.Graph[string]

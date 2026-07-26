@@ -35,6 +35,11 @@ require (
 )
 
 require (
+	github.com/dave/jennifer v1.6.0 // indirect
+	github.com/jmattheis/goverter v1.9.4 // indirect
+)
+
+require (
 	buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.11-20250718181942-e35f9b667443.1 // indirect
 	buf.build/gen/go/bufbuild/protodescriptor/protocolbuffers/go v1.36.11-20250109164928-1da0de137947.1 // indirect
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1 // indirect
@@ -365,6 +370,7 @@ tool (
 	github.com/fullstorydev/grpcui/cmd/grpcui
 	github.com/go-task/task/v3/cmd/task
 	github.com/golang-migrate/migrate/v4/cmd/migrate
+	github.com/jmattheis/goverter/cmd/goverter
 	github.com/mitranim/gow
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 )

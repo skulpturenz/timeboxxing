@@ -4,12 +4,13 @@ import (
 	"context"
 
 	"github.com/negrel/assert"
+	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
 type CommandSubscribeReporter struct {
-	Chan          <-chan ForegroundProcess
-	activeProcess *ForegroundProcess
+	Chan          <-chan models.ForegroundProcess
+	activeProcess *models.ForegroundProcess
 }
 
 func (c *CommandSubscribeReporter) Exec(ctx context.Context, svcs *services.Services[any, any]) error {

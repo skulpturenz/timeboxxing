@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"github.com/negrel/assert"
+	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	enumsoperatingsystem "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_operating_system"
@@ -14,8 +15,8 @@ import (
 )
 
 type CommandUpsertForegroundProcess struct {
-	PreviousProcess *ForegroundProcess
-	ActiveProcess   ForegroundProcess
+	PreviousProcess *models.ForegroundProcess
+	ActiveProcess   models.ForegroundProcess
 }
 
 func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services.Services[any, any]) error {
