@@ -45,7 +45,7 @@ type ForegroundProcess struct {
 	AppName       *string
 	AppIdentifier *string
 	AppPath       *string
-	PID           *int32
+	PID           *int64
 	WindowTitle   *string
 	TitleSource   *TitleSource
 	Timestamp     time.Time
@@ -69,12 +69,11 @@ type AppMetadata struct {
 }
 
 type Browser struct {
-	Browser       string
-	Category      *enumscategories.Category // TODO
-	AppIdentifier *string                   // TODO
-	Title         string
+	Vendor        string
+	Category      *enumscategories.Category
+	AppIdentifier *string
 	Tab           string
-	URL           string
+	CdpURL        string
 	Domain        string
 }
 

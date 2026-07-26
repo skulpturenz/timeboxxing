@@ -60,7 +60,7 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 			Browser:             c.ActiveProcess.IsBrowser(),
 			Idle:                c.ActiveProcess.IsIdle(),
 			Tab:                 utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.Tab),
-			CdpUrl:              utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.URL),
+			CdpUrl:              utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.CdpURL),
 			Latitude:            c.ActiveProcess.Enrichments.Location.Latitude,
 			Longitude:           c.ActiveProcess.Enrichments.Location.Longitude,
 		})

@@ -25,7 +25,7 @@ func ptr[T any](v T) *T { return &v }
 
 // appProc builds a non-browser foreground process; its graph label is the identifier.
 // Distinct apps must use distinct PIDs (ForegroundProcess.IsEqual keys on PID).
-func appProc(identifier string, pid int32, cat enumscategories.Category, at time.Time) ForegroundProcess {
+func appProc(identifier string, pid int64, cat enumscategories.Category, at time.Time) ForegroundProcess {
 	name := identifier
 	return ForegroundProcess{
 		AppName:       &name,
@@ -45,14 +45,14 @@ func idleProc(at time.Time) ForegroundProcess {
 
 // browserProc builds a browser process; its graph label is the browser tab identifier (tabID),
 // and its category comes from Browser.Category.
-func browserProc(tabID string, cat enumscategories.Category, pid int32, at time.Time) ForegroundProcess {
+func browserProc(tabID string, cat enumscategories.Category, pid int64, at time.Time) ForegroundProcess {
 	c := cat
 	return ForegroundProcess{
 		AppIdentifier: ptr("com.google.Chrome"),
 		PID:           &pid,
 		Timestamp:     at,
 		Enrichments: timeline.Enrichments{
-			Browser: timeline.Browser{Browser: "chrome", AppIdentifier: &tabID, Category: &c},
+			Browser: timeline.Browser{Vendor: "chrome", AppIdentifier: &tabID, Category: &c},
 		},
 	}
 }
@@ -387,7 +387,7 @@ func TestGetEntrySuggestions_ThreeAppCycleRepeated(t *testing.T) {
 	// vscode <-> terminal and vscode <-> chrome, three full rounds
 	procs := []ForegroundProcess{}
 	second := 0
-	push := func(id string, pid int32) {
+	push := func(id string, pid int64) {
 		procs = append(procs, appProc(id, pid, enumscategories.CategoryDevelopment, at(second)))
 		second += 10
 	}
@@ -611,7 +611,7 @@ func TestGraphChan_ThreeAppCycleRepeated(t *testing.T) {
 	g := GraphChan(ctx, ch)
 
 	second := 0
-	send := func(id string, pid int32) {
+	send := func(id string, pid int64) {
 		ch <- appProc(id, pid, enumscategories.CategoryDevelopment, at(second))
 		second += 10
 	}

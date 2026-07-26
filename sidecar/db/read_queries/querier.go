@@ -17,6 +17,8 @@ type Querier interface {
 	GetSemanticIndexCounts(ctx context.Context, embeddingModelID *int64) (GetSemanticIndexCountsRow, error)
 	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
 	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
+	GetUnenrichedForegroundProcesses(ctx context.Context, arg GetUnenrichedForegroundProcessesParams) ([]GetUnenrichedForegroundProcessesRow, error)
+	GetUnindexedForegroundProcesses(ctx context.Context, arg GetUnindexedForegroundProcessesParams) ([]GetUnindexedForegroundProcessesRow, error)
 	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
 	ListModels(ctx context.Context) ([]Model, error)
 	ListProjects(ctx context.Context) ([]ListProjectsRow, error)
