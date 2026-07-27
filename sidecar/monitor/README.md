@@ -19,21 +19,27 @@ flowchart LR
     C -->|ForegroundProcess| RB[(ring buffer<br/>Stream)]
     RB -->|GetChan| R[reporter<br/>dedup + fan-out]
     R -->|change events| E[enrichment pipeline<br/>stack.Stack]
-    E -->|enriched| P[timeline projector]
+    E -->|enriched| CV[MonitorForegroundProcessConverter]
+    CV -->|models.ForegroundProcess| P[timeline ingest<br/>CommandSubscribeReporter]
 ```
 
 The pipeline is assembled in [`app/app.go`](../app/app.go) →
-`startForegroundProjection` ([app.go:113-136](../app/app.go#L113-L136)):
+`startForegroundProjection` ([app.go:124](../app/app.go#L124)):
 
 1. `stack.Stack()` builds the enrichment `Enricher` + the permission list.
 2. `monitor.New(ctx, Options{Permissions})` starts the poll goroutine and
    requests those permissions.
 3. `reporter.From(ctx, m.Stream)` starts the single consumer of the ring buffer.
 4. `pubsub.Subscribe("timeline")` yields a change-event channel that a goroutine
-   drains, `enrich`-es, and projects into the timeline event store.
+   drains, `enrich`-es, adapts to `models.ForegroundProcess` via
+   `MonitorForegroundProcessConverter`, and feeds a channel consumed by the
+   [`timeline`](../components/timeline/README.md) ingest command
+   (`CommandSubscribeReporter` → `CommandUpsertForegroundProcess`), which persists
+   each observation into the event store.
 
 Shutdown is a single `ctx` cancel that cascades: poll loop stops the ring buffer
-→ reporter goroutine closes subscriber channels → the `range events` loop exits.
+→ reporter goroutine closes subscriber channels → the enrich/convert loop closes
+its output channel → the ingest command loop exits.
 
 ## Package map
 
@@ -322,5 +328,6 @@ vendored protocol `*.xml`, generated `*.xml.go`, a hand-written `types.go`
   clones the `Enrichments` map per concurrent branch (`ParallelMapWithClone`) so the
   parallel writes never race, while `Pipe` threads one map sequentially.
 - **Goroutines per running pipeline:** poll loop, ring-buffer `run()`, reporter
-  fan-out, timeline consumer — plus, on Wayland, the idle `loop()` and each
-  event-driven window backend's reconnect goroutine.
+  fan-out, the timeline enrich/convert bridge, the timeline ingest command loop —
+  plus, on Wayland, the idle `loop()` and each event-driven window backend's
+  reconnect goroutine.
