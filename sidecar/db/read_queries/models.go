@@ -4,15 +4,11 @@
 
 package readqueries
 
-import (
-	"database/sql"
-)
-
 type Model struct {
 	ID             int64
 	Semantic       bool
 	Embedding      bool
-	OpenrouterSlug sql.NullString
-	OllamaSlug     sql.NullString
+	OpenrouterSlug *string
+	OllamaSlug     *string
 	Label          string
 }

@@ -6,7 +6,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 )
 
 type Querier interface {
@@ -15,15 +14,17 @@ type Querier interface {
 	GetOpenTimelineEvent(ctx context.Context) (GetOpenTimelineEventRow, error)
 	GetProjectColorIDByColor(ctx context.Context, color int64) (int64, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
-	GetSemanticIndexCounts(ctx context.Context, embeddingModelID sql.NullInt64) (GetSemanticIndexCountsRow, error)
+	GetSemanticIndexCounts(ctx context.Context, embeddingModelID *int64) (GetSemanticIndexCountsRow, error)
 	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
 	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
+	GetUnenrichedForegroundProcesses(ctx context.Context, arg GetUnenrichedForegroundProcessesParams) ([]GetUnenrichedForegroundProcessesRow, error)
+	GetUnindexedForegroundProcesses(ctx context.Context, arg GetUnindexedForegroundProcessesParams) ([]GetUnindexedForegroundProcessesRow, error)
 	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
 	ListModels(ctx context.Context) ([]Model, error)
 	ListProjects(ctx context.Context) ([]ListProjectsRow, error)
 	ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]ListTimesheetEntriesRow, error)
 	ListTimesheetEntriesInRange(ctx context.Context, arg ListTimesheetEntriesInRangeParams) ([]ListTimesheetEntriesInRangeRow, error)
-	ListTimesheetEntryUsageBlocks(ctx context.Context, ledgerItemsID sql.NullInt64) ([]sql.NullInt64, error)
+	ListTimesheetEntryUsageBlocks(ctx context.Context, ledgerItemsID *int64) ([]*int64, error)
 	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
 }
 

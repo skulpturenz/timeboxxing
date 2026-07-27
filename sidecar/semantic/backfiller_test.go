@@ -2,7 +2,6 @@ package semantic
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"log/slog"
@@ -43,12 +42,12 @@ func TestListMissingSemanticEventDocumentIDsFindsMissingDocumentsAndEmbeddings(t
 	if err != nil {
 		t.Fatalf("index event missing embedding: %v", err)
 	}
-	if err := database.WriteQuerier.DeleteTimelineEmbedding(ctx, sql.NullInt64{Int64: missingEmbeddingDocumentID, Valid: true}); err != nil {
+	if err := database.WriteQuerier.DeleteTimelineEmbedding(ctx, &missingEmbeddingDocumentID); err != nil {
 		t.Fatalf("delete embedding: %v", err)
 	}
 
 	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModelID: sql.NullInt64{Int64: 1, Valid: true},
+		EmbeddingModelID: ptr(int64(1)),
 		Limit:            10,
 	})
 	if err != nil {
@@ -103,7 +102,7 @@ func TestBackfillerTreatsEmbeddingModelChangesAsMissing(t *testing.T) {
 	}
 
 	ids, err := database.ReadQuerier.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModelID: sql.NullInt64{Int64: secondModelID, Valid: true},
+		EmbeddingModelID: ptr(secondModelID),
 		Limit:            10,
 	})
 	if err != nil {

@@ -1,12 +1,12 @@
 package settings
 
 import (
-	"database/sql"
 	"strings"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -28,14 +28,16 @@ func providerFromProto(provider settingsv1.AiProvider) (semantic.Provider, error
 	}
 }
 
-func providerToModelProviderID(provider semantic.Provider) sql.NullInt64 {
+func providerToModelProviderID(provider semantic.Provider) *int64 {
 	switch provider {
 	case semantic.ProviderOpenRouter:
-		return sql.NullInt64{Int64: modelProviderOpenRouterID, Valid: true}
+		id := int64(modelProviderOpenRouterID)
+		return &id
 	case semantic.ProviderOllama:
-		return sql.NullInt64{Int64: modelProviderOllamaID, Valid: true}
+		id := int64(modelProviderOllamaID)
+		return &id
 	default:
-		return sql.NullInt64{}
+		return nil
 	}
 }
 
@@ -55,8 +57,8 @@ func modelsToProto(models []readqueries.Model) []*settingsv1.ModelOption {
 	for _, model := range models {
 		out = append(out, &settingsv1.ModelOption{
 			Id:             model.ID,
-			OpenrouterSlug: model.OpenrouterSlug.String,
-			OllamaSlug:     model.OllamaSlug.String,
+			OpenrouterSlug: utils.Coalesce(model.OpenrouterSlug, ""),
+			OllamaSlug:     utils.Coalesce(model.OllamaSlug, ""),
 			Label:          model.Label,
 			Semantic:       model.Semantic,
 			Embedding:      model.Embedding,
@@ -68,7 +70,7 @@ func modelsToProto(models []readqueries.Model) []*settingsv1.ModelOption {
 func aiSettingsToProto(row readqueries.GetApplicationSettingsRow, openRouterSecretExists bool, ollamaSecretExists bool) *settingsv1.AiSettings {
 	return &settingsv1.AiSettings{
 		Provider:               providerToProtoFromLabel(row.ModelProviderLabel),
-		ModelProviderBaseUrl:   row.ModelProviderBaseUrl.String,
+		ModelProviderBaseUrl:   utils.Coalesce(row.ModelProviderBaseUrl, ""),
 		EmbeddingModelId:       row.EmbeddingModelID,
 		SemanticModelId:        row.SemanticModelID,
 		OpenrouterSecretExists: openRouterSecretExists,

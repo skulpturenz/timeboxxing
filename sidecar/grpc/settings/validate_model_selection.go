@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -26,11 +27,11 @@ func (s *Server) validateModelSelection(ctx context.Context, provider semantic.P
 
 	switch provider {
 	case semantic.ProviderOpenRouter:
-		if strings.TrimSpace(embeddingModel.OpenrouterSlug.String) == "" || strings.TrimSpace(semanticModel.OpenrouterSlug.String) == "" {
+		if strings.TrimSpace(utils.Coalesce(embeddingModel.OpenrouterSlug, "")) == "" || strings.TrimSpace(utils.Coalesce(semanticModel.OpenrouterSlug, "")) == "" {
 			return status.Error(codes.InvalidArgument, "selected models are unavailable for OpenRouter")
 		}
 	case semantic.ProviderOllama:
-		if strings.TrimSpace(embeddingModel.OllamaSlug.String) == "" || strings.TrimSpace(semanticModel.OllamaSlug.String) == "" {
+		if strings.TrimSpace(utils.Coalesce(embeddingModel.OllamaSlug, "")) == "" || strings.TrimSpace(utils.Coalesce(semanticModel.OllamaSlug, "")) == "" {
 			return status.Error(codes.InvalidArgument, "selected models are unavailable for Ollama")
 		}
 	default:

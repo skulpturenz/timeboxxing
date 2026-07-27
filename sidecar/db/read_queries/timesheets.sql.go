@@ -7,7 +7,7 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
+	"time"
 )
 
 const listTimesheetEntries = `-- name: ListTimesheetEntries :many
@@ -26,18 +26,18 @@ ORDER BY ledger_items.started_at_utc, ledger_items.id
 `
 
 type ListTimesheetEntriesParams struct {
-	StartedAtUtc   sql.NullTime
-	StartedAtUtc_2 sql.NullTime
+	StartedAtUtc   *time.Time
+	StartedAtUtc_2 *time.Time
 }
 
 type ListTimesheetEntriesRow struct {
 	ID           int64
-	ProjectID    sql.NullInt64
+	ProjectID    *int64
 	Title        string
-	Notes        sql.NullString
+	Notes        *string
 	Billable     bool
-	StartedAtUtc sql.NullTime
-	EndedAtUtc   sql.NullTime
+	StartedAtUtc *time.Time
+	EndedAtUtc   *time.Time
 }
 
 func (q *Queries) ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]ListTimesheetEntriesRow, error) {
@@ -87,18 +87,18 @@ ORDER BY ledger_items.started_at_utc, ledger_items.id
 `
 
 type ListTimesheetEntriesInRangeParams struct {
-	StartedAtUtc   sql.NullTime
-	StartedAtUtc_2 sql.NullTime
+	StartedAtUtc   *time.Time
+	StartedAtUtc_2 *time.Time
 }
 
 type ListTimesheetEntriesInRangeRow struct {
 	ID           int64
-	ProjectID    sql.NullInt64
+	ProjectID    *int64
 	Title        string
-	Notes        sql.NullString
+	Notes        *string
 	Billable     bool
-	StartedAtUtc sql.NullTime
-	EndedAtUtc   sql.NullTime
+	StartedAtUtc *time.Time
+	EndedAtUtc   *time.Time
 }
 
 func (q *Queries) ListTimesheetEntriesInRange(ctx context.Context, arg ListTimesheetEntriesInRangeParams) ([]ListTimesheetEntriesInRangeRow, error) {
@@ -139,15 +139,15 @@ WHERE ledger_items_id = ?
 ORDER BY timeline_id
 `
 
-func (q *Queries) ListTimesheetEntryUsageBlocks(ctx context.Context, ledgerItemsID sql.NullInt64) ([]sql.NullInt64, error) {
+func (q *Queries) ListTimesheetEntryUsageBlocks(ctx context.Context, ledgerItemsID *int64) ([]*int64, error) {
 	rows, err := q.db.QueryContext(ctx, listTimesheetEntryUsageBlocks, ledgerItemsID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []sql.NullInt64
+	var items []*int64
 	for rows.Next() {
-		var timeline_id sql.NullInt64
+		var timeline_id *int64
 		if err := rows.Scan(&timeline_id); err != nil {
 			return nil, err
 		}

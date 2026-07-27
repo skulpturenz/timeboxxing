@@ -1,10 +1,10 @@
 package transitions
 
 import (
-	"database/sql"
 	"time"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 const subscriberBufferSize = 64
@@ -85,25 +85,25 @@ func eventFromGetTransitionEventsRow(row readqueries.GetTransitionEventsRow) Eve
 		ID:        row.TransitionEventID,
 		StartedAt: row.StartedAt.UTC(),
 		EndedAt:   row.EndedAt.UTC(),
-		PID:       int32(row.Pid),
+		PID:       int32(utils.Coalesce(row.Pid, 0)),
 	}
-	if row.ApplicationName.Valid {
-		event.ApplicationName = row.ApplicationName.String
+	if row.ApplicationName != nil {
+		event.ApplicationName = *row.ApplicationName
 	}
-	if row.ApplicationIdentifier.Valid {
-		event.ApplicationIdentifier = row.ApplicationIdentifier.String
+	if row.ApplicationIdentifier != nil {
+		event.ApplicationIdentifier = *row.ApplicationIdentifier
 	}
-	if row.ApplicationPath.Valid {
-		event.ApplicationPath = row.ApplicationPath.String
+	if row.ApplicationPath != nil {
+		event.ApplicationPath = *row.ApplicationPath
 	}
-	if row.Browser.Valid {
-		event.Browser = row.Browser.Bool
+	if row.Browser != nil {
+		event.Browser = *row.Browser
 	}
 	if row.Tab != nil {
 		event.Tab = *row.Tab
 	}
-	if row.Idle.Valid {
-		event.Idle = row.Idle.Bool
+	if row.Idle != nil {
+		event.Idle = *row.Idle
 	}
 	if row.CdpUrl != nil {
 		event.CDPURL = *row.CdpUrl
@@ -119,25 +119,25 @@ func eventFromGetTransitionEventRow(row readqueries.GetTransitionEventRow) Event
 		Reason:    coarseReason(row.Idle),
 		StartedAt: row.StartedAt.UTC(),
 		EndedAt:   row.EndedAt.UTC(),
-		PID:       int32(row.Pid),
+		PID:       int32(utils.Coalesce(row.Pid, 0)),
 	}
-	if row.ApplicationName.Valid {
-		event.ApplicationName = row.ApplicationName.String
+	if row.ApplicationName != nil {
+		event.ApplicationName = *row.ApplicationName
 	}
-	if row.ApplicationIdentifier.Valid {
-		event.ApplicationIdentifier = row.ApplicationIdentifier.String
+	if row.ApplicationIdentifier != nil {
+		event.ApplicationIdentifier = *row.ApplicationIdentifier
 	}
-	if row.ApplicationPath.Valid {
-		event.ApplicationPath = row.ApplicationPath.String
+	if row.ApplicationPath != nil {
+		event.ApplicationPath = *row.ApplicationPath
 	}
-	if row.Browser.Valid {
-		event.Browser = row.Browser.Bool
+	if row.Browser != nil {
+		event.Browser = *row.Browser
 	}
 	if row.Tab != nil {
 		event.Tab = *row.Tab
 	}
-	if row.Idle.Valid {
-		event.Idle = row.Idle.Bool
+	if row.Idle != nil {
+		event.Idle = *row.Idle
 	}
 	if row.CdpUrl != nil {
 		event.CDPURL = *row.CdpUrl
@@ -153,25 +153,25 @@ func eventFromGetOpenTimelineEventRow(row readqueries.GetOpenTimelineEventRow) E
 		ID:        row.TransitionEventID,
 		Reason:    reasonActive,
 		StartedAt: row.StartedAt.UTC(),
-		PID:       int32(row.Pid),
+		PID:       int32(utils.Coalesce(row.Pid, 0)),
 	}
-	if row.ApplicationName.Valid {
-		event.ApplicationName = row.ApplicationName.String
+	if row.ApplicationName != nil {
+		event.ApplicationName = *row.ApplicationName
 	}
-	if row.ApplicationIdentifier.Valid {
-		event.ApplicationIdentifier = row.ApplicationIdentifier.String
+	if row.ApplicationIdentifier != nil {
+		event.ApplicationIdentifier = *row.ApplicationIdentifier
 	}
-	if row.ApplicationPath.Valid {
-		event.ApplicationPath = row.ApplicationPath.String
+	if row.ApplicationPath != nil {
+		event.ApplicationPath = *row.ApplicationPath
 	}
-	if row.Browser.Valid {
-		event.Browser = row.Browser.Bool
+	if row.Browser != nil {
+		event.Browser = *row.Browser
 	}
 	if row.Tab != nil {
 		event.Tab = *row.Tab
 	}
-	if row.Idle.Valid {
-		event.Idle = row.Idle.Bool
+	if row.Idle != nil {
+		event.Idle = *row.Idle
 	}
 	if row.CdpUrl != nil {
 		event.CDPURL = *row.CdpUrl
@@ -191,8 +191,8 @@ const (
 )
 
 // coarseReason derives a reason without adjacency context (single-row lookups).
-func coarseReason(idle sql.NullBool) string {
-	if idle.Valid && idle.Bool {
+func coarseReason(idle *bool) string {
+	if idle != nil && *idle {
 		return reasonIdle
 	}
 	return reasonFocusChange
@@ -203,17 +203,17 @@ func coarseReason(idle sql.NullBool) string {
 // application as the previous entry -> tab_change, otherwise focus_change.
 func reasonForTransitionRow(rows []readqueries.GetTransitionEventsRow, i int) string {
 	cur := rows[i]
-	if cur.Idle.Valid && cur.Idle.Bool {
+	if cur.Idle != nil && *cur.Idle {
 		return reasonIdle
 	}
 	if i == 0 {
 		return reasonFocusChange
 	}
 	prev := rows[i-1]
-	if prev.Idle.Valid && prev.Idle.Bool {
+	if prev.Idle != nil && *prev.Idle {
 		return reasonReturnFromIdle
 	}
-	if cur.ApplicationID.Valid && prev.ApplicationID.Valid && cur.ApplicationID.Int64 == prev.ApplicationID.Int64 {
+	if cur.ApplicationID != nil && prev.ApplicationID != nil && *cur.ApplicationID == *prev.ApplicationID {
 		return reasonTabChange
 	}
 	return reasonFocusChange

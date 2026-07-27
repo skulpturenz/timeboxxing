@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
@@ -35,17 +34,17 @@ WHERE timeline.id = ?
 
 type GetTransitionEventRow struct {
 	TransitionEventID     int64
-	ApplicationName       sql.NullString
-	ApplicationIdentifier sql.NullString
-	ApplicationPath       sql.NullString
+	ApplicationName       *string
+	ApplicationIdentifier *string
+	ApplicationPath       *string
 	StartedAt             time.Time
 	EndedAt               time.Time
-	Browser               sql.NullBool
+	Browser               *bool
 	Tab                   *string
-	Idle                  sql.NullBool
+	Idle                  *bool
 	CdpUrl                *string
-	ApplicationID         sql.NullInt64
-	Pid                   int64
+	ApplicationID         *int64
+	Pid                   *int64
 }
 
 func (q *Queries) GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error) {

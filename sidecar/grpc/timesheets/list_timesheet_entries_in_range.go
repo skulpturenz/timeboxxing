@@ -2,7 +2,6 @@ package timesheets
 
 import (
 	"context"
-	"database/sql"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
@@ -21,8 +20,8 @@ func (s *Server) ListTimesheetEntriesInRange(ctx context.Context, req *timesheet
 	}
 
 	rows, err := s.readQuerier.ListTimesheetEntriesInRange(ctx, readqueries.ListTimesheetEntriesInRangeParams{
-		StartedAtUtc:   sql.NullTime{Time: rangeStartedAt, Valid: true},
-		StartedAtUtc_2: sql.NullTime{Time: rangeEndedAt, Valid: true},
+		StartedAtUtc:   &rangeStartedAt,
+		StartedAtUtc_2: &rangeEndedAt,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list timesheet entries in range: %v", err)

@@ -11,8 +11,8 @@ blocks at the end, since DBML does not support relationship settings on inline c
 Table foreground_processes {
   id BIGINT [pk] // auto increment
   application_id BIGINT [ref: > applications.id]
-  pid BIGINT [NOT NULL]
-  created_at_utc TIMESTAMP [NOT NULL]
+  pid BIGINT // null when idle
+  created_at_utc TIMESTAMP [NOT NULL] // default: strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 
   indexes {
     created_at_utc [unique, name: 'unique_created_at_utc']
@@ -23,12 +23,17 @@ TABLE foreground_process_metadata {
   id BIGINT [pk] // auto increment
   foreground_process_id BIGINT [NOT NULL]
   browser boolean [NOT NULL, default: FALSE]
+  browser_vendor TEXT
+  browser_category BIGINT // ref application_categories.id (see Ref, ON DELETE SET NULL)
   idle boolean [NOT NULL, default: FALSE]
   tab TEXT
   cdp_url TEXT // chrome dev tools protocol
   latitude REAL
   longitude REAL
   public_ip TEXT
+  title_source TEXT
+  killed boolean [NOT NULL, default: FALSE]
+  window_title TEXT
 
   indexes {
     foreground_process_id [unique, name: 'unique_foreground_process_id']
@@ -40,6 +45,11 @@ TABLE timeline {
   id BIGINT [pk] // auto increment
   initial_foreground_process_id BIGINT
   end_foreground_process_id BIGINT
+
+  indexes {
+    initial_foreground_process_id [unique, name: 'unique_initial_foreground_process_id']
+    end_foreground_process_id [unique, name: 'unique_end_foreground_process_id']
+  }
 }
 
 TABLE timeline_semantic_documents {
@@ -135,7 +145,7 @@ Table applications {
   id BIGINT [pk] // auto increment
   name TEXT [NOT NULL]
   identifier TEXT
-  operating_system_id SMALLINT [ref: > operating_systems.id]
+  operating_system_id SMALLINT [ref: > operating_systems.id, NOT NULL]
   path TEXT
 
   indexes {
@@ -145,15 +155,23 @@ Table applications {
 
 Table application_categories {
   id BIGINT [pk] // auto increment
-  category_id BIGINT
+  category_id BIGINT [NOT NULL] // enums_categories value (natural key)
   code TEXT [NOT NULL]
   label TEXT [NOT NULL]
+
+  indexes {
+    category_id [unique, name: 'unique_category_id']
+  }
 }
 
 Table application_application_categories_map {
   id BIGINT [pk] // auto increment
   application_id BIGINT [NOT NULL]
   application_categories_id BIGINT [NOT NULL]
+
+  indexes {
+    (application_id, application_categories_id) [unique, name: 'unique_application_category']
+  }
 }
 
 Table operating_systems {
@@ -219,6 +237,7 @@ TABLE semantic_document_types {
 
 // Foreign keys with ON DELETE CASCADE (referential actions require standalone Ref definitions)
 Ref: foreground_process_metadata.foreground_process_id - foreground_processes.id [delete: cascade]
+Ref: foreground_process_metadata.browser_category > application_categories.id [delete: set null]
 Ref: timeline.initial_foreground_process_id > foreground_processes.id [delete: cascade]
 Ref: timeline.end_foreground_process_id > foreground_processes.id [delete: cascade]
 Ref: timeline_semantic_documents.timeline_id > timeline.id [delete: cascade]

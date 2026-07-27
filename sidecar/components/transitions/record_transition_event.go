@@ -2,7 +2,6 @@ package transitions
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"runtime"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	enumsoperatingsystem "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_operating_system"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransitionEventParams) (int64, error) {
@@ -25,34 +25,40 @@ func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransi
 	var timelineID int64
 	if err := s.writeTx.WriteTx(ctx, func(q *writequeries.Queries) error {
 		appName := strings.TrimSpace(params.ApplicationName)
-		applicationID := sql.NullInt64{}
+		var applicationID *int64
 
 		if !params.Idle && appName != "" {
+			os, err := enumsoperatingsystem.Parse(runtime.GOOS)
+			if err != nil {
+				return err
+			}
 			id, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 				Name:              appName,
-				Identifier:        nullString(params.ApplicationIdentifier),
-				OperatingSystemID: operatingSystemID(),
-				Path:              nullString(params.ApplicationPath),
+				Identifier:        utils.ZeroNil(strings.TrimSpace(params.ApplicationIdentifier)),
+				OperatingSystemID: int64(os),
+				Path:              utils.ZeroNil(strings.TrimSpace(params.ApplicationPath)),
 			})
 			if err != nil {
 				return fmt.Errorf("upsert application %q: %w", appName, err)
 			}
-			applicationID = sql.NullInt64{Int64: id, Valid: true}
+			applicationID = &id
 		}
+
+		pid := utils.ZeroNil(int64(params.PID))
 
 		// The event store keeps one foreground_processes row per boundary timestamp. Consecutive
 		// sessions share a boundary (EndedAt(N) == StartedAt(N+1)); the created_at_utc upsert makes
 		// the end row of one session and the initial row of the next the same physical row.
 		initialForegroundProcessID, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 			ApplicationID: applicationID,
-			Pid:           int64(params.PID),
+			Pid:           pid,
 			CreatedAtUtc:  startedAt,
 		})
 		if err != nil {
 			return fmt.Errorf("upsert initial foreground process: %w", err)
 		}
 
-		if err := q.CreateForegroundProcessMetadata(ctx, writequeries.CreateForegroundProcessMetadataParams{
+		if _, err := q.InsertForegroundProcessMetadata(ctx, writequeries.InsertForegroundProcessMetadataParams{
 			ForegroundProcessID: initialForegroundProcessID,
 			Browser:             params.Browser,
 			Idle:                params.Idle,
@@ -62,24 +68,24 @@ func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransi
 			Longitude:           params.Longitude,
 			PublicIp:            params.PublicIP,
 		}); err != nil {
-			return fmt.Errorf("create foreground process metadata: %w", err)
+			return fmt.Errorf("insert foreground process metadata: %w", err)
 		}
 
 		endForegroundProcessID, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 			ApplicationID: applicationID,
-			Pid:           int64(params.PID),
+			Pid:           pid,
 			CreatedAtUtc:  endedAt,
 		})
 		if err != nil {
 			return fmt.Errorf("upsert end foreground process: %w", err)
 		}
 
-		timelineID, err = q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
-			InitialForegroundProcessID: sql.NullInt64{Int64: initialForegroundProcessID, Valid: true},
-			EndForegroundProcessID:     sql.NullInt64{Int64: endForegroundProcessID, Valid: true},
+		timelineID, err = q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+			InitialForegroundProcessID: &initialForegroundProcessID,
+			EndForegroundProcessID:     &endForegroundProcessID,
 		})
 		if err != nil {
-			return fmt.Errorf("create timeline: %w", err)
+			return fmt.Errorf("upsert timeline: %w", err)
 		}
 		return nil
 	}); err != nil {
@@ -91,19 +97,6 @@ func (s *Service) RecordTransitionEvent(ctx context.Context, params RecordTransi
 	}
 
 	return timelineID, nil
-}
-
-// operatingSystemID maps the running platform to a seeded operating_systems id. Unknown platforms
-// (e.g. linux, which is not seeded) leave the application's operating_system_id NULL.
-func operatingSystemID() sql.NullInt64 {
-	switch runtime.GOOS {
-	case "darwin":
-		return sql.NullInt64{Int64: int64(enumsoperatingsystem.MacOS), Valid: true}
-	case "windows":
-		return sql.NullInt64{Int64: int64(enumsoperatingsystem.Windows), Valid: true}
-	default:
-		return sql.NullInt64{}
-	}
 }
 
 func transitionEventTimestamps(startedAt time.Time, endedAt time.Time) (time.Time, time.Time, error) {
@@ -118,9 +111,4 @@ func transitionEventTimestamps(startedAt time.Time, endedAt time.Time) (time.Tim
 	}
 
 	return startedAt, endedAt, nil
-}
-
-func nullString(value string) sql.NullString {
-	trimmed := strings.TrimSpace(value)
-	return sql.NullString{String: trimmed, Valid: trimmed != ""}
 }

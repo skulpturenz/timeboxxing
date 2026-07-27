@@ -7,12 +7,11 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const upsertApplication = `-- name: UpsertApplication :one
 INSERT INTO applications (name, identifier, operating_system_id, path)
-VALUES (?1, ?2, ?3, ?4)
+VALUES (?, ?, ?, ?)
 ON CONFLICT(identifier, operating_system_id) DO UPDATE SET
   name = excluded.name,
   path = COALESCE(excluded.path, applications.path)
@@ -21,9 +20,9 @@ RETURNING id
 
 type UpsertApplicationParams struct {
 	Name              string
-	Identifier        sql.NullString
-	OperatingSystemID sql.NullInt64
-	Path              sql.NullString
+	Identifier        *string
+	OperatingSystemID int64
+	Path              *string
 }
 
 func (q *Queries) UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error) {

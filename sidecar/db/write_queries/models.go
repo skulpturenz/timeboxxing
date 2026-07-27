@@ -5,15 +5,15 @@
 package writequeries
 
 import (
-	"database/sql"
+	"time"
 )
 
 type LedgerItem struct {
 	ID           int64
-	LedgerID     sql.NullInt64
+	LedgerID     *int64
 	Billable     bool
 	Title        string
-	Notes        sql.NullString
-	StartedAtUtc sql.NullTime
-	EndedAtUtc   sql.NullTime
+	Notes        *string
+	StartedAtUtc *time.Time
+	EndedAtUtc   *time.Time
 }

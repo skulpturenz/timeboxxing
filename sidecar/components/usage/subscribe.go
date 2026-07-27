@@ -27,19 +27,61 @@ func (s *Service) Subscribe(ctx context.Context, params SubscribeParams) Subscri
 		ticker := time.NewTicker(minDuration(s.activeSnapshotInterval, time.Second))
 		defer ticker.Stop()
 
-		sendActive := func() (bool, bool) {
+		// Completed sessions are deduplicated by their stable id — the timeline entry, keyed by its
+		// unique initial_foreground_process_id — so a session is streamed at most once regardless of
+		// how it is discovered (a published transition event or a DB poll). The active (open/current)
+		// event is intentionally NOT deduplicated: it is re-sent on each snapshot so its running
+		// duration keeps advancing.
+		seen := map[int64]struct{}{}
+
+		send := func(event Event) bool {
+			select {
+			case events <- event:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
+		emitCompleted := func(event Event) bool {
+			if _, ok := seen[event.ID]; ok {
+				return true
+			}
+			seen[event.ID] = struct{}{}
+			return send(event)
+		}
+
+		// pollCompleted picks up sessions written directly to the event store. The production ingest
+		// records timeline entries but does not publish transition events, so polling is the only way
+		// the live stream learns about newly-completed sessions. Only not-yet-seen completed events
+		// are emitted; the active event is handled separately by sendActive.
+		pollCompleted := func() bool {
+			usageEvents, err := s.GetEvents(ctx, GetEventsParams{Window: params.Window})
+			if err != nil {
+				return true
+			}
+			for _, event := range usageEvents {
+				if event.Active {
+					continue
+				}
+				if !emitCompleted(event) {
+					return false
+				}
+			}
+			return true
+		}
+
+		sendActive := func() (keepGoing bool, sent bool) {
 			event, ok := s.activeEvent(ctx, params.Window)
 			if !ok {
 				return true, false
 			}
-			select {
-			case events <- event:
-				return true, true
-			case <-ctx.Done():
-				return false, false
-			}
+			return send(event), true
 		}
 
+		if !pollCompleted() {
+			return
+		}
 		if keepGoing, sent := sendActive(); !keepGoing {
 			return
 		} else if sent {
@@ -51,6 +93,9 @@ func (s *Service) Subscribe(ctx context.Context, params SubscribeParams) Subscri
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if !pollCompleted() {
+					return
+				}
 				if keepGoing, sent := sendActive(); !keepGoing {
 					return
 				} else if sent {
@@ -60,18 +105,10 @@ func (s *Service) Subscribe(ctx context.Context, params SubscribeParams) Subscri
 				if !ok {
 					return
 				}
-				if !eventOverlapsWindow(event, params.Window) {
-					if keepGoing, sent := sendActive(); !keepGoing {
+				if eventOverlapsWindow(event, params.Window) {
+					if !emitCompleted(eventFromTransition(event)) {
 						return
-					} else if sent {
-						ticker.Reset(s.activeSnapshotInterval)
 					}
-					continue
-				}
-				select {
-				case events <- eventFromTransition(event):
-				case <-ctx.Done():
-					return
 				}
 				if keepGoing, sent := sendActive(); !keepGoing {
 					return

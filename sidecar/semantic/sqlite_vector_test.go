@@ -45,7 +45,7 @@ func createSemanticVectorDocument(t *testing.T, ctx context.Context, q writequer
 	t.Helper()
 	documentID, err := q.UpsertTimelineSemanticDocument(ctx, writequeries.UpsertTimelineSemanticDocumentParams{
 		DocumentKey: key,
-		Type:        sql.NullInt64{Int64: 1, Valid: true},
+		Type:        ptr(int64(1)),
 		Content:     key,
 	})
 	if err != nil {
@@ -56,8 +56,8 @@ func createSemanticVectorDocument(t *testing.T, ctx context.Context, q writequer
 		t.Fatalf("encode embedding: %v", err)
 	}
 	if err := q.CreateTimelineEmbedding(ctx, writequeries.CreateTimelineEmbeddingParams{
-		TimelineSemanticDocumentsID: sql.NullInt64{Int64: documentID, Valid: true},
-		EmbeddingModelID:            sql.NullInt64{Int64: 1, Valid: true},
+		TimelineSemanticDocumentsID: &documentID,
+		EmbeddingModelID:            ptr(int64(1)),
 		Dimension:                   StoreEmbeddingDimension,
 		Embedding:                   encoded,
 	}); err != nil {

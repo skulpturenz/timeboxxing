@@ -7,22 +7,21 @@ package writequeries
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
 const upsertForegroundProcess = `-- name: UpsertForegroundProcess :one
-INSERT INTO foreground_processes (application_id, pid, created_at_utc)
+INSERT INTO foreground_processes(application_id, pid, created_at_utc)
 VALUES (?, ?, ?)
 ON CONFLICT(created_at_utc) DO UPDATE SET
-  application_id = excluded.application_id,
-  pid = excluded.pid
+    application_id = excluded.application_id,
+    pid = excluded.pid
 RETURNING id
 `
 
 type UpsertForegroundProcessParams struct {
-	ApplicationID sql.NullInt64
-	Pid           int64
+	ApplicationID *int64
+	Pid           *int64
 	CreatedAtUtc  time.Time
 }
 

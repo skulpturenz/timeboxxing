@@ -65,6 +65,11 @@ tasks:
     cmds:
       - go run ./cmd/update-sqlite-vector
 
+  generate-converters:
+    desc: Generate type converters
+    cmds:
+      - go tool goverter gen ./components/timeline/converters
+
   generate-env-docs:
     desc: Generate docs for env configuration
     cmds:
@@ -74,4 +79,5 @@ tasks:
     desc: Run all generators
     deps:
       - generate-models
+      - generate-converters
       - generate-env-docs

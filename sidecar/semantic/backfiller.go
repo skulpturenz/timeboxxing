@@ -2,7 +2,6 @@ package semantic
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -41,7 +40,7 @@ func (b *Backfiller) HasMissing(ctx context.Context) (bool, error) {
 	}
 
 	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModelID: sql.NullInt64{Int64: b.embeddingModelID, Valid: true},
+		EmbeddingModelID: &b.embeddingModelID,
 		Limit:            1,
 	})
 	if err != nil {
@@ -62,7 +61,7 @@ func (b *Backfiller) BackfillMissing(ctx context.Context, limit int64) (Backfill
 	}
 
 	ids, err := b.lister.ListMissingSemanticEventDocumentIDs(ctx, readqueries.ListMissingSemanticEventDocumentIDsParams{
-		EmbeddingModelID: sql.NullInt64{Int64: b.embeddingModelID, Valid: true},
+		EmbeddingModelID: &b.embeddingModelID,
 		Limit:            limit,
 	})
 	if err != nil {

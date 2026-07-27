@@ -9,10 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"database/sql"
-
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -26,8 +25,8 @@ func (s *Server) ExportTimesheet(ctx context.Context, req *timesheetsv1.ExportTi
 		return nil, status.Error(codes.InvalidArgument, "timesheet day window is invalid")
 	}
 	entries, err := s.readQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
-		StartedAtUtc:   sql.NullTime{Time: dayStartedAt, Valid: true},
-		StartedAtUtc_2: sql.NullTime{Time: dayEndedAt, Valid: true},
+		StartedAtUtc:   &dayStartedAt,
+		StartedAtUtc_2: &dayEndedAt,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list export entries: %v", err)
@@ -77,15 +76,15 @@ type exportedTimesheetEntry struct {
 }
 
 func entryStartedAt(row readqueries.ListTimesheetEntriesRow) time.Time {
-	if row.StartedAtUtc.Valid {
-		return row.StartedAtUtc.Time.UTC()
+	if row.StartedAtUtc != nil {
+		return row.StartedAtUtc.UTC()
 	}
 	return time.Time{}
 }
 
 func entryDurationMs(row readqueries.ListTimesheetEntriesRow) int64 {
-	if row.StartedAtUtc.Valid && row.EndedAtUtc.Valid {
-		return row.EndedAtUtc.Time.Sub(row.StartedAtUtc.Time).Milliseconds()
+	if row.StartedAtUtc != nil && row.EndedAtUtc != nil {
+		return row.EndedAtUtc.Sub(*row.StartedAtUtc).Milliseconds()
 	}
 	return 0
 }
@@ -106,7 +105,7 @@ func exportTimesheetJSON(dayStartedAt time.Time, entries []readqueries.ListTimes
 		}
 		out.Entries = append(out.Entries, exportedTimesheetEntry{
 			Title:      entry.Title,
-			Notes:      entry.Notes.String,
+			Notes:      utils.Coalesce(entry.Notes, ""),
 			StartedAt:  entryStartedAt(entry),
 			DurationMs: durationMs,
 			Billable:   entry.Billable,
@@ -124,7 +123,7 @@ func exportTimesheetCSV(entries []readqueries.ListTimesheetEntriesRow) ([]byte, 
 	for _, entry := range entries {
 		if err := writer.Write([]string{
 			entry.Title,
-			entry.Notes.String,
+			utils.Coalesce(entry.Notes, ""),
 			entryStartedAt(entry).Format(time.RFC3339),
 			strconv.FormatInt(entryDurationMs(entry), 10),
 			strconv.FormatBool(entry.Billable),

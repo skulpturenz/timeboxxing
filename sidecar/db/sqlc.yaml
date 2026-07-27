@@ -9,27 +9,7 @@ sql:
         out: read_queries
         emit_interface: true
         omit_unused_structs: true
-        overrides:
-          - column: foreground_process_metadata.tab
-            go_type:
-              type: string
-              pointer: true
-          - column: foreground_process_metadata.cdp_url
-            go_type:
-              type: string
-              pointer: true
-          - column: foreground_process_metadata.latitude
-            go_type:
-              type: float64
-              pointer: true
-          - column: foreground_process_metadata.longitude
-            go_type:
-              type: float64
-              pointer: true
-          - column: foreground_process_metadata.public_ip
-            go_type:
-              type: string
-              pointer: true
+        emit_pointers_for_null_types: true
   - engine: sqlite
     schema: schema
     queries: write_queries
@@ -39,24 +19,4 @@ sql:
         out: write_queries
         emit_interface: true
         omit_unused_structs: true
-        overrides:
-          - column: foreground_process_metadata.tab
-            go_type:
-              type: string
-              pointer: true
-          - column: foreground_process_metadata.cdp_url
-            go_type:
-              type: string
-              pointer: true
-          - column: foreground_process_metadata.latitude
-            go_type:
-              type: float64
-              pointer: true
-          - column: foreground_process_metadata.longitude
-            go_type:
-              type: float64
-              pointer: true
-          - column: foreground_process_metadata.public_ip
-            go_type:
-              type: string
-              pointer: true
+        emit_pointers_for_null_types: true

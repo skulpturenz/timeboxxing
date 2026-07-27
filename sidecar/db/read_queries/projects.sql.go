@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const getProjectColorIDByColor = `-- name: GetProjectColorIDByColor :one
@@ -38,7 +37,7 @@ ORDER BY projects.name COLLATE NOCASE, projects.id
 type ListProjectsRow struct {
 	ID              int64
 	Name            string
-	ColorArgb       sql.NullInt64
+	ColorArgb       *int64
 	HourlyRateCents int64
 }
 

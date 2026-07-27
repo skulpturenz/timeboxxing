@@ -184,6 +184,8 @@ func createSemanticTestTransitionEvent(t *testing.T, ctx context.Context, q writ
 	return createSemanticTestTransitionEventAt(t, ctx, q, time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC))
 }
 
+func ptr[T any](v T) *T { return &v }
+
 func createSemanticTestTransitionEventAt(t *testing.T, ctx context.Context, q writequeries.Querier, startedAt time.Time) int64 {
 	t.Helper()
 	applicationID, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
@@ -193,11 +195,11 @@ func createSemanticTestTransitionEventAt(t *testing.T, ctx context.Context, q wr
 		t.Fatalf("upsert application: %v", err)
 	}
 
-	application := sql.NullInt64{Int64: applicationID, Valid: true}
+	application := &applicationID
 
 	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 		ApplicationID: application,
-		Pid:           4242,
+		Pid:           ptr(int64(4242)),
 		CreatedAtUtc:  startedAt.UTC(),
 	})
 	if err != nil {
@@ -205,29 +207,29 @@ func createSemanticTestTransitionEventAt(t *testing.T, ctx context.Context, q wr
 	}
 	tab := "GitHub"
 	url := "https://github.com/"
-	if err := q.CreateForegroundProcessMetadata(ctx, writequeries.CreateForegroundProcessMetadataParams{
+	if _, err := q.InsertForegroundProcessMetadata(ctx, writequeries.InsertForegroundProcessMetadataParams{
 		ForegroundProcessID: initialFP,
 		Browser:             true,
 		Idle:                false,
 		Tab:                 &tab,
 		CdpUrl:              &url,
 	}); err != nil {
-		t.Fatalf("create foreground process metadata: %v", err)
+		t.Fatalf("insert foreground process metadata: %v", err)
 	}
 	endFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 		ApplicationID: application,
-		Pid:           4242,
+		Pid:           ptr(int64(4242)),
 		CreatedAtUtc:  startedAt.Add(5 * time.Minute).UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert end foreground process: %v", err)
 	}
-	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
-		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
-		EndForegroundProcessID:     sql.NullInt64{Int64: endFP, Valid: true},
+	timelineID, err := q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+		InitialForegroundProcessID: &initialFP,
+		EndForegroundProcessID:     &endFP,
 	})
 	if err != nil {
-		t.Fatalf("create timeline: %v", err)
+		t.Fatalf("upsert timeline: %v", err)
 	}
 
 	return timelineID

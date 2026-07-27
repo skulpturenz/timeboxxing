@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const getApplicationSettings = `-- name: GetApplicationSettings :one
@@ -34,17 +33,17 @@ WHERE application_settings.id = 1
 
 type GetApplicationSettingsRow struct {
 	ID                      int64
-	ModelProviderID         sql.NullInt64
+	ModelProviderID         *int64
 	ModelProviderLabel      string
-	ModelProviderBaseUrl    sql.NullString
+	ModelProviderBaseUrl    *string
 	EmbeddingModelID        int64
 	SemanticModelID         int64
-	ReleaseChannel          sql.NullInt64
-	EmbeddingOpenrouterSlug sql.NullString
-	EmbeddingOllamaSlug     sql.NullString
+	ReleaseChannel          *int64
+	EmbeddingOpenrouterSlug *string
+	EmbeddingOllamaSlug     *string
 	EmbeddingLabel          string
-	SemanticOpenrouterSlug  sql.NullString
-	SemanticOllamaSlug      sql.NullString
+	SemanticOpenrouterSlug  *string
+	SemanticOllamaSlug      *string
 	SemanticLabel           string
 }
 

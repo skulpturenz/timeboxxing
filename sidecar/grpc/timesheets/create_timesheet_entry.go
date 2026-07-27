@@ -2,7 +2,6 @@ package timesheets
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -28,9 +27,10 @@ func (s *Server) CreateTimesheetEntry(ctx context.Context, req *timesheetsv1.Cre
 	startedAt := startedAtForEntry(dayStartedAt, int64(req.GetStartMinute()))
 	endedAt := startedAt.Add(time.Duration(req.GetDurationMinutes()) * time.Minute)
 
-	projectID := sql.NullInt64{}
+	var projectID *int64
 	if req.GetProjectId() > 0 {
-		projectID = sql.NullInt64{Int64: req.GetProjectId(), Valid: true}
+		id := req.GetProjectId()
+		projectID = &id
 	}
 
 	// Usage ids arrive as "sidecar-<timeline id>" strings; parse them to timeline ids to link.
@@ -53,23 +53,25 @@ func (s *Server) CreateTimesheetEntry(ctx context.Context, req *timesheetsv1.Cre
 		}
 
 		var err error
+		notes := req.GetNotes()
 		entry, err = q.CreateLedgerItem(ctx, writequeries.CreateLedgerItemParams{
 			Billable:     req.GetBillable(),
 			Title:        entryTitle(req.GetTitle()),
-			Notes:        sql.NullString{String: req.GetNotes(), Valid: true},
-			StartedAtUtc: sql.NullTime{Time: startedAt, Valid: true},
-			EndedAtUtc:   sql.NullTime{Time: endedAt, Valid: true},
+			Notes:        &notes,
+			StartedAtUtc: &startedAt,
+			EndedAtUtc:   &endedAt,
 		})
 		if err != nil {
 			return status.Errorf(codes.Internal, "create ledger item: %v", err)
 		}
 
-		if projectID.Valid {
+		if projectID != nil {
+			costingTypeID := int64(costingTypeHourlyID)
 			if err := q.CreateProjectCost(ctx, writequeries.CreateProjectCostParams{
-				LedgerItemsID: sql.NullInt64{Int64: entry.ID, Valid: true},
+				LedgerItemsID: &entry.ID,
 				ProjectsID:    projectID,
-				CostingTypeID: sql.NullInt64{Int64: costingTypeHourlyID, Valid: true},
-				Rate:          sql.NullInt64{},
+				CostingTypeID: &costingTypeID,
+				Rate:          nil,
 			}); err != nil {
 				// A non-existent project_id trips the project_costs -> projects foreign key.
 				if isForeignKeyConstraintErr(err) {
@@ -81,8 +83,8 @@ func (s *Server) CreateTimesheetEntry(ctx context.Context, req *timesheetsv1.Cre
 
 		for _, timelineID := range timelineIDs {
 			if err := q.CreateLedgerItemTimelineEntry(ctx, writequeries.CreateLedgerItemTimelineEntryParams{
-				LedgerItemsID: sql.NullInt64{Int64: entry.ID, Valid: true},
-				TimelineID:    sql.NullInt64{Int64: timelineID, Valid: true},
+				LedgerItemsID: &entry.ID,
+				TimelineID:    &timelineID,
 			}); err != nil {
 				return status.Errorf(codes.Internal, "link timeline entry: %v", err)
 			}

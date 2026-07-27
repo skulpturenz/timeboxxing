@@ -28,9 +28,16 @@ require (
 	howett.net/plist v1.0.1
 )
 
-require resty.dev/v3 v3.0.0-rc.3
+require (
+	dario.cat/mergo v1.0.2
+	github.com/hmdsefi/gograph v0.7.0
+	resty.dev/v3 v3.0.0-rc.3
+)
 
-require dario.cat/mergo v1.0.2 // indirect
+require (
+	github.com/dave/jennifer v1.6.0 // indirect
+	github.com/jmattheis/goverter v1.9.4 // indirect
+)
 
 require (
 	buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.11-20250718181942-e35f9b667443.1 // indirect
@@ -363,6 +370,7 @@ tool (
 	github.com/fullstorydev/grpcui/cmd/grpcui
 	github.com/go-task/task/v3/cmd/task
 	github.com/golang-migrate/migrate/v4/cmd/migrate
+	github.com/jmattheis/goverter/cmd/goverter
 	github.com/mitranim/gow
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 )

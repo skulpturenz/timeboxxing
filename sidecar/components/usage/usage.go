@@ -7,7 +7,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
-const defaultActiveSnapshotInterval = 30 * time.Second
+const defaultActiveSnapshotInterval = 2 * time.Second
 
 type Service struct {
 	transitions            *componentTransitions.Service

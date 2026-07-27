@@ -7,7 +7,6 @@ package readqueries
 
 import (
 	"context"
-	"database/sql"
 )
 
 const getSemanticIndexCounts = `-- name: GetSemanticIndexCounts :one
@@ -34,7 +33,7 @@ type GetSemanticIndexCountsRow struct {
 	EmbeddedEventCount  int64
 }
 
-func (q *Queries) GetSemanticIndexCounts(ctx context.Context, embeddingModelID sql.NullInt64) (GetSemanticIndexCountsRow, error) {
+func (q *Queries) GetSemanticIndexCounts(ctx context.Context, embeddingModelID *int64) (GetSemanticIndexCountsRow, error) {
 	row := q.db.QueryRowContext(ctx, getSemanticIndexCounts, embeddingModelID)
 	var i GetSemanticIndexCountsRow
 	err := row.Scan(&i.CompletedEventCount, &i.IndexedEventCount, &i.EmbeddedEventCount)

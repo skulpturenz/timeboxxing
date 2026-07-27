@@ -1,0 +1,111 @@
+package timeline
+
+import (
+	"context"
+	"runtime"
+
+	"github.com/negrel/assert"
+	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
+	"github.com/skulpturenz/timeboxxing/sidecar/db"
+	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
+	enumsoperatingsystem "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_operating_system"
+	"github.com/skulpturenz/timeboxxing/sidecar/services"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
+)
+
+type CommandUpsertForegroundProcess struct {
+	PreviousProcess *models.ForegroundProcess
+	ActiveProcess   models.ForegroundProcess
+}
+
+func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services.Services[any, any]) error {
+	database, ok := db.FromServices(svcs)
+	assert.True(ok)
+
+	os, err := enumsoperatingsystem.Parse(runtime.GOOS)
+	if err != nil {
+		return err
+	}
+
+	err = database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
+		var applicationId int64
+		if !c.ActiveProcess.IsIdle() {
+			category := c.ActiveProcess.Enrichments.Appmetadata.Category
+
+			applicationCategoryId, err := q.UpsertApplicationCategory(ctx, writequeries.UpsertApplicationCategoryParams{
+				CategoryID: int64(category),
+				Code:       category.String(),
+				Label:      category.Label(),
+			})
+			if err != nil {
+				return err
+			}
+
+			applicationId, err = q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+				Name:              *c.ActiveProcess.AppName,
+				Identifier:        c.ActiveProcess.AppIdentifier,
+				OperatingSystemID: int64(os),
+				Path:              c.ActiveProcess.AppPath,
+			})
+			if err != nil {
+				return err
+			}
+
+			err = q.UpsertApplicationCategoryMap(ctx, writequeries.UpsertApplicationCategoryMapParams{
+				ApplicationID:           applicationId,
+				ApplicationCategoriesID: applicationCategoryId,
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		var pid int64
+		if !c.ActiveProcess.IsIdle() {
+			pid = int64(*c.ActiveProcess.PID)
+		}
+
+		id, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
+			ApplicationID: utils.ZeroNil(applicationId),
+			Pid:           utils.ZeroNil(pid),
+			CreatedAtUtc:  c.ActiveProcess.Timestamp,
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = q.InsertForegroundProcessMetadata(ctx, writequeries.InsertForegroundProcessMetadataParams{
+			ForegroundProcessID: id,
+			Browser:             c.ActiveProcess.IsBrowser(),
+			Idle:                c.ActiveProcess.IsIdle(),
+			Tab:                 utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.Tab),
+			CdpUrl:              utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.CdpURL),
+			Latitude:            c.ActiveProcess.Enrichments.Location.Latitude,
+			Longitude:           c.ActiveProcess.Enrichments.Location.Longitude,
+		})
+		if err != nil {
+			return err
+		}
+
+		if c.PreviousProcess == nil {
+			id, err = q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+				InitialForegroundProcessID: &id,
+			})
+			if err != nil {
+				return err
+			}
+		} else {
+			id, err = q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+				InitialForegroundProcessID: nil,
+				EndForegroundProcessID:     &id,
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	return err
+}
