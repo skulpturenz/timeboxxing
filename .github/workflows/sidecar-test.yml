@@ -51,4 +51,8 @@ jobs:
 
       - name: Test sidecar
         working-directory: sidecar
-        run: go test -tags assert ./...
+        # -p 1 runs one package's tests at a time. The embedded sqlite-vector extension is extracted
+        # to a shared temp path the first time a database is opened; running package binaries in
+        # parallel races that extraction, which is flaky on Linux ("cannot open shared object file:
+        # .../vector.so.so"). Tests here use no t.Parallel, so serializing packages costs little.
+        run: go test -tags assert -p 1 ./...
