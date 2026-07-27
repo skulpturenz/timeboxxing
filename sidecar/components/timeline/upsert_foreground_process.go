@@ -2,7 +2,6 @@ package timeline
 
 import (
 	"context"
-	"reflect"
 	"runtime"
 
 	"github.com/negrel/assert"
@@ -20,7 +19,7 @@ type CommandUpsertForegroundProcess struct {
 }
 
 func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services.Services[any, any]) error {
-	writeQuerier, ok := services.Get[*db.SerialWriteQuerier](svcs, reflect.TypeFor[db.SerialWriteQuerier]())
+	database, ok := db.FromServices(svcs)
 	assert.True(ok)
 
 	os, err := enumsoperatingsystem.Parse(runtime.GOOS)
@@ -28,14 +27,33 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 		return err
 	}
 
-	err = writeQuerier.Unwrap().WriteTx(ctx, func(q *writequeries.Queries) error {
+	err = database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
 		var applicationId int64
 		if !c.ActiveProcess.IsIdle() {
+			category := c.ActiveProcess.Enrichments.Appmetadata.Category
+
+			applicationCategoryId, err := q.UpsertApplicationCategory(ctx, writequeries.UpsertApplicationCategoryParams{
+				CategoryID: int64(category),
+				Code:       category.String(),
+				Label:      category.Label(),
+			})
+			if err != nil {
+				return err
+			}
+
 			applicationId, err = q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 				Name:              *c.ActiveProcess.AppName,
 				Identifier:        c.ActiveProcess.AppIdentifier,
 				OperatingSystemID: int64(os),
 				Path:              c.ActiveProcess.AppPath,
+			})
+			if err != nil {
+				return err
+			}
+
+			err = q.UpsertApplicationCategoryMap(ctx, writequeries.UpsertApplicationCategoryMapParams{
+				ApplicationID:           applicationId,
+				ApplicationCategoriesID: applicationCategoryId,
 			})
 			if err != nil {
 				return err

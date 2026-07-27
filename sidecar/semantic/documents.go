@@ -24,24 +24,41 @@ const (
 )
 
 // documentTypeID resolves a document-type code to its semantic_document_types id.
-func documentTypeID(code string) sql.NullInt64 {
+func documentTypeID(code string) *int64 {
 	documentType, err := enumssemanticdocumenttype.Parse(code)
 	if err != nil {
-		return sql.NullInt64{}
+		return nil
 	}
-	return sql.NullInt64{Int64: int64(documentType), Valid: true}
+	id := int64(documentType)
+	return &id
+}
+
+// toNullString / toNullBool adapt the nullable pointer columns emitted by the generated queries back
+// into the sql.Null* values the internal document renderers consume.
+func toNullString(value *string) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *value, Valid: true}
+}
+
+func toNullBool(value *bool) sql.NullBool {
+	if value == nil {
+		return sql.NullBool{}
+	}
+	return sql.NullBool{Bool: *value, Valid: true}
 }
 
 // deriveEventReason reconstructs the transition reason for a single event from its idle flag and the
 // previous timeline entry (reason is no longer stored on the event store).
-func deriveEventReason(idle sql.NullBool, applicationID, prevApplicationID sql.NullInt64, prevIdle sql.NullBool) string {
-	if idle.Valid && idle.Bool {
+func deriveEventReason(idle *bool, applicationID, prevApplicationID *int64, prevIdle *bool) string {
+	if idle != nil && *idle {
 		return "idle"
 	}
-	if prevIdle.Valid && prevIdle.Bool {
+	if prevIdle != nil && *prevIdle {
 		return "return_from_idle"
 	}
-	if applicationID.Valid && prevApplicationID.Valid && applicationID.Int64 == prevApplicationID.Int64 {
+	if applicationID != nil && prevApplicationID != nil && *applicationID == *prevApplicationID {
 		return "tab_change"
 	}
 	return "focus_change"
@@ -50,7 +67,7 @@ func deriveEventReason(idle sql.NullBool, applicationID, prevApplicationID sql.N
 type DocumentSpec struct {
 	Key               string
 	Type              string
-	TransitionEventID sql.NullInt64
+	TransitionEventID *int64
 	StartedAt         sql.NullTime
 	EndedAt           sql.NullTime
 	Content           string
@@ -94,19 +111,20 @@ var semanticTimeBlocks = []timeBlock{
 func eventDocumentSpec(src readqueries.GetSemanticEventDocumentSourceRow, loc *time.Location) DocumentSpec {
 	source := transitionDocumentSource{
 		TransitionEventID: src.TransitionEventID,
-		ApplicationName:   src.ApplicationName,
+		ApplicationName:   toNullString(src.ApplicationName),
 		Reason:            deriveEventReason(src.Idle, src.ApplicationID, src.PrevApplicationID, src.PrevIdle),
 		StartedAt:         src.StartedAt,
 		EndedAt:           src.EndedAt,
-		Browser:           src.Browser,
+		Browser:           toNullBool(src.Browser),
 		Tab:               src.Tab,
-		Idle:              src.Idle,
+		Idle:              toNullBool(src.Idle),
 		CdpURL:            src.CdpUrl,
 	}
+	transitionEventID := src.TransitionEventID
 	return DocumentSpec{
 		Key:               fmt.Sprintf("event:%d", src.TransitionEventID),
 		Type:              DocumentTypeEvent,
-		TransitionEventID: sql.NullInt64{Int64: src.TransitionEventID, Valid: true},
+		TransitionEventID: &transitionEventID,
 		StartedAt:         sql.NullTime{Time: src.StartedAt, Valid: !src.StartedAt.IsZero()},
 		EndedAt:           sql.NullTime{Time: src.EndedAt, Valid: !src.EndedAt.IsZero()},
 		Content:           renderEventDocument(source, loc),
@@ -123,13 +141,13 @@ func summaryDocumentSpecs(rows []readqueries.ListTransitionEventDocumentSourcesF
 	for _, row := range rows {
 		sources = append(sources, transitionDocumentSource{
 			TransitionEventID: row.TransitionEventID,
-			ApplicationName:   row.ApplicationName,
+			ApplicationName:   toNullString(row.ApplicationName),
 			// Reason is unused by the summary renderers (only per-event documents surface it).
 			StartedAt: row.StartedAt,
 			EndedAt:   row.EndedAt,
-			Browser:   row.Browser,
+			Browser:   toNullBool(row.Browser),
 			Tab:       row.Tab,
-			Idle:      row.Idle,
+			Idle:      toNullBool(row.Idle),
 			CdpURL:    row.CdpUrl,
 		})
 	}

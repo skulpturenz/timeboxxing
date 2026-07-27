@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 type Provider string
@@ -46,13 +47,13 @@ func LoadAISettings(ctx context.Context, querier readqueries.Querier) (AISetting
 	}
 	return AISettings{
 		Provider:            providerFromLabel(row.ModelProviderLabel),
-		BaseURLValue:        row.ModelProviderBaseUrl.String,
+		BaseURLValue:        utils.Coalesce(row.ModelProviderBaseUrl, ""),
 		EmbeddingModelID:    row.EmbeddingModelID,
 		SemanticModelID:     row.SemanticModelID,
-		EmbeddingOpenRouter: row.EmbeddingOpenrouterSlug.String,
-		EmbeddingOllama:     row.EmbeddingOllamaSlug.String,
-		SemanticOpenRouter:  row.SemanticOpenrouterSlug.String,
-		SemanticOllama:      row.SemanticOllamaSlug.String,
+		EmbeddingOpenRouter: utils.Coalesce(row.EmbeddingOpenrouterSlug, ""),
+		EmbeddingOllama:     utils.Coalesce(row.EmbeddingOllamaSlug, ""),
+		SemanticOpenRouter:  utils.Coalesce(row.SemanticOpenrouterSlug, ""),
+		SemanticOllama:      utils.Coalesce(row.SemanticOllamaSlug, ""),
 		EmbeddingModelLabel: row.EmbeddingLabel,
 		SemanticModelLabel:  row.SemanticLabel,
 	}, nil

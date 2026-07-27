@@ -12,6 +12,8 @@ import (
 	grpcLogging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	componentTimeline "github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
+	timelineConverters "github.com/skulpturenz/timeboxxing/sidecar/components/timeline/converters"
+	timelineModels "github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	componentUsage "github.com/skulpturenz/timeboxxing/sidecar/components/usage"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
@@ -99,21 +101,27 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 		semanticRuntime.Answerer.SetToolRunner(grpcAma.NewAppUsageToolRunner(usageService))
 	}
 
-	timelineOptions := componentTimeline.Options{}
-	if semanticRuntime.Indexer != nil {
-		if queues, ok := workers.QueuesFromServices(registry); ok && queues.TransitionEventReportedQueue != nil {
-			timelineOptions.Enqueuer = workers.NewTransitionEventReportedEnqueuer(queues.TransitionEventReportedQueue)
-		}
-	}
-	startForegroundProjection(ctx, registry, logger.With("service", "timeline"), timelineOptions)
+	// The removed Service.Project ingest carried the semantic-indexing enqueuer via
+	// componentTimeline.Options so finalized timeline entries were pushed onto
+	// TransitionEventReportedQueue. The Command ingest does not enqueue (indexing is intended to move
+	// to the GetUnindexedForegroundProcesses stream). Preserved commented-out so the enqueue wiring is
+	// trivial to re-enable when the stream/read features are wired.
+	// timelineOptions := componentTimeline.Options{}
+	// if semanticRuntime.Indexer != nil {
+	// 	if queues, ok := workers.QueuesFromServices(registry); ok && queues.TransitionEventReportedQueue != nil {
+	// 		timelineOptions.Enqueuer = workers.NewTransitionEventReportedEnqueuer(queues.TransitionEventReportedQueue)
+	// 	}
+	// }
+	startForegroundProjection(ctx, registry, logger.With("service", "timeline"))
 
 	return serveGRPC(ctx, registry, logger)
 }
 
-// startForegroundProjection wires the foreground monitor to the timeline projection: it polls the OS
+// startForegroundProjection wires the foreground monitor to the timeline ingest: it polls the OS
 // foreground process, dedups to change events via the pub/sub reporter, enriches each one (app
-// metadata, browser tab/URL, location), and projects it into the timeline event store.
-func startForegroundProjection(ctx context.Context, registry *services.Services[any, any], logger *slog.Logger, options componentTimeline.Options) {
+// metadata, browser tab/URL, location), adapts it to the timeline model, and feeds it to the
+// CommandSubscribeReporter which persists each observation into the timeline event store.
+func startForegroundProjection(ctx context.Context, registry *services.Services[any, any], logger *slog.Logger) {
 	enrich, permissions := stack.Stack()
 	m, err := monitor.New(ctx, monitor.Options{Permissions: permissions})
 	if err != nil {
@@ -121,16 +129,29 @@ func startForegroundProjection(ctx context.Context, registry *services.Services[
 		return
 	}
 
-	projector := componentTimeline.NewService(registry, options)
 	pubsub, _ := reporter.From(ctx, m.Stream)
 	events := pubsub.Subscribe("timeline")
 
+	// Bridge the reporter's monitor.ForegroundProcess stream into the models.ForegroundProcess channel
+	// the ingest command consumes, enriching and adapting each observation en route.
+	var converter timelineConverters.MonitorForegroundProcessConverter
+	modelStream := make(chan timelineModels.ForegroundProcess)
 	go func() {
+		defer close(modelStream)
 		for foregroundProcess := range events {
 			enriched, _ := enrich(ctx, foregroundProcess)
-			if err := projector.Project(ctx, enriched); err != nil {
-				logger.ErrorContext(ctx, "project foreground process", "error", err)
+			select {
+			case <-ctx.Done():
+				return
+			case modelStream <- converter.ToForegroundProcess(enriched):
 			}
+		}
+	}()
+
+	subscribeReporter := &componentTimeline.CommandSubscribeReporter{Chan: modelStream}
+	go func() {
+		if err := subscribeReporter.Exec(ctx, registry); err != nil {
+			logger.ErrorContext(ctx, "timeline ingest stopped", "error", err)
 		}
 	}()
 }

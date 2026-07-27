@@ -2,7 +2,6 @@ package timesheets
 
 import (
 	"context"
-	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"path/filepath"
@@ -353,25 +352,25 @@ func createTestTimeline(t *testing.T, ctx context.Context, database *db.Database
 	q := database.WriteQuerier
 
 	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
-		Pid:          4242,
+		Pid:          ptr(int64(4242)),
 		CreatedAtUtc: startedAt.UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert initial foreground process: %v", err)
 	}
 	endFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
-		Pid:          4242,
+		Pid:          ptr(int64(4242)),
 		CreatedAtUtc: startedAt.Add(5 * time.Minute).UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert end foreground process: %v", err)
 	}
-	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
-		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
-		EndForegroundProcessID:     sql.NullInt64{Int64: endFP, Valid: true},
+	timelineID, err := q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+		InitialForegroundProcessID: &initialFP,
+		EndForegroundProcessID:     &endFP,
 	})
 	if err != nil {
-		t.Fatalf("create timeline: %v", err)
+		t.Fatalf("upsert timeline: %v", err)
 	}
 	return timelineID
 }
@@ -380,3 +379,5 @@ func testDay() (time.Time, time.Time) {
 	start := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	return start, start.Add(24 * time.Hour)
 }
+
+func ptr[T any](v T) *T { return &v }

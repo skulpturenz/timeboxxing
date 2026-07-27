@@ -32,4 +32,5 @@ WHERE       foreground_processes.id NOT IN (SELECT timeline.initial_foreground_p
                                           JOIN timeline_semantic_documents ON timeline_semantic_documents.timeline_id = timeline.id
                                           WHERE timeline.end_foreground_process_id IS NOT NULL)
       AND   foreground_processes.id > @foregroundProcessId
+ORDER BY foreground_processes.id ASC
 LIMIT @pageSize;

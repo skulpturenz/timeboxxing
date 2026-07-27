@@ -2,7 +2,6 @@ package semantic
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
@@ -44,7 +43,7 @@ func (s *IndexStatusService) Status(ctx context.Context) (IndexStatus, error) {
 		}, nil
 	}
 
-	counts, err := s.querier.GetSemanticIndexCounts(ctx, sql.NullInt64{Int64: s.embeddingModelID, Valid: true})
+	counts, err := s.querier.GetSemanticIndexCounts(ctx, &s.embeddingModelID)
 	if err != nil {
 		return IndexStatus{}, fmt.Errorf("get semantic index counts: %w", err)
 	}

@@ -22,6 +22,8 @@ type Querier interface {
 	EnsureLedger(ctx context.Context) error
 	InsertForegroundProcessMetadata(ctx context.Context, arg InsertForegroundProcessMetadataParams) (int64, error)
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
+	UpsertApplicationCategory(ctx context.Context, arg UpsertApplicationCategoryParams) (int64, error)
+	UpsertApplicationCategoryMap(ctx context.Context, arg UpsertApplicationCategoryMapParams) error
 	UpsertApplicationSettings(ctx context.Context, arg UpsertApplicationSettingsParams) error
 	UpsertForegroundProcess(ctx context.Context, arg UpsertForegroundProcessParams) (int64, error)
 	UpsertTimeline(ctx context.Context, arg UpsertTimelineParams) (int64, error)

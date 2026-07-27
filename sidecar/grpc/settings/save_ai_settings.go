@@ -2,7 +2,6 @@ package settings
 
 import (
 	"context"
-	"database/sql"
 	"strings"
 
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
@@ -34,10 +33,10 @@ func (s *Server) SaveAiSettings(ctx context.Context, req *settingsv1.SaveAiSetti
 	// ReleaseChannel is left NULL; the upsert preserves the existing value via COALESCE.
 	err = s.writeQuerier.UpsertApplicationSettings(ctx, writequeries.UpsertApplicationSettingsParams{
 		ModelProviderID:      providerToModelProviderID(provider),
-		ModelProviderBaseUrl: sql.NullString{String: baseURL, Valid: true},
+		ModelProviderBaseUrl: &baseURL,
 		EmbeddingModelID:     req.GetEmbeddingModelId(),
 		SemanticModelID:      req.GetSemanticModelId(),
-		ReleaseChannel:       sql.NullInt64{},
+		ReleaseChannel:       nil,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "save AI settings: %v", err)

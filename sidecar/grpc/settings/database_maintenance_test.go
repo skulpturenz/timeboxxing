@@ -12,6 +12,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	writequeries "github.com/skulpturenz/timeboxxing/sidecar/db/write_queries"
 	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
+	enumsoperatingsystem "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_operating_system"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
@@ -64,14 +65,14 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 
 	inEventID := createTestTransitionEvent(t, ctx, q, "In Range App", dayStart.Add(9*time.Hour), dayStart.Add(10*time.Hour))
 	outEventID := createTestTransitionEvent(t, ctx, q, "Out Range App", outStart.Add(9*time.Hour), outStart.Add(10*time.Hour))
-	if _, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{Name: "Already Orphaned App"}); err != nil {
+	if _, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{Name: "Already Orphaned App", OperatingSystemID: int64(enumsoperatingsystem.MacOS)}); err != nil {
 		t.Fatalf("upsert orphan application: %v", err)
 	}
 	// Semantic documents cascade-delete only through their timeline; "summary:in" (no timeline) and
 	// "event:out" (out-of-range timeline) survive a prune of the in-range window.
-	createTestSemanticDocument(t, ctx, q, "event:in", sql.NullInt64{Int64: inEventID, Valid: true})
-	createTestSemanticDocument(t, ctx, q, "summary:in", sql.NullInt64{})
-	createTestSemanticDocument(t, ctx, q, "event:out", sql.NullInt64{Int64: outEventID, Valid: true})
+	createTestSemanticDocument(t, ctx, q, "event:in", &inEventID)
+	createTestSemanticDocument(t, ctx, q, "summary:in", nil)
+	createTestSemanticDocument(t, ctx, q, "event:out", &outEventID)
 
 	createTestLedgerItem(t, ctx, q, "entry-in", dayStart.Add(time.Hour), []int64{inEventID})
 	createTestLedgerItem(t, ctx, q, "entry-out", outStart.Add(time.Hour), []int64{inEventID, outEventID})
@@ -205,53 +206,56 @@ func createTestTransitionEvent(t *testing.T, ctx context.Context, q writequeries
 	t.Helper()
 
 	appID, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
-		Name: appName,
+		Name:              appName,
+		OperatingSystemID: int64(enumsoperatingsystem.MacOS),
 	})
 	if err != nil {
 		t.Fatalf("upsert application: %v", err)
 	}
-	application := sql.NullInt64{Int64: appID, Valid: true}
+	application := &appID
 
 	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 		ApplicationID: application,
-		Pid:           4242,
+		Pid:           ptr(int64(4242)),
 		CreatedAtUtc:  startedAt.UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert initial foreground process: %v", err)
 	}
-	if err := q.CreateForegroundProcessMetadata(ctx, writequeries.CreateForegroundProcessMetadataParams{
+	if _, err := q.InsertForegroundProcessMetadata(ctx, writequeries.InsertForegroundProcessMetadataParams{
 		ForegroundProcessID: initialFP,
 		Browser:             false,
 		Idle:                false,
 	}); err != nil {
-		t.Fatalf("create foreground process metadata: %v", err)
+		t.Fatalf("insert foreground process metadata: %v", err)
 	}
 	endFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 		ApplicationID: application,
-		Pid:           4242,
+		Pid:           ptr(int64(4242)),
 		CreatedAtUtc:  endedAt.UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert end foreground process: %v", err)
 	}
-	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
-		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
-		EndForegroundProcessID:     sql.NullInt64{Int64: endFP, Valid: true},
+	timelineID, err := q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+		InitialForegroundProcessID: &initialFP,
+		EndForegroundProcessID:     &endFP,
 	})
 	if err != nil {
-		t.Fatalf("create timeline: %v", err)
+		t.Fatalf("upsert timeline: %v", err)
 	}
 	return timelineID
 }
 
-func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequeries.Querier, key string, timelineID sql.NullInt64) {
+func ptr[T any](v T) *T { return &v }
+
+func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequeries.Querier, key string, timelineID *int64) {
 	t.Helper()
 
 	documentID, err := q.UpsertTimelineSemanticDocument(ctx, writequeries.UpsertTimelineSemanticDocumentParams{
 		DocumentKey: key,
 		TimelineID:  timelineID,
-		Type:        sql.NullInt64{Int64: 1, Valid: true},
+		Type:        ptr(int64(1)),
 		Content:     key,
 	})
 	if err != nil {
@@ -267,8 +271,8 @@ func createTestSemanticDocument(t *testing.T, ctx context.Context, q writequerie
 	}
 	if err := q.CreateTimelineEmbedding(ctx, writequeries.CreateTimelineEmbeddingParams{
 		TimelineID:                  timelineID,
-		TimelineSemanticDocumentsID: sql.NullInt64{Int64: documentID, Valid: true},
-		EmbeddingModelID:            sql.NullInt64{Int64: 1, Valid: true},
+		TimelineSemanticDocumentsID: &documentID,
+		EmbeddingModelID:            ptr(int64(1)),
 		Dimension:                   semantic.StoreEmbeddingDimension,
 		Embedding:                   encoded,
 	}); err != nil {
@@ -288,17 +292,17 @@ func createTestLedgerItem(t *testing.T, ctx context.Context, q writequeries.Quer
 	item, err := q.CreateLedgerItem(ctx, writequeries.CreateLedgerItemParams{
 		Billable:     true,
 		Title:        title,
-		Notes:        sql.NullString{},
-		StartedAtUtc: sql.NullTime{Time: startedAt.UTC(), Valid: true},
-		EndedAtUtc:   sql.NullTime{Time: startedAt.Add(30 * time.Minute).UTC(), Valid: true},
+		Notes:        nil,
+		StartedAtUtc: ptr(startedAt.UTC()),
+		EndedAtUtc:   ptr(startedAt.Add(30 * time.Minute).UTC()),
 	})
 	if err != nil {
 		t.Fatalf("create ledger item: %v", err)
 	}
 	for _, timelineID := range timelineIDs {
 		if err := q.CreateLedgerItemTimelineEntry(ctx, writequeries.CreateLedgerItemTimelineEntryParams{
-			LedgerItemsID: sql.NullInt64{Int64: item.ID, Valid: true},
-			TimelineID:    sql.NullInt64{Int64: timelineID, Valid: true},
+			LedgerItemsID: &item.ID,
+			TimelineID:    &timelineID,
 		}); err != nil {
 			t.Fatalf("create ledger item timeline entry: %v", err)
 		}

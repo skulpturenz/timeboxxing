@@ -20,7 +20,7 @@ func (os OperatingSystem) String() string {
 
 func Parse(s string) (OperatingSystem, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "macos":
+	case "darwin":
 		return MacOS, nil
 	case "windows":
 		return Windows, nil

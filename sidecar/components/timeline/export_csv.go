@@ -23,7 +23,7 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 		c, ok := v.Value.(models.ForegroundProcess)
 		assert.True(ok)
 		if !ok {
-			return "", fmt.Errorf(fmt.Sprintf("command flush: item %v is not valid", i))
+			return "", fmt.Errorf("command export csv: item %v is not valid", i)
 		}
 
 		fps = append(fps, c)
@@ -41,7 +41,7 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 		"timestamp",
 		"idle",
 		"killed"}
-	csvBuilder.WriteString(fmt.Sprintf("%v\n", strings.Join(headers, ",")))
+	fmt.Fprintf(&csvBuilder, "%v\n", strings.Join(headers, ","))
 
 	for _, fp := range fps {
 		row := []string{

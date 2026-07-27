@@ -34,18 +34,17 @@ FROM foreground_processes
 JOIN applications ON applications.id = foreground_processes.application_id
 LEFT JOIN application_categories bc ON bc.id = foreground_process_metadata.browser_category
 JOIN foreground_process_metadata ON foreground_process_metadata.foreground_process_id = foreground_processes.id
-WHERE       foreground_processes.id NOT IN (SELECT timeline.initial_foreground_process_id
-                                      FROM timeline
-                                      LEFT JOIN timeline_semantic_documents ON timeline_semantic_documents.timeline_id = timeline.id
-                                      WHERE     timeline_semantic_documents.id IS NULL 
-                                            AND timeline.initial_foreground_process_id IS NOT NULL
-                                      UNION ALL
-                                      SELECT timeline.end_foreground_process_id
-                                      FROM timeline
-                                      LEFT JOIN timeline_semantic_documents ON timeline_semantic_documents.timeline_id = timeline.id
-                                      WHERE     timeline_semantic_documents.id IS NULL
-                                            AND timeline.end_foreground_process_id IS NOT NULL)
+WHERE       foreground_processes.id NOT IN (SELECT timeline.initial_foreground_process_id AS foreground_process_id
+                                          FROM timeline
+                                          JOIN timeline_semantic_documents ON timeline_semantic_documents.timeline_id = timeline.id
+                                          WHERE timeline.initial_foreground_process_id IS NOT NULL
+                                          UNION ALL
+                                          SELECT timeline.end_foreground_process_id AS foreground_process_id
+                                          FROM timeline
+                                          JOIN timeline_semantic_documents ON timeline_semantic_documents.timeline_id = timeline.id
+                                          WHERE timeline.end_foreground_process_id IS NOT NULL)
       AND   foreground_processes.id > ?1
+ORDER BY foreground_processes.id ASC
 LIMIT ?2
 `
 

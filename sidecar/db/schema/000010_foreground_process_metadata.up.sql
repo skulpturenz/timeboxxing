@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS foreground_process_metadata (
   foreground_process_id INTEGER NOT NULL REFERENCES foreground_processes(id) ON DELETE CASCADE,
   browser BOOLEAN NOT NULL DEFAULT 0,
   browser_vendor TEXT,
-  browser_category INTEGER NOT NULL REFERENCES application_categories(id) ON DELETE SET NULL,
+  browser_category INTEGER REFERENCES application_categories(id) ON DELETE SET NULL,
   idle BOOLEAN NOT NULL DEFAULT 0,
   tab TEXT,
   cdp_url TEXT,

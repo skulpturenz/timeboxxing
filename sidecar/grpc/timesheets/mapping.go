@@ -2,13 +2,13 @@ package timesheets
 
 import (
 	"context"
-	"database/sql"
 	"strconv"
 	"strings"
 	"time"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 // costingTypeHourlyID matches the project_costing_types seed (db/seeds/project_costing_types).
@@ -33,48 +33,48 @@ func parseUsageTimelineID(usageID string) (int64, bool) {
 	return id, true
 }
 
-func usageIDStrings(timelineIDs []sql.NullInt64) []string {
+func usageIDStrings(timelineIDs []*int64) []string {
 	out := make([]string, 0, len(timelineIDs))
 	for _, id := range timelineIDs {
-		if id.Valid {
-			out = append(out, usageIDForTimeline(id.Int64))
+		if id != nil {
+			out = append(out, usageIDForTimeline(*id))
 		}
 	}
 	return out
 }
 
 // entryMinutes converts a ledger item's absolute start/end timestamps to day-relative minutes.
-func entryMinutes(dayStart time.Time, startedAt, endedAt sql.NullTime) (int32, int32) {
+func entryMinutes(dayStart time.Time, startedAt, endedAt *time.Time) (int32, int32) {
 	var startMinute int32
-	if startedAt.Valid {
-		startMinute = int32(startedAt.Time.UTC().Sub(dayStart).Minutes())
+	if startedAt != nil {
+		startMinute = int32(startedAt.UTC().Sub(dayStart).Minutes())
 	}
 	var durationMinutes int32
-	if startedAt.Valid && endedAt.Valid {
-		durationMinutes = int32(endedAt.Time.Sub(startedAt.Time).Minutes())
+	if startedAt != nil && endedAt != nil {
+		durationMinutes = int32(endedAt.Sub(*startedAt).Minutes())
 	}
 	return startMinute, durationMinutes
 }
 
-func buildTimesheetEntryProto(dayStart time.Time, id int64, projectID sql.NullInt64, title string, notes sql.NullString, billable bool, startedAtUtc, endedAtUtc sql.NullTime, usageIDs []string) *timesheetsv1.TimesheetEntry {
+func buildTimesheetEntryProto(dayStart time.Time, id int64, projectID *int64, title string, notes *string, billable bool, startedAtUtc, endedAtUtc *time.Time, usageIDs []string) *timesheetsv1.TimesheetEntry {
 	startMinute, durationMinutes := entryMinutes(dayStart, startedAtUtc, endedAtUtc)
 	entry := &timesheetsv1.TimesheetEntry{
 		Id:              id,
 		Title:           title,
-		Notes:           notes.String,
+		Notes:           utils.Coalesce(notes, ""),
 		StartMinute:     startMinute,
 		DurationMinutes: durationMinutes,
 		Billable:        billable,
 		SourceUsageIds:  usageIDs,
 	}
-	if projectID.Valid {
-		entry.ProjectId = projectID.Int64
+	if projectID != nil {
+		entry.ProjectId = *projectID
 	}
 	return entry
 }
 
 func (s *Server) entryToProto(ctx context.Context, dayStart time.Time, entry readqueries.ListTimesheetEntriesRow) (*timesheetsv1.TimesheetEntry, error) {
-	usageIDs, err := s.readQuerier.ListTimesheetEntryUsageBlocks(ctx, sql.NullInt64{Int64: entry.ID, Valid: true})
+	usageIDs, err := s.readQuerier.ListTimesheetEntryUsageBlocks(ctx, &entry.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,10 +95,10 @@ func entriesToProto(ctx context.Context, server *Server, dayStart time.Time, row
 
 // utcDayStart returns UTC midnight of the given timestamp (used to group range results by day, since
 // the ledger no longer stores an explicit day window).
-func utcDayStart(t sql.NullTime) time.Time {
-	if !t.Valid {
+func utcDayStart(t *time.Time) time.Time {
+	if t == nil {
 		return time.Time{}
 	}
-	u := t.Time.UTC()
+	u := t.UTC()
 	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
 }

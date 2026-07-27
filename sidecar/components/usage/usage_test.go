@@ -2,7 +2,6 @@ package usage
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -289,7 +288,7 @@ type transitionEventFixture struct {
 func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Database, fixture transitionEventFixture) int64 {
 	t.Helper()
 	q := database.WriteQuerier
-	applicationID := sql.NullInt64{}
+	var applicationID *int64
 	if !fixture.Idle && fixture.ApplicationName != "" {
 		id, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 			Name:       fixture.ApplicationName,
@@ -299,41 +298,41 @@ func createTransitionEvent(t *testing.T, ctx context.Context, database *db.Datab
 		if err != nil {
 			t.Fatalf("upsert application: %v", err)
 		}
-		applicationID = sql.NullInt64{Int64: id, Valid: true}
+		applicationID = &id
 	}
 
 	// The event store keeps one foreground_processes row per boundary timestamp; a timeline row ties
 	// the initial and end boundaries together and plays the role of the old transition-event id.
 	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 		ApplicationID: applicationID,
-		Pid:           4242,
+		Pid:           ptr(int64(4242)),
 		CreatedAtUtc:  fixture.StartedAt.UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert initial foreground process: %v", err)
 	}
-	if err := q.CreateForegroundProcessMetadata(ctx, writequeries.CreateForegroundProcessMetadataParams{
+	if _, err := q.InsertForegroundProcessMetadata(ctx, writequeries.InsertForegroundProcessMetadataParams{
 		ForegroundProcessID: initialFP,
 		Browser:             fixture.Browser,
 		Idle:                fixture.Idle,
 		Tab:                 fixture.Tab,
 	}); err != nil {
-		t.Fatalf("create foreground process metadata: %v", err)
+		t.Fatalf("insert foreground process metadata: %v", err)
 	}
 	endFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 		ApplicationID: applicationID,
-		Pid:           4242,
+		Pid:           ptr(int64(4242)),
 		CreatedAtUtc:  fixture.EndedAt.UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert end foreground process: %v", err)
 	}
-	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
-		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
-		EndForegroundProcessID:     sql.NullInt64{Int64: endFP, Valid: true},
+	timelineID, err := q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+		InitialForegroundProcessID: &initialFP,
+		EndForegroundProcessID:     &endFP,
 	})
 	if err != nil {
-		t.Fatalf("create timeline: %v", err)
+		t.Fatalf("upsert timeline: %v", err)
 	}
 
 	return timelineID
@@ -354,7 +353,7 @@ type openTimelineFixture struct {
 func createOpenTimelineEvent(t *testing.T, ctx context.Context, database *db.Database, fixture openTimelineFixture) int64 {
 	t.Helper()
 	q := database.WriteQuerier
-	applicationID := sql.NullInt64{}
+	var applicationID *int64
 	if !fixture.Idle && fixture.ApplicationName != "" {
 		id, err := q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 			Name:       fixture.ApplicationName,
@@ -364,29 +363,29 @@ func createOpenTimelineEvent(t *testing.T, ctx context.Context, database *db.Dat
 		if err != nil {
 			t.Fatalf("upsert application: %v", err)
 		}
-		applicationID = sql.NullInt64{Int64: id, Valid: true}
+		applicationID = &id
 	}
 	initialFP, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 		ApplicationID: applicationID,
-		Pid:           4242,
+		Pid:           ptr(int64(4242)),
 		CreatedAtUtc:  fixture.StartedAt.UTC(),
 	})
 	if err != nil {
 		t.Fatalf("upsert foreground process: %v", err)
 	}
-	if err := q.CreateForegroundProcessMetadata(ctx, writequeries.CreateForegroundProcessMetadataParams{
+	if _, err := q.InsertForegroundProcessMetadata(ctx, writequeries.InsertForegroundProcessMetadataParams{
 		ForegroundProcessID: initialFP,
 		Browser:             fixture.Browser,
 		Idle:                fixture.Idle,
 		Tab:                 fixture.Tab,
 	}); err != nil {
-		t.Fatalf("create foreground process metadata: %v", err)
+		t.Fatalf("insert foreground process metadata: %v", err)
 	}
-	timelineID, err := q.CreateTimeline(ctx, writequeries.CreateTimelineParams{
-		InitialForegroundProcessID: sql.NullInt64{Int64: initialFP, Valid: true},
+	timelineID, err := q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
+		InitialForegroundProcessID: &initialFP,
 	})
 	if err != nil {
-		t.Fatalf("create open timeline: %v", err)
+		t.Fatalf("upsert open timeline: %v", err)
 	}
 	return timelineID
 }
@@ -395,8 +394,13 @@ func stringPtr(value string) *string {
 	return &value
 }
 
-func nullableString(value string) sql.NullString {
-	return sql.NullString{String: value, Valid: value != ""}
+func ptr[T any](v T) *T { return &v }
+
+func nullableString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func containsID(ids []int64, id int64) bool {

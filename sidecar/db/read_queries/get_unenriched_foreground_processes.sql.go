@@ -39,6 +39,7 @@ WHERE  ((foreground_process_metadata.tab IS NULL AND foreground_process_metadata
         AND foreground_process_metadata.longitude IS NULL
         AND foreground_process_metadata.public_ip IS NOT NULL))
     AND foreground_processes.id > ?1
+ORDER BY foreground_processes.id ASC
 LIMIT ?2
 `
 

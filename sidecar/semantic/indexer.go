@@ -2,7 +2,6 @@ package semantic
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -103,14 +102,15 @@ func (i *Indexer) upsertEmbeddedDocument(ctx context.Context, spec DocumentSpec)
 			return fmt.Errorf("upsert semantic document %q: %w", spec.Key, err)
 		}
 
-		if err := q.DeleteTimelineEmbedding(ctx, sql.NullInt64{Int64: documentID, Valid: true}); err != nil {
+		if err := q.DeleteTimelineEmbedding(ctx, &documentID); err != nil {
 			return fmt.Errorf("delete semantic document embedding %q: %w", spec.Key, err)
 		}
 
+		embeddingModelID := i.embeddingModelID
 		if err := q.CreateTimelineEmbedding(ctx, writequeries.CreateTimelineEmbeddingParams{
 			TimelineID:                  spec.TransitionEventID,
-			TimelineSemanticDocumentsID: sql.NullInt64{Int64: documentID, Valid: true},
-			EmbeddingModelID:            sql.NullInt64{Int64: i.embeddingModelID, Valid: true},
+			TimelineSemanticDocumentsID: &documentID,
+			EmbeddingModelID:            &embeddingModelID,
 			Dimension:                   int64(i.embedder.Dimension()),
 			Embedding:                   encoded,
 		}); err != nil {

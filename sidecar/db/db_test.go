@@ -17,6 +17,8 @@ import (
 	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 func TestSQLiteVectorExtensionIsLoadedWhenBundledOrConfigured(t *testing.T) {
 	ctx := context.Background()
 	configuredPath := os.Getenv("SIDECAR_SQLITE_VECTOR_EXTENSION_PATH")
@@ -116,8 +118,8 @@ func TestSqliteProjectsMigrationCreatesTable(t *testing.T) {
 		t.Fatalf("expected project name Client Work, got %q", projects[0].Name)
 	}
 	// Colour/rate live in project_details now; a project created without details has neither.
-	if projects[0].ColorArgb.Valid {
-		t.Fatalf("expected no colour, got %d", projects[0].ColorArgb.Int64)
+	if projects[0].ColorArgb != nil {
+		t.Fatalf("expected no colour, got %d", *projects[0].ColorArgb)
 	}
 	if projects[0].HourlyRateCents != 0 {
 		t.Fatalf("expected zero hourly rate, got %d", projects[0].HourlyRateCents)
@@ -143,24 +145,24 @@ func TestSqliteTimesheetsMigrationCreatesTables(t *testing.T) {
 	entry, err := database.WriteQuerier.CreateLedgerItem(ctx, writequeries.CreateLedgerItemParams{
 		Billable:     true,
 		Title:        "Design review",
-		Notes:        sql.NullString{},
-		StartedAtUtc: sql.NullTime{Time: startedAt, Valid: true},
-		EndedAtUtc:   sql.NullTime{Time: startedAt.Add(30 * time.Minute), Valid: true},
+		Notes:        nil,
+		StartedAtUtc: ptr(startedAt),
+		EndedAtUtc:   ptr(startedAt.Add(30 * time.Minute)),
 	})
 	if err != nil {
 		t.Fatalf("create ledger item: %v", err)
 	}
 	// A ledger item links to timeline entries (usage blocks) via ledger_item_timeline_entries.
 	if err := database.WriteQuerier.CreateLedgerItemTimelineEntry(ctx, writequeries.CreateLedgerItemTimelineEntryParams{
-		LedgerItemsID: sql.NullInt64{Int64: entry.ID, Valid: true},
-		TimelineID:    sql.NullInt64{},
+		LedgerItemsID: ptr(entry.ID),
+		TimelineID:    nil,
 	}); err != nil {
 		t.Fatalf("create ledger item timeline entry: %v", err)
 	}
 
 	entries, err := database.ReadQuerier.ListTimesheetEntries(ctx, readqueries.ListTimesheetEntriesParams{
-		StartedAtUtc:   sql.NullTime{Time: dayStart, Valid: true},
-		StartedAtUtc_2: sql.NullTime{Time: dayStart.Add(24 * time.Hour), Valid: true},
+		StartedAtUtc:   ptr(dayStart),
+		StartedAtUtc_2: ptr(dayStart.Add(24 * time.Hour)),
 	})
 	if err != nil {
 		t.Fatalf("list timesheet entries: %v", err)

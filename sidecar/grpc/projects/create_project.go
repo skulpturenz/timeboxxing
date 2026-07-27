@@ -34,12 +34,12 @@ func (s *Server) CreateProject(ctx context.Context, req *projectsv1.CreateProjec
 
 	// Resolve the palette colour to its project_colors id. Colours outside the seeded palette leave
 	// project_colors_id NULL (the colour is simply not persisted).
-	colorID := sql.NullInt64{}
+	var colorID *int64
 	if s.readQuerier != nil {
 		id, err := s.readQuerier.GetProjectColorIDByColor(ctx, colorARGB)
 		switch {
 		case err == nil:
-			colorID = sql.NullInt64{Int64: id, Valid: true}
+			colorID = &id
 		case errors.Is(err, sql.ErrNoRows):
 			// leave NULL
 		default:
@@ -55,11 +55,12 @@ func (s *Server) CreateProject(ctx context.Context, req *projectsv1.CreateProjec
 			return err
 		}
 		projectID = id
+		costingTypeID := int64(costingTypeHourlyID)
 		return q.CreateProjectDetails(ctx, writequeries.CreateProjectDetailsParams{
-			ProjectsID:      sql.NullInt64{Int64: id, Valid: true},
+			ProjectsID:      &id,
 			ProjectColorsID: colorID,
-			CostingTypeID:   sql.NullInt64{Int64: costingTypeHourlyID, Valid: true},
-			Rate:            sql.NullInt64{},
+			CostingTypeID:   &costingTypeID,
+			Rate:            nil,
 		})
 	}); err != nil {
 		if isUniqueConstraintErr(err) {

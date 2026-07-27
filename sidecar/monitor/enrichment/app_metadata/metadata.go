@@ -1,6 +1,7 @@
 package appmetadata
 
 import (
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
@@ -26,6 +27,22 @@ type Metadata struct {
 	Category     Category // normalized taxonomy; CategoryUnknown when not resolved
 	IconPath     string   // path to the cached icon file on disk
 	Source       string   // origin of the metadata (see Source* constants)
+}
+
+// Get returns the app metadata stashed on the process by the enrichers, if any.
+func Get(fp monitor.ForegroundProcess) (Metadata, bool) {
+	if fp.Enrichments == nil {
+		return Metadata{}, false
+	}
+	value, ok := fp.Enrichments[KeyMetadata]
+	if !ok {
+		return Metadata{}, false
+	}
+	metadata, ok := value.(*Metadata)
+	if !ok || metadata == nil {
+		return Metadata{}, false
+	}
+	return *metadata, true
 }
 
 // empty reports whether the metadata carries no information at all.

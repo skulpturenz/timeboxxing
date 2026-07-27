@@ -13,8 +13,8 @@ func projectToProto(row readqueries.ListProjectsRow) *projectsv1.Project {
 		Name:            row.Name,
 		HourlyRateCents: row.HourlyRateCents,
 	}
-	if row.ColorArgb.Valid {
-		project.ColorArgb = row.ColorArgb.Int64
+	if row.ColorArgb != nil {
+		project.ColorArgb = *row.ColorArgb
 	}
 	return project
 }
