@@ -12,7 +12,7 @@ import (
 const upsertTimeline = `-- name: UpsertTimeline :one
 INSERT INTO timeline(initial_foreground_process_id, end_foreground_process_id)
 VALUES (
-    COALESCE(CAST(?1 AS INTEGER), (SELECT id FROM foreground_processes ORDER BY created_at_utc DESC LIMIT 1)),
+    COALESCE(CAST(?1 AS INTEGER), (SELECT id FROM foreground_processes ORDER BY created_at_utc DESC LIMIT 1 OFFSET 1)),
     ?2
 )
 ON CONFLICT(initial_foreground_process_id) DO UPDATE SET
