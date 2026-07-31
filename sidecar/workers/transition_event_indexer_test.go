@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goptics/sqliteq"
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
@@ -54,31 +55,42 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 	})
 
 	queueDSN := dsn.String()
-	transitionEventReportedQueue, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions{
-		ConnectionString: queueDSN,
-		QueueName:        TransitionEventReportedQueueName.String(),
+	manager := sqliteq.New(queueDSN)
+	t.Cleanup(func() {
+		if err := manager.Close(); err != nil {
+			t.Errorf("close queue manager: %v", err)
+		}
+	})
+
+	inChan := make(chan TransitionEventReported)
+	outChan, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions[TransitionEventReported]{
+		Manager: manager,
+		Name:    TransitionEventReportedQueueName.String(),
+		InChan:  inChan,
 	})
 	if err != nil {
 		t.Fatalf("create transition event reported queue: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := transitionEventReportedQueue.Close(); err != nil {
-			t.Errorf("close transition event reported queue: %v", err)
-		}
-	})
 
 	registry := services.New()
 	logging.RegisterLogger(registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	db.Register(registry, database)
-	RegisterQueues(registry, Queues{TransitionEventReportedQueue: transitionEventReportedQueue})
+	RegisterQueues(registry, Queues{
+		TransitionEventReportedIn:  inChan,
+		TransitionEventReportedOut: outChan,
+	})
 	transitions := componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
 		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}, 1),
 	})
 
 	runtime := NewRuntime(registry)
-	cleanupIndexer := runtime.TransitionEventIndexerWorker(ctx, transitionEventReportedQueue)
-	defer cleanupIndexer()
+	cleanupIndexer := runtime.TransitionEventIndexerWorker(ctx, outChan)
+	// cancel before draining: the indexer stops on ctx cancellation, so cleanup can complete.
+	defer func() {
+		cancel()
+		cleanupIndexer()
+	}()
 
 	tab := "Backfill Notes"
 	url := "https://example.com/backfill"
@@ -95,7 +107,7 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 		t.Fatalf("record transition event: %v", err)
 	}
 
-	enqueuer := NewTransitionEventReportedEnqueuer(transitionEventReportedQueue)
+	enqueuer := NewTransitionEventReportedEnqueuer(inChan)
 	if err := enqueuer.EnqueueTransitionEvent(ctx, eventID); err != nil {
 		t.Fatalf("enqueue backfill transition event: %v", err)
 	}

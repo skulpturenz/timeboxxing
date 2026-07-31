@@ -3,24 +3,25 @@ package workers
 import (
 	"context"
 	"fmt"
-
-	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 )
 
 type TransitionEventReportedEnqueuer struct {
-	queue *queue.Queue[TransitionEventReported]
+	ch chan<- TransitionEventReported
 }
 
-func NewTransitionEventReportedEnqueuer(q *queue.Queue[TransitionEventReported]) *TransitionEventReportedEnqueuer {
-	return &TransitionEventReportedEnqueuer{queue: q}
+func NewTransitionEventReportedEnqueuer(ch chan<- TransitionEventReported) *TransitionEventReportedEnqueuer {
+	return &TransitionEventReportedEnqueuer{ch: ch}
 }
 
-func (e *TransitionEventReportedEnqueuer) EnqueueTransitionEvent(_ context.Context, transitionEventID int64) error {
-	if e == nil || e.queue == nil {
+func (e *TransitionEventReportedEnqueuer) EnqueueTransitionEvent(ctx context.Context, transitionEventID int64) error {
+	if e == nil || e.ch == nil {
 		return fmt.Errorf("transition event reported queue is unavailable")
 	}
-	if err := e.queue.Add(TransitionEventReported{TransitionEventId: transitionEventID}); err != nil {
-		return fmt.Errorf("enqueue transition event reported job: %w", err)
+
+	select {
+	case e.ch <- TransitionEventReported{TransitionEventId: transitionEventID}:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("enqueue transition event reported job: %w", ctx.Err())
 	}
-	return nil
 }

@@ -6,7 +6,6 @@ import (
 
 	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/logging"
-	"github.com/skulpturenz/timeboxxing/sidecar/queue"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
@@ -25,7 +24,11 @@ type Runtime struct {
 }
 
 type Queues struct {
-	TransitionEventReportedQueue *queue.Queue[TransitionEventReported]
+	// TransitionEventReportedIn is the producer side — send a finalized transition event to enqueue
+	// it durably. TransitionEventReportedOut is the consumer side — the queue delivers each persisted
+	// event here for the indexer worker to process.
+	TransitionEventReportedIn  chan<- TransitionEventReported
+	TransitionEventReportedOut <-chan TransitionEventReported
 }
 
 type queuesKey struct{}

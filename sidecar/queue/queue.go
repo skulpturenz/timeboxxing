@@ -2,77 +2,69 @@ package queue
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/goptics/sqliteq"
 	"github.com/goptics/varmq"
+	"github.com/negrel/assert"
 )
 
-type Queue[T any] struct {
-	manager sqliteq.Queues
-	backend *sqliteq.Queue
-	queue   varmq.PersistentQueue[T]
+type QueueOptions[T any] struct {
+	Manager sqliteq.Queues
+	Name    string
+	InChan  <-chan T
 }
 
-type QueueOptions struct {
-	ConnectionString string
-	QueueName        string
-}
+func New[T any](ctx context.Context, opts QueueOptions[T]) (<-chan T, error) {
+	assert.NotZero(opts.Name)
+	assert.NotNil(opts.Manager)
+	assert.NotNil(opts.InChan)
 
-func New[T any](ctx context.Context, opts QueueOptions) (*Queue[T], error) {
-	manager := sqliteq.New(opts.ConnectionString)
-	queueName := opts.QueueName
-	if queueName == "" {
-		queueName = "test"
-	}
+	resultChan := make(chan T)
 
-	queue, err := manager.NewQueue(queueName)
+	q, err := opts.Manager.NewQueue(opts.Name)
+	assert.NoError(err)
 	if err != nil {
-		_ = manager.Close()
 		return nil, err
 	}
 
-	return &Queue[T]{manager: manager, backend: queue}, nil
-}
+	ctxWithCancel, cancel := context.WithCancel(ctx)
 
-func (q *Queue[T]) Add(item T) error {
-	if q.queue == nil {
-		return fmt.Errorf("queue has no worker")
-	}
+	w := varmq.NewWorker(func(j varmq.Job[T]) {
+		select {
+		case <-ctxWithCancel.Done():
+			return
+		case resultChan <- j.Data():
+		}
+	})
 
-	if ok := q.queue.Add(item); !ok {
-		return fmt.Errorf("add item to queue")
-	}
-
-	return nil
-}
-
-func (q *Queue[T]) AddWorker(_ context.Context, wf func(j varmq.Job[T]), config ...any) func() {
-	config = append(config, varmq.WithAutoRun(false))
-	w := varmq.NewWorker(wf, config...)
-	q.queue = w.WithPersistentQueue(q.backend)
-	_ = q.queue.Worker().Start()
+	pq := w.WithPersistentQueue(q)
 
 	cleanup := func() {
-		w.WaitUntilIdle()
-		_ = w.StopAndWait()
+		cancel()
+
+		err := w.StopAndWait()
+		assert.NoError(err)
+
+		close(resultChan)
 	}
 
-	return cleanup
-}
+	go func() {
+		for {
+			select {
+			case <-ctxWithCancel.Done():
+				cleanup()
+				return
+			case v, ok := <-opts.InChan:
+				if !ok {
+					cleanup()
+					return
+				}
 
-func (q *Queue[T]) Close() error {
-	if q == nil {
-		return nil
-	}
+				ok = pq.Add(v)
+				assert.True(ok)
+			}
+		}
+	}()
 
-	var errs []error
-	if q.queue != nil {
-		errs = append(errs, q.queue.Close())
-	}
-	if q.manager != nil {
-		errs = append(errs, q.manager.Close())
-	}
-	return errors.Join(errs...)
+	return resultChan, nil
 }
