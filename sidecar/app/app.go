@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/goptics/sqliteq"
 	grpcLogging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	componentTimeline "github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
@@ -84,9 +85,21 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	defer database.Close()
 	db.Register(registry, database)
 
-	if err := buildQueues(ctx, registry); err != nil {
+	// Cancelable so shutdown can be triggered explicitly (e.g. if serveGRPC returns while the
+	// parent ctx is still live). Downstream — the queue worker and indexer consumer — derive from
+	// this ctx.
+	ctx, cancel := context.WithCancel(ctx)
+
+	closeQueues, err := buildQueues(ctx, registry)
+	if err != nil {
+		cancel()
 		return err
 	}
+	defer func() {
+		if err := closeQueues(); err != nil {
+			logger.ErrorContext(ctx, "close queue manager", "error", err)
+		}
+	}()
 
 	semanticRuntime := buildSemanticRuntime(ctx, registry, database, logger)
 	componentTransitions.NewService(registry)
@@ -94,6 +107,10 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	for _, cleanup := range startWorkers(ctx, registry, workerRuntime, semanticRuntime) {
 		defer cleanup()
 	}
+	// Registered last so it runs first on return: cancel stops the queue worker and the indexer
+	// consumer, which lets their drain cleanups above unblock and the queue manager close last.
+	defer cancel()
+
 	startStartupSemanticBackfill(semanticRuntime)
 
 	usageService := componentUsage.NewService(registry)
@@ -156,24 +173,35 @@ func startForegroundProjection(ctx context.Context, registry *services.Services[
 	}()
 }
 
-func buildQueues(ctx context.Context, registry *services.Services[any, any]) error {
+// buildQueues opens the durable transition-event queue and registers its producer/consumer channel
+// ends. It returns a cleanup that closes the SQLite manager it owns; the queue's own worker is torn
+// down when ctx is cancelled (which closes the delivered outChan).
+func buildQueues(ctx context.Context, registry *services.Services[any, any]) (func() error, error) {
 	// Reuse the exact keyed DSN the writer/reader use so the queue connection is encrypted
 	// identically — sqliteq opens the same file via a hardcoded sql.Open("sqlite3", ...).
 	// buildQueues runs immediately after db.Register, so the database is always present.
 	database, _ := db.FromServices(registry)
 	queueDSN := database.DSN.String()
 
-	transitionEventReportedQueue, err := queue.New[workers.TransitionEventReported](ctx, queue.QueueOptions{
-		ConnectionString: queueDSN,
-		QueueName:        workers.TransitionEventReportedQueueName.String(),
+	manager := sqliteq.New(queueDSN)
+
+	inChan := make(chan workers.TransitionEventReported)
+	outChan, err := queue.New[workers.TransitionEventReported](ctx, queue.QueueOptions[workers.TransitionEventReported]{
+		Manager: manager,
+		Name:    workers.TransitionEventReportedQueueName.String(),
+		InChan:  inChan,
 	})
 	if err != nil {
-		return fmt.Errorf("create transition event reported queue: %w", err)
+		_ = manager.Close()
+		return nil, fmt.Errorf("create transition event reported queue: %w", err)
 	}
+
 	workers.RegisterQueues(registry, workers.Queues{
-		TransitionEventReportedQueue: transitionEventReportedQueue,
+		TransitionEventReportedIn:  inChan,
+		TransitionEventReportedOut: outChan,
 	})
-	return nil
+
+	return manager.Close, nil
 }
 
 func buildSemanticRuntime(ctx context.Context, registry *services.Services[any, any], database *db.Database, logger *slog.Logger) *semantic.Runtime {
@@ -209,10 +237,10 @@ func buildSemanticRuntime(ctx context.Context, registry *services.Services[any, 
 
 func transitionEventBackfillEnqueuerFromServices(registry *services.Services[any, any]) semantic.TransitionEventEnqueuer {
 	queues, _ := workers.QueuesFromServices(registry)
-	if queues.TransitionEventReportedQueue == nil {
+	if queues.TransitionEventReportedIn == nil {
 		return nil
 	}
-	return workers.NewTransitionEventReportedEnqueuer(queues.TransitionEventReportedQueue)
+	return workers.NewTransitionEventReportedEnqueuer(queues.TransitionEventReportedIn)
 }
 
 func startStartupSemanticBackfill(runtime *semantic.Runtime) {
@@ -225,8 +253,8 @@ func startWorkers(ctx context.Context, registry *services.Services[any, any], ru
 	var cleanups []func()
 	if semanticRuntime.Indexer != nil {
 		queues, _ := workers.QueuesFromServices(registry)
-		if queues.TransitionEventReportedQueue != nil {
-			transitionEventReportedCleanup := runtime.TransitionEventIndexerWorker(ctx, queues.TransitionEventReportedQueue)
+		if queues.TransitionEventReportedOut != nil {
+			transitionEventReportedCleanup := runtime.TransitionEventIndexerWorker(ctx, queues.TransitionEventReportedOut)
 			cleanups = append(cleanups, transitionEventReportedCleanup)
 		}
 	}
