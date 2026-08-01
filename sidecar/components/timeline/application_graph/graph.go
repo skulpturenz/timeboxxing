@@ -16,12 +16,16 @@ import (
 type Edge = [2]string // [from, to]
 type ForegroundProcess = models.ForegroundProcess
 
-type ApplicationGraph struct {
-	Graph         gograph.Graph[string]
+type BaseGraph[V, E any] struct {
 	RWMu          sync.RWMutex
-	vertexMetaMap map[string]*applicationGraphVertexMeta
-	edgeMetaMap   map[Edge]*applicationGraphEdgeMeta
+	Graph         gograph.Graph[string]
 	activeProcess *ForegroundProcess
+	vertexMetaMap map[string]V
+	edgeMetaMap   map[Edge]E
+}
+
+type ApplicationGraph struct {
+	*BaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta]
 }
 
 type TimeSpan = utils.TimeSpan
@@ -39,17 +43,25 @@ type applicationGraphEdgeMeta struct {
 	spans            []TimeSpan
 }
 
-func GraphFrom(timeline *list.List) *ApplicationGraph {
-	g := gograph.New[string](gograph.Directed())
+type GraphConnectionStrategy[V, E any] interface {
+	AddVertexMeta(graph *BaseGraph[V, E], curr ForegroundProcess) (bool, bool)
+	Build(graph *BaseGraph[V, E])
+}
 
-	vertexMetaMap := map[string]*applicationGraphVertexMeta{}
-	edgeMetaMap := map[Edge]*applicationGraphEdgeMeta{}
+type ApplicationGraphConnectionStrategy struct{}
 
-	timelineGraph := ApplicationGraph{
-		Graph:         g,
-		vertexMetaMap: vertexMetaMap,
-		edgeMetaMap:   edgeMetaMap,
+var _ GraphConnectionStrategy[*applicationGraphVertexMeta, *applicationGraphEdgeMeta] = ApplicationGraphConnectionStrategy{}
+
+func NewBaseGraph[V, E any]() *BaseGraph[V, E] {
+	return &BaseGraph[V, E]{
+		vertexMetaMap: map[string]V{},
+		edgeMetaMap:   map[Edge]E{},
 	}
+}
+
+func GraphFrom[V, E any](strategy GraphConnectionStrategy[V, E], timeline *list.List) *BaseGraph[V, E] {
+	timelineGraph := NewBaseGraph[V, E]()
+
 	timelineGraph.RWMu.Lock()
 	defer timelineGraph.RWMu.Unlock()
 
@@ -57,24 +69,26 @@ func GraphFrom(timeline *list.List) *ApplicationGraph {
 		curr, ok := e.Value.(ForegroundProcess)
 		assert.True(ok)
 
-		timelineGraph.addVertexMeta(curr)
+		strategy.AddVertexMeta(timelineGraph, curr)
 	}
-	timelineGraph.buildGraph()
+	strategy.Build(timelineGraph)
 
-	return &timelineGraph
+	return timelineGraph
 }
 
-func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGraph {
-	g := gograph.New[string](gograph.Directed())
-
-	vertexMetaMap := map[string]*applicationGraphVertexMeta{}
-	edgeMetaMap := map[Edge]*applicationGraphEdgeMeta{}
-
-	timelineGraph := ApplicationGraph{
-		Graph:         g,
-		vertexMetaMap: vertexMetaMap,
-		edgeMetaMap:   edgeMetaMap,
+func ApplicationGraphFrom(timeline *list.List) *ApplicationGraph {
+	return &ApplicationGraph{
+		BaseGraph: GraphFrom(ApplicationGraphConnectionStrategy{}, timeline),
 	}
+}
+
+func ApplicationGraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGraph {
+	strategy := ApplicationGraphConnectionStrategy{}
+
+	timelineGraph := &ApplicationGraph{
+		BaseGraph: NewBaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta](),
+	}
+	strategy.Build(timelineGraph.BaseGraph)
 
 	go func() {
 		for {
@@ -87,5 +101,5 @@ func GraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGra
 		}
 	}()
 
-	return &timelineGraph
+	return timelineGraph
 }

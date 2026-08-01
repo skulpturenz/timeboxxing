@@ -6,7 +6,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
-func (graph *ApplicationGraph) addVertexMeta(curr ForegroundProcess) (bool, bool) {
+func (strategy ApplicationGraphConnectionStrategy) AddVertexMeta(graph *BaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta], curr ForegroundProcess) (bool, bool) {
 	prevProcess := graph.activeProcess
 
 	if prevProcess != nil && curr.IsEqual(*prevProcess) {
@@ -76,7 +76,9 @@ func (graph *ApplicationGraph) addVertexMeta(curr ForegroundProcess) (bool, bool
 	return true, vertexExists
 }
 
-func (graph *ApplicationGraph) buildGraph() {
+func (strategy ApplicationGraphConnectionStrategy) Build(graph *BaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta]) {
+	graph.Graph = gograph.New[string](gograph.Directed())
+
 	for v, m := range graph.vertexMetaMap {
 		vertex := graph.Graph.AddVertexByLabel(v, gograph.WithVertexWeight(float64(m.Duration.Milliseconds())))
 		assert.NotNil(vertex)
@@ -99,15 +101,16 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 	graph.RWMu.Lock()
 	defer graph.RWMu.Unlock()
 
+	strategy := ApplicationGraphConnectionStrategy{}
 	prevProcess := graph.activeProcess
 
-	ok, _ := graph.addVertexMeta(curr)
+	ok, _ := strategy.AddVertexMeta(graph.BaseGraph, curr)
 	if !ok {
 		return
 	}
 
 	if graph.Graph.Order() == 0 {
-		graph.buildGraph()
+		strategy.Build(graph.BaseGraph)
 	} else if prevProcess != nil {
 		graph.addVertexAndEdge(*prevProcess, curr)
 	}

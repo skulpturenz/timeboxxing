@@ -57,7 +57,7 @@ func listOf(ps ...ForegroundProcess) *list.List {
 // a strongly connected component.
 func mutualCluster(t *testing.T) *ApplicationGraph {
 	t.Helper()
-	return GraphFrom(listOf(
+	return ApplicationGraphFrom(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),

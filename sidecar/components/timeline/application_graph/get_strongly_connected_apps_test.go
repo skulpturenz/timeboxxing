@@ -43,7 +43,7 @@ func TestGetStronglyConnectedApps_ThresholdExcludesWeakClusters(t *testing.T) {
 }
 
 func TestGetStronglyConnectedApps_NoCycleReturnsEmpty(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
 		appProc("C", 3, enumscategories.CategoryMedia, at(20)),
@@ -55,7 +55,7 @@ func TestGetStronglyConnectedApps_NoCycleReturnsEmpty(t *testing.T) {
 }
 
 func TestGetStronglyConnectedApps_EmptyGraphReturnsEmpty(t *testing.T) {
-	g := GraphFrom(list.New())
+	g := ApplicationGraphFrom(list.New())
 
 	var clusters map[string][]StronglyConnectedEdgesMeta
 	require.NotPanics(t, func() { clusters = g.GetStronglyConnectedApps(2) })
@@ -63,7 +63,7 @@ func TestGetStronglyConnectedApps_EmptyGraphReturnsEmpty(t *testing.T) {
 }
 
 func TestGetStronglyConnectedApps_SeparatesIndependentClusters(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		// cluster A: vscode <-> terminal
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
@@ -102,7 +102,7 @@ func TestGetStronglyConnectedApps_SeparatesIndependentClusters(t *testing.T) {
 
 // The gap check is what keeps two sessions from collapsing into one block.
 func TestGetStronglyConnectedApps_GapOverAMinuteSplitsSpans(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		// morning session
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
@@ -134,7 +134,7 @@ func TestGetStronglyConnectedApps_GapOverAMinuteSplitsSpans(t *testing.T) {
 // iteration order is randomised per range. The sorted identifiers are what make the result — and
 // any key downstream code derives from it — reproducible.
 func TestGetStronglyConnectedApps_IsDeterministic(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),
