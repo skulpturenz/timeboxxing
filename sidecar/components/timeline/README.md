@@ -15,17 +15,29 @@ into concrete fields).
 ## Command / Query convention
 
 The package follows a light CQRS split. Each unit of work is a struct holding its
-inputs plus a single method that resolves its dependencies (DB queriers) from the
-`*services.Services` registry at call time:
+inputs plus a single method that resolves its dependencies from the
+`*services.Services` registry at call time — via `db.FromServices(svcs)`, which is
+where both the read and write queriers hang off:
 
 | Shape | Method | Examples |
 | --- | --- | --- |
 | `Command*` (writes) | `Exec(ctx, svcs) error` | `CommandUpsertForegroundProcess`, `CommandSubscribeReporter` |
-| `Query*` (reads) | `Exec(ctx, svcs) (T, error)` / `Stream(ctx, svcs) utils.StreamFn[…]` | `QueryExportCSV`, `QueryGetUnenrichedForegroundProcesses`, `QueryGetUnindexedForegroundProcesses` |
+| `Query*` (reads) | `Exec(ctx, svcs) (T, error)` / `Stream(ctx, svcs) utils.StreamFn[…]` | `QueryExportCSV`, `QueryGetTimeline`, `QueryGetTimelineRange`, `QueryGetUnenrichedForegroundProcesses`, `QueryGetUnindexedForegroundProcesses` |
 
 There is no named interface for this contract — it is a structural convention. The
 free functions `CollectTimeline` / `SeqTimeline` are pure in-memory helpers with no
 DB dependency.
+
+Every `Stream` reports itself done once its pages run dry, and none of them stay open waiting
+for more. A caller that wants the whole thing as a slice drains the stream itself — there is no
+`Collect` on the query:
+
+```go
+entries := slices.Collect(utils.SeqChan(utils.Stream(ctx, pageSize, query.Stream(ctx, svcs))))
+if err := ctx.Err(); err != nil {
+	// a short slice means cancellation, not an empty window
+}
+```
 
 ## End-to-end data flow
 
@@ -43,6 +55,8 @@ flowchart LR
         DB --> UN[Query*ForegroundProcesses<br/>streams] --> W[enrichment / indexing workers]
         DB --> AG[application_graph<br/>GraphFrom / GraphChan] --> M[focus scores,<br/>entry suggestions]
         DB --> CT[CollectTimeline / SeqTimeline] --> CSV[QueryExportCSV]
+        DB --> GT[QueryGetTimeline<br/>open-ended UsageSeq stream] --> WU[grpc/usage<br/>WatchUsageEvents]
+        DB --> GR[QueryGetTimelineRange<br/>bounded UsageSeq stream] --> RU[grpc/usage GetUsageEvents,<br/>grpc/ama get_usage_timeline]
     end
 ```
 
@@ -58,9 +72,19 @@ closes the channel and exits the command loop.
 | Package | Path | Role |
 | --- | --- | --- |
 | `timeline` | this dir | Command/query surface over the event store (ingest, streams, export, in-memory shaping) |
-| `models` | [`models/`](models/) | Typed domain types (`ForegroundProcess`, `Enrichments`, `UsageSeq`, `TitleSource`) + accessors |
+| `models` | [`models/`](models/) | Typed domain types (`ForegroundProcess`, `Enrichments`, `UsageSeq`, `TitleSource`, `Reason`) + the projection accessors (`Title`, `SourceName`, `ApplicationKey`, `Span`, `ReasonFor`) |
 | `converters` | [`converters/`](converters/) | [goverter](https://github.com/jmattheis/goverter)-generated adapters: DB row → model and `monitor.ForegroundProcess` → model |
 | `application_graph` | [`application_graph/`](application_graph/) | Directed app-switch graph → focus scores, entry suggestions, productivity metrics |
+
+The one component outside this tree it reads from is
+[`application`](../application/): a timeline row carries an application id, not its
+category, so each page of entries resolves the classifications of every application it
+mentions in one `QueryGetApplicationCategories` read and merges them onto each endpoint.
+
+There is no reporting component above this one. [`grpc/usage`](../../grpc/usage/) maps a
+`UsageSeq` straight onto the wire — title, source and reason are all derived from the entry's
+opening observation by `models` — and [`grpc/ama`](../../grpc/ama/app_usage_tool.go) reads the
+same entries for its usage-timeline tool.
 
 ## Ingest (`subscribe_reporter.go`, `upsert_foreground_process.go`)
 
@@ -120,6 +144,66 @@ seen `foreground_process` id), and every row is turned into a `models.Foreground
 by the matching `converters` row converter. These feed background workers that pull
 work rather than being pushed to.
 
+## Timeline entry streams (`get_timeline.go`, `get_timeline_range.go`)
+
+These are the streams that do **not** yield single observations: a `timeline` row is a *pair*
+of foreground processes, so [`GetTimeline`](../../db/read_queries/get_timeline.sql) returns
+both endpoints of an entry side by side as flat `initial_*` / `final_*` columns, keyset
+paginated on `timeline.id`, and each row becomes one `UsageSeq{ID, Start, End, Killed}`. Both
+queries run that one SQL query and shape its rows the same way; they differ only in which
+bounds they pass:
+
+| Query | Shape | Ends when |
+| --- | --- | --- |
+| `QueryGetTimeline` | optional `StartedAt`, no closing bound | its pages run dry |
+| `QueryGetTimelineRange` | `StartedAt`/`EndedAt` | the window is drained |
+
+Neither one follows the ingest: an empty page is the end of the stream, so a consumer that
+wants the entries recorded since it last looked asks again with a fresh query. Keyset
+pagination is what makes that cheap and duplicate-free — the cursor only ever moves forward, so
+no consumer has to deduplicate.
+
+- **`End == nil` marks an open entry.** An entry is open until an observation closes it
+  (`timeline.end_foreground_process_id IS NULL`), so the whole final side is absent; the
+  query gates on that column, which is the only reliable open/closed discriminator.
+- **`MinDurationSeconds` filters out switch noise**, and defaults to off. It is a parameter
+  rather than a constant because entries *chain*: an entry's closing observation is the next
+  entry's opening one, so dropping one punches a hole that hands its time to a neighbour.
+  Consumers that derive durations from that adjacency — the reporting surfaces in `grpc/` —
+  must pass `0`.
+- **`StartedAt` / `EndedAt` bound the stream to a window**, half-open and strict, comparing
+  instants rather than text: `created_at_utc` carries whatever offset the observation was
+  recorded in, so both sides of each bound go through `unixepoch(…, 'subsec')`.
+  `QueryGetTimeline` passes no upper bound. An open entry has not ended, so it always passes
+  the lower bound.
+- **Every join is a `LEFT JOIN`**, which is load-bearing rather than defensive: an open entry
+  has no final side, an idle observation has no application, and a non-browser observation has
+  no browser category. Inner joins here silently drop exactly the rows the `WHERE` admits.
+- **The application's category is not on the row.** An application maps to categories
+  many-to-many, so joining it in would fan one entry out into a duplicate per classification.
+  The row carries `application_id`, and each page collects the distinct ids it mentions and
+  resolves them all in one
+  [`QueryGetApplicationCategories`](../application/get_application_categories.go) read —
+  deduplicated because entries chain, so a row's closing observation is the next row's opening
+  one. `ApplicationCategoriesConverter` merges the result onto both endpoints.
+- `Killed` comes from the closing observation (the span ended because the app was terminated),
+  and stays `false` while the entry is open.
+
+`UsageSeq.ID` carries `timeline.id` — it is both the keyset cursor and the identity consumers
+report and deduplicate on (semantic documents, embeddings, the usage event id on the wire).
+The purely in-memory `SeqTimeline` leaves it zero, since observations held in memory were
+never entries.
+
+Note the `done` contract: [`utils.Stream`](../../utils/stream.go) *discards* the items it is
+handed once a closure reports itself done, so every terminating stream returns a partial page
+with `done == false` and reports exhaustion on the next (empty) call.
+
+To feed the [`application_graph`](application_graph/) from the store, collect a window and
+rebuild the observation sequence from it: drain `QueryGetTimelineRange` → each entry's
+`Start` (plus the last entry's `End`) → `CollectTimeline` → `GraphFrom`. The graph labels an
+observation by its application identifier and dereferences it unconditionally, so the caller
+owns filling one in.
+
 ## In-memory timeline shaping (`foreground_process.go`)
 
 Pure helpers over a sorted slice of observations (no DB):
@@ -173,11 +257,26 @@ a `ToForegroundProcess` method:
 | `MonitorForegroundProcessConverter` | `monitor.ForegroundProcess` | ingest (`app.go`) — resolves the enrichment bag (app-metadata category, browser, location) into typed fields |
 | `GetUnenrichedForegroundProcessesRowConverter` | `readqueries.GetUnenrichedForegroundProcessesRow` | unenriched stream |
 | `GetUnindexedForegroundProcessesRowConverter` | `readqueries.GetUnindexedForegroundProcessesRow` | unindexed stream |
+| `GetTimelineInitialRowConverter` / `GetTimelineFinalRowConverter` | `readqueries.GetTimelineRow` | timeline entry stream — one converter per endpoint |
+| `ApplicationCategoriesConverter` | `applicationmodels.ApplicationCategories` | timeline entry stream — merges the looked-up category onto an already-mapped `AppMetadata` |
+
+The timeline row needs **two** converters rather than one with two methods: goverter resolves
+sub-mappings by `(source, target)` signature, so initial and final method sets on a single
+converter over the same row type would be an ambiguous match.
+
+`ApplicationCategoriesConverter` is the odd one out: it is a `goverter:update` method rather
+than a conversion, because the category arrives from a separate read and has to land on an
+enrichment a row converter already mapped. Everything it does not map is left untouched, which
+is what makes it a merge rather than a replacement.
 
 Non-trivial mappings are pipe functions in [`converters.go`](converters/converters.go):
 `monitorEnrichments` (reads the `app_metadata`/`browser`/`location` bag entries),
 `appmetadataCategory` (numeric cast between the two identically-ordered `Category`
-enums), `pidInt32ToInt64`, `parseTitleSource`, `parseBrowserCategory`, `zeroNilString`.
+enums), `firstCategory` (collapses an application's classifications to the single category the
+model carries), `pidInt32ToInt64`, `parseTitleSource`, `parseBrowserCategory`, `zeroNilString`.
+`parseOptionalTitleSource` / `parseOptionalBrowserCategory` are the left-join variants of the
+two parsers: they treat an absent code as "no value" instead of asserting, since an idle
+observation has no title source and a non-browser observation has no browser category.
 
 ## `application_graph/` — app-switch analytics
 
@@ -218,3 +317,5 @@ app cluster as strongly connected via Tarjan SCC):
 - **Category is a seeded taxonomy.** `application_categories` is seeded from
   `enums_categories`; ingest resolves by the natural key and links apps through a
   many-to-many map, so category data is consistent regardless of enrichment timing.
+  The read goes the other way, parsing the stored `code` back into the enum — which is
+  why `enumscategories.Parse` has to stay the exact inverse of `String`.

@@ -9,14 +9,20 @@ import (
 )
 
 type Querier interface {
+	// GetApplicationCategories returns the taxonomy codes each of the given applications is classified
+	// under, grouped by application and lowest surrogate id first. An application maps to categories
+	// many-to-many, but ingest links exactly one today, so callers read the first. An application with
+	// no classification yields no rows rather than a null one.
+	GetApplicationCategories(ctx context.Context, applicationids []int64) ([]GetApplicationCategoriesRow, error)
 	GetApplicationSettings(ctx context.Context) (GetApplicationSettingsRow, error)
-	GetLatestTimelineEntry(ctx context.Context) (GetLatestTimelineEntryRow, error)
-	GetOpenTimelineEvent(ctx context.Context) (GetOpenTimelineEventRow, error)
 	GetProjectColorIDByColor(ctx context.Context, color int64) (int64, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
 	GetSemanticIndexCounts(ctx context.Context, embeddingModelID *int64) (GetSemanticIndexCountsRow, error)
-	GetTransitionEvent(ctx context.Context, id int64) (GetTransitionEventRow, error)
-	GetTransitionEvents(ctx context.Context, arg GetTransitionEventsParams) ([]GetTransitionEventsRow, error)
+	// GetTimeline returns each timeline entry with both of its endpoints side by side, keyset
+	// paginated on timeline.id. The final side is absent while the entry is still open; closed
+	// entries shorter than min_duration_seconds are switch noise and are filtered out. started_at
+	// and ended_at are optional window bounds.
+	GetTimeline(ctx context.Context, arg GetTimelineParams) ([]GetTimelineRow, error)
 	GetUnenrichedForegroundProcesses(ctx context.Context, arg GetUnenrichedForegroundProcessesParams) ([]GetUnenrichedForegroundProcessesRow, error)
 	GetUnindexedForegroundProcesses(ctx context.Context, arg GetUnindexedForegroundProcessesParams) ([]GetUnindexedForegroundProcessesRow, error)
 	ListMissingSemanticEventDocumentIDs(ctx context.Context, arg ListMissingSemanticEventDocumentIDsParams) ([]int64, error)
@@ -25,6 +31,14 @@ type Querier interface {
 	ListTimesheetEntries(ctx context.Context, arg ListTimesheetEntriesParams) ([]ListTimesheetEntriesRow, error)
 	ListTimesheetEntriesInRange(ctx context.Context, arg ListTimesheetEntriesInRangeParams) ([]ListTimesheetEntriesInRangeRow, error)
 	ListTimesheetEntryUsageBlocks(ctx context.Context, ledgerItemsID *int64) ([]*int64, error)
+	// created_at_utc is stored with whatever offset the observation carried while the bounds arrive
+	// normalised to UTC, so both the comparisons and the ordering go through unixepoch(): as text the
+	// two are wall clocks rather than instants. ids are handed out in observation order, so ordering by
+	// timeline.id is the same sequence and does not need the conversion
+	//
+	// the leading CAST(... AS TIMESTAMP) tests are only a type anchor for sqlc, which otherwise infers
+	// the bounds as interface{} once no comparison against the column types them; both bounds are
+	// required, so the tests are always true
 	ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error)
 }
 

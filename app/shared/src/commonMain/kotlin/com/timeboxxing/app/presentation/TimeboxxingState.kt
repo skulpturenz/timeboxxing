@@ -1572,13 +1572,7 @@ private fun submitAmaStructuredQuery(
 private fun AmaStructuredQuery.userFacingQuestion(): String {
     val label = periodLabel.ifBlank { "selected period" }
     return when (kind) {
-        AmaQueryKind.AppTotals -> "Show app totals for $label"
         AmaQueryKind.Timeline -> "Show usage timeline for $label"
-        AmaQueryKind.Habits -> "Summarize habits for $label"
-        AmaQueryKind.ComparePeriods -> {
-            val baseline = baselinePeriodLabel.ifBlank { "baseline period" }
-            "Compare $label with $baseline"
-        }
     }
 }
 

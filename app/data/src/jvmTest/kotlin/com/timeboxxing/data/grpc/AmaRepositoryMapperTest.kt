@@ -1,20 +1,11 @@
 package com.timeboxxing.data.grpc
 
 import com.google.protobuf.Timestamp
-import com.timeboxxing.domain.model.AmaAppUsageChart
-import com.timeboxxing.domain.model.AmaHabitSummary
-import com.timeboxxing.domain.model.AmaUsageComparison
 import com.timeboxxing.domain.model.AmaUsageTimeline
-import com.timeboxxing.sidecar.ama.v1.AppUsageBucket
-import com.timeboxxing.sidecar.ama.v1.AppUsageChart
 import com.timeboxxing.sidecar.ama.v1.Artifact
 import com.timeboxxing.sidecar.ama.v1.AskResponse
 import com.timeboxxing.sidecar.ama.v1.SemanticIndexStatus
 import com.timeboxxing.sidecar.ama.v1.Source
-import com.timeboxxing.sidecar.ama.v1.TimeOfDayBucket as TimeOfDayBucketProto
-import com.timeboxxing.sidecar.ama.v1.UsageComparison as UsageComparisonProto
-import com.timeboxxing.sidecar.ama.v1.UsageComparisonBucket as UsageComparisonBucketProto
-import com.timeboxxing.sidecar.ama.v1.UsageHabitSummary as UsageHabitSummaryProto
 import com.timeboxxing.sidecar.ama.v1.UsageTimeline as UsageTimelineProto
 import com.timeboxxing.sidecar.ama.v1.UsageTimelineEvent as UsageTimelineEventProto
 import io.grpc.Status
@@ -39,23 +30,14 @@ class AmaRepositoryMapperTest {
             )
             .addArtifacts(
                 Artifact.newBuilder()
-                    .setAppUsageChart(
-                        AppUsageChart.newBuilder()
+                    .setUsageTimeline(
+                        UsageTimelineProto.newBuilder()
                             .setStartedAt(Timestamp.newBuilder().setSeconds(1).build())
                             .setEndedAt(Timestamp.newBuilder().setSeconds(3601).build())
                             .setTimezone("UTC")
                             .setPeriodLabel("Yesterday")
                             .setTotalDurationSeconds(3600)
-                            .addBuckets(
-                                AppUsageBucket.newBuilder()
-                                    .setName("Google Chrome")
-                                    .setSourceType("browser")
-                                    .setDurationSeconds(3600)
-                                    .setSessionCount(2)
-                                    .setApplicationIdentifier("com.google.Chrome")
-                                    .setApplicationPath("/Applications/Google Chrome.app")
-                                    .build(),
-                            )
+                            .setTotalEventCount(1)
                             .build(),
                     )
                     .build(),
@@ -82,18 +64,17 @@ class AmaRepositoryMapperTest {
         assertEquals("Application: Google Chrome", answer.sources.first().content)
         assertEquals(0.125, answer.sources.first().distance)
         assertEquals(3, answer.indexStatus?.completedEventCount)
-        val chart = answer.artifacts.first() as AmaAppUsageChart
-        assertEquals("Yesterday", chart.periodLabel)
-        assertEquals(1000, chart.startedAtEpochMillis)
-        assertEquals(3601000, chart.endedAtEpochMillis)
-        assertEquals("UTC", chart.timeZone)
-        assertEquals(3600L, chart.totalDurationSeconds)
-        assertEquals("Google Chrome", chart.buckets.first().name)
-        assertEquals("browser", chart.buckets.first().sourceType)
+        val timeline = answer.artifacts.first() as AmaUsageTimeline
+        assertEquals("Yesterday", timeline.periodLabel)
+        assertEquals(1000, timeline.startedAtEpochMillis)
+        assertEquals(3601000, timeline.endedAtEpochMillis)
+        assertEquals("UTC", timeline.timeZone)
+        assertEquals(3600L, timeline.totalDurationSeconds)
+        assertEquals(1, timeline.totalEventCount)
     }
 
     @Test
-    fun mapsNewUsageArtifactsToAmaAnswer() {
+    fun mapsUsageTimelineArtifactToAmaAnswer() {
         val event = UsageTimelineEventProto.newBuilder()
             .setTransitionEventId(42)
             .setTitle("Docs")
@@ -125,68 +106,6 @@ class AmaRepositoryMapperTest {
                     )
                     .build(),
             )
-            .addArtifacts(
-                Artifact.newBuilder()
-                    .setUsageHabitSummary(
-                        UsageHabitSummaryProto.newBuilder()
-                            .setStartedAt(Timestamp.newBuilder().setSeconds(10).build())
-                            .setEndedAt(Timestamp.newBuilder().setSeconds(130).build())
-                            .setTimezone("UTC")
-                            .setPeriodLabel("Today")
-                            .setTotalDurationSeconds(120)
-                            .setSessionCount(2)
-                            .setContextSwitchCount(1)
-                            .setAverageSessionSeconds(60)
-                            .setLongestSession(event)
-                            .addTopSources(
-                                AppUsageBucket.newBuilder()
-                                    .setName("Google Chrome")
-                                    .setSourceType("browser")
-                                    .setDurationSeconds(120)
-                                    .setSessionCount(2)
-                                    .build(),
-                            )
-                            .addTimeBuckets(
-                                TimeOfDayBucketProto.newBuilder()
-                                    .setLabel("Morning")
-                                    .setDurationSeconds(120)
-                                    .setSessionCount(2)
-                                    .build(),
-                            )
-                            .build(),
-                    )
-                    .build(),
-            )
-            .addArtifacts(
-                Artifact.newBuilder()
-                    .setUsageComparison(
-                        UsageComparisonProto.newBuilder()
-                            .setCurrentStartedAt(Timestamp.newBuilder().setSeconds(10).build())
-                            .setCurrentEndedAt(Timestamp.newBuilder().setSeconds(130).build())
-                            .setBaselineStartedAt(Timestamp.newBuilder().setSeconds(200).build())
-                            .setBaselineEndedAt(Timestamp.newBuilder().setSeconds(260).build())
-                            .setTimezone("UTC")
-                            .setCurrentPeriodLabel("Today")
-                            .setBaselinePeriodLabel("Yesterday")
-                            .setCurrentTotalDurationSeconds(120)
-                            .setBaselineTotalDurationSeconds(60)
-                            .setDurationDeltaSeconds(60)
-                            .setDurationDeltaPercent(100.0)
-                            .addBuckets(
-                                UsageComparisonBucketProto.newBuilder()
-                                    .setName("Google Chrome")
-                                    .setSourceType("browser")
-                                    .setCurrentDurationSeconds(120)
-                                    .setBaselineDurationSeconds(60)
-                                    .setDeltaDurationSeconds(60)
-                                    .setCurrentSessionCount(2)
-                                    .setBaselineSessionCount(1)
-                                    .build(),
-                            )
-                            .build(),
-                    )
-                    .build(),
-            )
             .build()
 
         val answer = response.toAmaAnswer()
@@ -201,22 +120,6 @@ class AmaRepositoryMapperTest {
         assertEquals(42L, timeline.events.first().transitionEventId)
         assertEquals("example.com", timeline.events.first().urlHost)
 
-        val summary = answer.artifacts[1] as AmaHabitSummary
-        assertEquals(2L, summary.sessionCount)
-        assertEquals(1L, summary.contextSwitchCount)
-        assertEquals(60L, summary.averageSessionSeconds)
-        assertEquals(42L, summary.longestSession?.transitionEventId)
-        assertEquals("Google Chrome", summary.topSources.first().name)
-        assertEquals("Morning", summary.timeBuckets.first().label)
-
-        val comparison = answer.artifacts[2] as AmaUsageComparison
-        assertEquals("Today", comparison.currentPeriodLabel)
-        assertEquals("Yesterday", comparison.baselinePeriodLabel)
-        assertEquals(120L, comparison.currentTotalDurationSeconds)
-        assertEquals(60L, comparison.baselineTotalDurationSeconds)
-        assertEquals(60L, comparison.durationDeltaSeconds)
-        assertEquals(100.0, comparison.durationDeltaPercent)
-        assertEquals("Google Chrome", comparison.buckets.first().name)
     }
 
     @Test

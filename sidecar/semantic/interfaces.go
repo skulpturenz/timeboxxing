@@ -67,10 +67,7 @@ type StructuredToolRunner interface {
 type StructuredQueryKind string
 
 const (
-	StructuredQueryKindAppTotals      StructuredQueryKind = "app_totals"
-	StructuredQueryKindTimeline       StructuredQueryKind = "timeline"
-	StructuredQueryKindHabits         StructuredQueryKind = "habits"
-	StructuredQueryKindComparePeriods StructuredQueryKind = "compare_periods"
+	StructuredQueryKindTimeline StructuredQueryKind = "timeline"
 )
 
 type TimeWindow struct {
@@ -79,13 +76,11 @@ type TimeWindow struct {
 }
 
 type StructuredQuery struct {
-	Kind                StructuredQueryKind
-	Window              TimeWindow
-	BaselineWindow      TimeWindow
-	Limit               int
-	IncludeIdle         bool
-	PeriodLabel         string
-	BaselinePeriodLabel string
+	Kind        StructuredQueryKind
+	Window      TimeWindow
+	Limit       int
+	IncludeIdle bool
+	PeriodLabel string
 }
 
 type ToolResult struct {
@@ -96,36 +91,12 @@ type ToolResult struct {
 type ArtifactType string
 
 const (
-	ArtifactTypeAppUsageChart     ArtifactType = "app_usage_chart"
-	ArtifactTypeUsageTimeline     ArtifactType = "usage_timeline"
-	ArtifactTypeUsageHabitSummary ArtifactType = "usage_habit_summary"
-	ArtifactTypeUsageComparison   ArtifactType = "usage_comparison"
+	ArtifactTypeUsageTimeline ArtifactType = "usage_timeline"
 )
 
 type Artifact struct {
-	Type              ArtifactType
-	AppUsageChart     *AppUsageChart
-	UsageTimeline     *UsageTimeline
-	UsageHabitSummary *UsageHabitSummary
-	UsageComparison   *UsageComparison
-}
-
-type AppUsageChart struct {
-	PeriodLabel          string
-	StartedAt            time.Time
-	EndedAt              time.Time
-	TimeZone             string
-	TotalDurationSeconds int64
-	Buckets              []AppUsageBucket
-}
-
-type AppUsageBucket struct {
-	Name                  string
-	SourceType            string
-	DurationSeconds       int64
-	SessionCount          int64
-	ApplicationIdentifier string
-	ApplicationPath       string
+	Type          ArtifactType
+	UsageTimeline *UsageTimeline
 }
 
 type UsageTimeline struct {
@@ -151,49 +122,4 @@ type UsageTimelineEvent struct {
 	ApplicationPath       string
 	URLHost               string
 	Idle                  bool
-}
-
-type UsageHabitSummary struct {
-	PeriodLabel           string
-	StartedAt             time.Time
-	EndedAt               time.Time
-	TimeZone              string
-	TotalDurationSeconds  int64
-	SessionCount          int64
-	ContextSwitchCount    int64
-	AverageSessionSeconds int64
-	LongestSession        *UsageTimelineEvent
-	TopSources            []AppUsageBucket
-	TimeBuckets           []TimeOfDayBucket
-}
-
-type TimeOfDayBucket struct {
-	Label           string
-	DurationSeconds int64
-	SessionCount    int64
-}
-
-type UsageComparison struct {
-	CurrentStartedAt             time.Time
-	CurrentEndedAt               time.Time
-	BaselineStartedAt            time.Time
-	BaselineEndedAt              time.Time
-	TimeZone                     string
-	CurrentPeriodLabel           string
-	BaselinePeriodLabel          string
-	CurrentTotalDurationSeconds  int64
-	BaselineTotalDurationSeconds int64
-	DurationDeltaSeconds         int64
-	DurationDeltaPercent         float64
-	Buckets                      []UsageComparisonBucket
-}
-
-type UsageComparisonBucket struct {
-	Name                    string
-	SourceType              string
-	CurrentDurationSeconds  int64
-	BaselineDurationSeconds int64
-	DeltaDurationSeconds    int64
-	CurrentSessionCount     int64
-	BaselineSessionCount    int64
 }

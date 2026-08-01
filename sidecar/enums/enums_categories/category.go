@@ -79,10 +79,17 @@ func (category Category) IsProductive() bool {
 	return false
 }
 
+// Parse is the inverse of String: every code the taxonomy emits round-trips back to its
+// category. The seeded `application_categories` rows are exactly those codes, so a read that
+// resolves a persisted classification by code depends on this staying total.
 func Parse(code string) (Category, error) {
 	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "unknown":
+		return CategoryUnknown, nil
 	case "development":
 		return CategoryDevelopment, nil
+	case "productivity":
+		return CategoryProductivity, nil
 	case "communication":
 		return CategoryCommunication, nil
 	case "web-browsing":
@@ -91,6 +98,8 @@ func Parse(code string) (Category, error) {
 		return CategoryMedia, nil
 	case "graphics-design":
 		return CategoryGraphicsDesign, nil
+	case "games":
+		return CategoryGames, nil
 	case "utilities":
 		return CategoryUtilities, nil
 	case "business-finance":

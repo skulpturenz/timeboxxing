@@ -110,6 +110,56 @@ func TestPruneDatabaseRangeDeletesWholeRangeAndLinkedRows(t *testing.T) {
 	assertTableCount(t, ctx, database.ReadConn, "ledger_item_timeline_entries", 1)
 }
 
+// Rows recorded before the ingest normalised to UTC are stored with the monitor's local offset,
+// while the prune window is asked for in UTC. Compared as text the two are wall clocks, so a prune
+// deletes the wrong slice of the day: here the in-range event reads as the next day and would have
+// survived, while its ledger item and semantic document were already gone.
+func TestPruneDatabaseRangePrunesByInstantNotWallClock(t *testing.T) {
+	ctx := context.Background()
+	server, database, cleanup := newTestSettingsServer(t, ctx)
+	defer cleanup()
+	q := database.WriteQuerier
+	dayStart := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	dayEnd := dayStart.Add(24 * time.Hour)
+
+	// late enough that a +12:00 wall clock reads as the next day
+	createTestTransitionEvent(t, ctx, q, "In Range App", dayStart.Add(20*time.Hour), dayStart.Add(21*time.Hour))
+	createTestTransitionEvent(t, ctx, q, "Out Range App", dayEnd.Add(20*time.Hour), dayEnd.Add(21*time.Hour))
+	restoreStoredOffset(t, database, 12)
+
+	response, err := server.PruneDatabaseRange(ctx, &settingsv1.PruneDatabaseRangeRequest{
+		StartedAt: timestamppb.New(dayStart),
+		EndedAt:   timestamppb.New(dayEnd),
+	})
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+
+	assertPruneCount(t, "foreground processes", response.GetForegroundProcessesDeleted(), 2)
+	assertPruneCount(t, "timeline", response.GetTimelineDeleted(), 1)
+	assertTableCount(t, ctx, database.ReadConn, "foreground_processes", 2)
+	assertTableCount(t, ctx, database.ReadConn, "timeline", 1)
+}
+
+// restoreStoredOffset rewrites every stored observation as the same instant expressed at a fixed
+// offset from UTC, reproducing the rows written before the ingest normalised to UTC.
+func restoreStoredOffset(t *testing.T, database *db.Database, offsetHours int) {
+	t.Helper()
+
+	if err := database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		_, err := conn.Exec(
+			`UPDATE foreground_processes
+			 SET created_at_utc = strftime('%Y-%m-%d %H:%M:%f', created_at_utc, ?) || ?`,
+			fmt.Sprintf("%+d hours", offsetHours),
+			fmt.Sprintf("%+03d:00", offsetHours),
+		)
+
+		return err
+	}); err != nil {
+		t.Fatalf("restore stored offset: %v", err)
+	}
+}
+
 func TestVacuumDatabaseCompactsSqliteFootprint(t *testing.T) {
 	ctx := context.Background()
 	server, database, cleanup := newTestSettingsServer(t, ctx)

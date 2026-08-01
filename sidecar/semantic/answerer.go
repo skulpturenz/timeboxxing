@@ -2,25 +2,13 @@ package semantic
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
 
-const (
-	appUsageToolNameForAnswerer = "get_app_usage_totals"
-	defaultAppUsageChartLimit   = 5
-)
-
-var (
-	explicitDatePattern   = regexp.MustCompile(`\b(\d{4})-(\d{2})-(\d{2})\b`)
-	recentWindowPattern   = regexp.MustCompile(`\b(?:last|past)\s+(\d{1,3})\s+(hour|hours|day|days)\b`)
-	topLimitPattern       = regexp.MustCompile(`\btop\s+(\d{1,2})\b`)
-	applicationWordRegexp = regexp.MustCompile(`\b(app|apps|application|applications|program|programs|software)\b`)
-)
+var applicationWordRegexp = regexp.MustCompile(`\b(app|apps|application|applications|program|programs|software)\b`)
 
 type DocumentSearcher interface {
 	Search(ctx context.Context, query string, k int64) ([]SearchResult, error)
@@ -68,10 +56,6 @@ func (a *Answerer) Answer(ctx context.Context, question string, k int64) (*Answe
 	}
 	if a.generator == nil {
 		return nil, fmt.Errorf("generator is required")
-	}
-
-	if chartAnswer, handled, err := a.answerAppUsageChart(ctx, question); handled || err != nil {
-		return chartAnswer, err
 	}
 
 	if toolAnswer, handled, err := a.answerWithTools(ctx, question); handled || err != nil {
@@ -136,75 +120,6 @@ func (a *Answerer) AnswerStructured(ctx context.Context, query StructuredQuery) 
 		Model:     a.generator.Model(),
 		Artifacts: result.Artifacts,
 	}, nil
-}
-
-type appUsageChartRoute struct {
-	Recognized    bool
-	NeedsPeriod   bool
-	StartedAt     time.Time
-	EndedAt       time.Time
-	PeriodLabel   string
-	Limit         int
-	IncludeIdle   bool
-	Clarification string
-}
-
-type appUsageToolArgs struct {
-	StartedAt   string `json:"started_at"`
-	EndedAt     string `json:"ended_at"`
-	Limit       int    `json:"limit"`
-	IncludeIdle bool   `json:"include_idle"`
-}
-
-func (a *Answerer) answerAppUsageChart(ctx context.Context, question string) (*Answer, bool, error) {
-	route := resolveAppUsageChartRoute(question, a.now(), a.location)
-	if !route.Recognized {
-		return nil, false, nil
-	}
-	if route.NeedsPeriod {
-		return &Answer{
-			Question: question,
-			Answer:   route.Clarification,
-			Model:    a.generator.Model(),
-		}, true, nil
-	}
-	if a.toolRunner == nil {
-		return &Answer{
-			Question: question,
-			Answer:   "I can chart app usage once the usage history tool is available.",
-			Model:    a.generator.Model(),
-		}, true, nil
-	}
-
-	args, err := json.Marshal(appUsageToolArgs{
-		StartedAt:   route.StartedAt.Format(time.RFC3339),
-		EndedAt:     route.EndedAt.Format(time.RFC3339),
-		Limit:       route.Limit,
-		IncludeIdle: route.IncludeIdle,
-	})
-	if err != nil {
-		return nil, true, fmt.Errorf("marshal app usage tool arguments: %w", err)
-	}
-	result, err := a.toolRunner.Execute(ctx, ChatToolCall{
-		ID:        "app_usage_chart",
-		Name:      appUsageToolNameForAnswerer,
-		Arguments: string(args),
-	})
-	if err != nil {
-		return nil, true, fmt.Errorf("execute app usage chart tool: %w", err)
-	}
-	for i := range result.Artifacts {
-		if result.Artifacts[i].AppUsageChart != nil {
-			result.Artifacts[i].AppUsageChart.PeriodLabel = route.PeriodLabel
-		}
-	}
-
-	return &Answer{
-		Question:  question,
-		Answer:    appUsageChartAnswer(result.Artifacts, route.PeriodLabel),
-		Model:     a.generator.Model(),
-		Artifacts: result.Artifacts,
-	}, true, nil
 }
 
 func (a *Answerer) answerWithTools(ctx context.Context, question string) (*Answer, bool, error) {
@@ -283,45 +198,17 @@ func BuildToolDecisionPrompt(now time.Time, loc *time.Location) string {
 	b.WriteString(localNow.Format(time.RFC3339))
 	b.WriteString("\nTimezone: ")
 	b.WriteString(loc.String())
-	b.WriteString("\nUse get_app_usage_totals only when the user asks for most-used apps, top apps, or total time spent per app.\n")
+	b.WriteString("\nUse get_usage_timeline only when the user asks about what they were doing: the sessions, transitions, or time spent in a period.\n")
 	b.WriteString("Before calling it, infer exact RFC3339 started_at and ended_at values from the question and current local time.\n")
-	b.WriteString("Use limit 5 unless the user explicitly asks for another number.\n")
+	b.WriteString("Use limit 50 unless the user explicitly asks for another number.\n")
 	b.WriteString("Set include_idle to false unless the user explicitly asks about idle time.\n")
-	b.WriteString("If the user asks for app usage totals but the time period is unclear, ask one concise clarifying question.\n")
-	b.WriteString("If this is not an app usage totals question, respond exactly: NO_TOOL\n")
-	b.WriteString("After a tool result, answer briefly and mention that the chart shows the app totals.")
+	b.WriteString("If this is not a usage question, respond exactly: NO_TOOL\n")
+	b.WriteString("After a tool result, answer briefly and mention that the timeline lists the sessions.")
 	return b.String()
 }
 
 func looksLikeAppUsageQuestion(question string) bool {
 	return isAppUsageChartQuestion(question)
-}
-
-func resolveAppUsageChartRoute(question string, now time.Time, loc *time.Location) appUsageChartRoute {
-	if loc == nil {
-		loc = time.Local
-	}
-	if !isAppUsageChartQuestion(question) {
-		return appUsageChartRoute{}
-	}
-	startedAt, endedAt, label, ok := resolveAppUsagePeriod(question, now, loc)
-	if !ok {
-		return appUsageChartRoute{
-			Recognized:    true,
-			NeedsPeriod:   true,
-			Limit:         appUsageChartLimit(question),
-			IncludeIdle:   appUsageIncludesIdle(question),
-			Clarification: "Which time period should I chart for app usage?",
-		}
-	}
-	return appUsageChartRoute{
-		Recognized:  true,
-		StartedAt:   startedAt,
-		EndedAt:     endedAt,
-		PeriodLabel: label,
-		Limit:       appUsageChartLimit(question),
-		IncludeIdle: appUsageIncludesIdle(question),
-	}
 }
 
 func isAppUsageChartQuestion(question string) bool {
@@ -345,79 +232,6 @@ func isAppUsageChartQuestion(question string) bool {
 		strings.Contains(normalized, "usage")
 }
 
-func resolveAppUsagePeriod(question string, now time.Time, loc *time.Location) (time.Time, time.Time, string, bool) {
-	normalized := normalizedQuestion(question)
-	localNow := now.In(loc)
-	today := startOfLocalDay(localNow, loc)
-
-	if match := recentWindowPattern.FindStringSubmatch(normalized); len(match) == 3 {
-		count, err := strconv.Atoi(match[1])
-		if err == nil && count > 0 {
-			switch match[2] {
-			case "hour", "hours":
-				return localNow.Add(-time.Duration(count) * time.Hour), localNow, fmt.Sprintf("Past %d hours", count), true
-			case "day", "days":
-				return localNow.AddDate(0, 0, -count), localNow, fmt.Sprintf("Past %d days", count), true
-			}
-		}
-	}
-	if strings.Contains(normalized, "yesterday") {
-		start := today.AddDate(0, 0, -1)
-		return start, today, "Yesterday", true
-	}
-	if strings.Contains(normalized, "today") {
-		return today, today.AddDate(0, 0, 1), "Today", true
-	}
-	if strings.Contains(normalized, "last week") {
-		thisWeek := startOfLocalWeek(localNow, loc)
-		start := thisWeek.AddDate(0, 0, -7)
-		return start, thisWeek, "Last week", true
-	}
-	if strings.Contains(normalized, "this week") {
-		start := startOfLocalWeek(localNow, loc)
-		return start, start.AddDate(0, 0, 7), "This week", true
-	}
-	if strings.Contains(normalized, "last month") {
-		thisMonth := startOfLocalMonth(localNow, loc)
-		start := thisMonth.AddDate(0, -1, 0)
-		return start, thisMonth, "Last month", true
-	}
-	if strings.Contains(normalized, "this month") {
-		start := startOfLocalMonth(localNow, loc)
-		return start, start.AddDate(0, 1, 0), "This month", true
-	}
-	if match := explicitDatePattern.FindStringSubmatch(question); len(match) == 4 {
-		year, yearErr := strconv.Atoi(match[1])
-		month, monthErr := strconv.Atoi(match[2])
-		day, dayErr := strconv.Atoi(match[3])
-		if yearErr == nil && monthErr == nil && dayErr == nil {
-			start := time.Date(year, time.Month(month), day, 0, 0, 0, 0, loc)
-			if start.Year() == year && int(start.Month()) == month && start.Day() == day {
-				return start, start.AddDate(0, 0, 1), start.Format("January 2, 2006"), true
-			}
-		}
-	}
-	return time.Time{}, time.Time{}, "", false
-}
-
-func appUsageChartLimit(question string) int {
-	normalized := normalizedQuestion(question)
-	if match := topLimitPattern.FindStringSubmatch(normalized); len(match) == 2 {
-		value, err := strconv.Atoi(match[1])
-		if err == nil && value > 0 {
-			if value > 20 {
-				return 20
-			}
-			return value
-		}
-	}
-	return defaultAppUsageChartLimit
-}
-
-func appUsageIncludesIdle(question string) bool {
-	return strings.Contains(normalizedQuestion(question), "idle")
-}
-
 func normalizedQuestion(question string) string {
 	replacer := strings.NewReplacer(
 		"?", " ",
@@ -432,17 +246,6 @@ func normalizedQuestion(question string) string {
 	return " " + strings.Join(strings.Fields(replacer.Replace(strings.ToLower(question))), " ") + " "
 }
 
-func startOfLocalWeek(value time.Time, loc *time.Location) time.Time {
-	day := startOfLocalDay(value, loc)
-	daysSinceMonday := (int(day.Weekday()) + 6) % 7
-	return day.AddDate(0, 0, -daysSinceMonday)
-}
-
-func startOfLocalMonth(value time.Time, loc *time.Location) time.Time {
-	local := value.In(loc)
-	return time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
-}
-
 func (a *Answerer) now() time.Time {
 	if a.clock == nil {
 		return time.Now()
@@ -452,17 +255,15 @@ func (a *Answerer) now() time.Time {
 
 func fallbackToolAnswer(artifacts []Artifact) string {
 	for _, artifact := range artifacts {
-		if artifact.Type != ArtifactTypeAppUsageChart || artifact.AppUsageChart == nil {
+		if artifact.Type != ArtifactTypeUsageTimeline || artifact.UsageTimeline == nil {
 			continue
 		}
-		chart := artifact.AppUsageChart
-		if len(chart.Buckets) == 0 {
-			return "I did not find any app usage in that period."
+		if artifact.UsageTimeline.TotalEventCount == 0 {
+			return "I did not find any usage events in that period."
 		}
-		top := chart.Buckets[0]
-		return fmt.Sprintf("Your most used app was %s. The chart shows the app totals for that period.", top.Name)
+		return "The timeline lists the usage events for that period."
 	}
-	return "I found the requested usage totals."
+	return "I found the requested usage timeline."
 }
 
 func structuredQuestionLabel(query StructuredQuery) string {
@@ -471,18 +272,8 @@ func structuredQuestionLabel(query StructuredQuery) string {
 		label = "selected period"
 	}
 	switch query.Kind {
-	case StructuredQueryKindAppTotals:
-		return "App totals for " + label
 	case StructuredQueryKindTimeline:
 		return "Timeline for " + label
-	case StructuredQueryKindHabits:
-		return "Habits for " + label
-	case StructuredQueryKindComparePeriods:
-		baseline := strings.TrimSpace(query.BaselinePeriodLabel)
-		if baseline == "" {
-			baseline = "baseline period"
-		}
-		return fmt.Sprintf("Compare %s to %s", label, baseline)
 	default:
 		return "Usage insight for " + label
 	}
@@ -491,26 +282,9 @@ func structuredQuestionLabel(query StructuredQuery) string {
 func applyStructuredLabels(artifacts []Artifact, query StructuredQuery) {
 	for i := range artifacts {
 		switch artifacts[i].Type {
-		case ArtifactTypeAppUsageChart:
-			if artifacts[i].AppUsageChart != nil && artifacts[i].AppUsageChart.PeriodLabel == "" {
-				artifacts[i].AppUsageChart.PeriodLabel = query.PeriodLabel
-			}
 		case ArtifactTypeUsageTimeline:
 			if artifacts[i].UsageTimeline != nil && artifacts[i].UsageTimeline.PeriodLabel == "" {
 				artifacts[i].UsageTimeline.PeriodLabel = query.PeriodLabel
-			}
-		case ArtifactTypeUsageHabitSummary:
-			if artifacts[i].UsageHabitSummary != nil && artifacts[i].UsageHabitSummary.PeriodLabel == "" {
-				artifacts[i].UsageHabitSummary.PeriodLabel = query.PeriodLabel
-			}
-		case ArtifactTypeUsageComparison:
-			if artifacts[i].UsageComparison != nil {
-				if artifacts[i].UsageComparison.CurrentPeriodLabel == "" {
-					artifacts[i].UsageComparison.CurrentPeriodLabel = query.PeriodLabel
-				}
-				if artifacts[i].UsageComparison.BaselinePeriodLabel == "" {
-					artifacts[i].UsageComparison.BaselinePeriodLabel = query.BaselinePeriodLabel
-				}
 			}
 		}
 	}
@@ -519,8 +293,6 @@ func applyStructuredLabels(artifacts []Artifact, query StructuredQuery) {
 func structuredUsageAnswer(artifacts []Artifact, query StructuredQuery) string {
 	for _, artifact := range artifacts {
 		switch artifact.Type {
-		case ArtifactTypeAppUsageChart:
-			return appUsageChartAnswer(artifacts, query.PeriodLabel)
 		case ArtifactTypeUsageTimeline:
 			if artifact.UsageTimeline == nil {
 				continue
@@ -534,43 +306,6 @@ func structuredUsageAnswer(artifacts []Artifact, query StructuredQuery) string {
 				return fmt.Sprintf("I found %d usage events for %s and listed the first %d in the timeline.", timeline.TotalEventCount, label, len(timeline.Events))
 			}
 			return fmt.Sprintf("I found %d usage events for %s. The timeline lists the exact sessions.", timeline.TotalEventCount, label)
-		case ArtifactTypeUsageHabitSummary:
-			if artifact.UsageHabitSummary == nil {
-				continue
-			}
-			summary := artifact.UsageHabitSummary
-			label := fallbackPeriodLabel(summary.PeriodLabel)
-			if summary.SessionCount == 0 {
-				return fmt.Sprintf("I did not find any usage events for %s.", label)
-			}
-			return fmt.Sprintf(
-				"For %s, I found %s across %d sessions with %d context switches.",
-				label,
-				formatAnswerDuration(summary.TotalDurationSeconds),
-				summary.SessionCount,
-				summary.ContextSwitchCount,
-			)
-		case ArtifactTypeUsageComparison:
-			if artifact.UsageComparison == nil {
-				continue
-			}
-			comparison := artifact.UsageComparison
-			currentLabel := fallbackPeriodLabel(comparison.CurrentPeriodLabel)
-			baselineLabel := fallbackPeriodLabel(comparison.BaselinePeriodLabel)
-			delta := comparison.DurationDeltaSeconds
-			direction := "unchanged"
-			if delta > 0 {
-				direction = "up"
-			} else if delta < 0 {
-				direction = "down"
-			}
-			return fmt.Sprintf(
-				"%s was %s %s versus %s.",
-				currentLabel,
-				direction,
-				formatAnswerDuration(absInt64(delta)),
-				baselineLabel,
-			)
 		}
 	}
 	return "I found the requested usage insight."
@@ -581,38 +316,6 @@ func fallbackPeriodLabel(label string) string {
 		return trimmed
 	}
 	return "the selected period"
-}
-
-func absInt64(value int64) int64 {
-	if value < 0 {
-		return -value
-	}
-	return value
-}
-
-func appUsageChartAnswer(artifacts []Artifact, periodLabel string) string {
-	for _, artifact := range artifacts {
-		if artifact.Type != ArtifactTypeAppUsageChart || artifact.AppUsageChart == nil {
-			continue
-		}
-		chart := artifact.AppUsageChart
-		label := strings.TrimSpace(periodLabel)
-		if label == "" {
-			label = "that period"
-		}
-		if len(chart.Buckets) == 0 || chart.TotalDurationSeconds <= 0 {
-			return fmt.Sprintf("I did not find any app usage for %s. The chart is empty.", label)
-		}
-		top := chart.Buckets[0]
-		return fmt.Sprintf(
-			"Your most used app for %s was %s (%s). The chart shows your top %d apps by total time.",
-			label,
-			top.Name,
-			formatAnswerDuration(top.DurationSeconds),
-			len(chart.Buckets),
-		)
-	}
-	return "I found the requested app usage totals. The chart shows your app usage by total time."
 }
 
 func formatAnswerDuration(seconds int64) string {

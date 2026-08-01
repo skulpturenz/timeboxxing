@@ -127,6 +127,52 @@ func TestIndexerDoesNotPersistOnEmbeddingFailure(t *testing.T) {
 	}
 }
 
+// An observation recorded before the ingest normalised to UTC is stored with the monitor's local
+// offset, while the day window is asked for in UTC. Regression: compared as text, an event whose
+// local wall clock landed on the following day read as outside the window and dropped out of the
+// day's summaries.
+func TestIndexerSummarisesEventsStoredWithANonUTCOffset(t *testing.T) {
+	ctx := context.Background()
+	database := newSemanticTestDatabase(t, ctx)
+	// late enough that a +12:00 wall clock reads as the next day
+	startedAt := time.Date(2026, 6, 13, 20, 0, 0, 0, time.UTC)
+	createSemanticTestTransitionEventAt(t, ctx, database.WriteQuerier, startedAt)
+	restoreStoredOffset(t, database, 12)
+
+	indexer := NewIndexer(database.WriteQuerier, database.ReadQuerier, fakeEmbedder{}, 1)
+	// pin the day boundary so the window does not depend on the machine's zone
+	indexer.location = time.UTC
+
+	if err := indexer.RefreshSummariesForTime(ctx, startedAt); err != nil {
+		t.Fatalf("refresh summaries: %v", err)
+	}
+
+	count := countSemanticRowsWhere(t, ctx, database.ReadConn, "timeline_semantic_documents",
+		"document_key LIKE 'app_day:%' AND content LIKE '%Google Chrome%'")
+	if count != 1 {
+		t.Fatalf("expected the event to be summarised, got %d app-day documents", count)
+	}
+}
+
+// restoreStoredOffset rewrites every stored observation as the same instant expressed at a fixed
+// offset from UTC, reproducing the rows written before the ingest normalised to UTC.
+func restoreStoredOffset(t *testing.T, database *db.Database, offsetHours int) {
+	t.Helper()
+
+	if err := database.WriteQuerier.WithWriteConn(func(conn *sql.DB) error {
+		_, err := conn.Exec(
+			`UPDATE foreground_processes
+			 SET created_at_utc = strftime('%Y-%m-%d %H:%M:%f', created_at_utc, ?) || ?`,
+			fmt.Sprintf("%+d hours", offsetHours),
+			fmt.Sprintf("%+03d:00", offsetHours),
+		)
+
+		return err
+	}); err != nil {
+		t.Fatalf("restore stored offset: %v", err)
+	}
+}
+
 func TestIndexerValidationFailures(t *testing.T) {
 	ctx := context.Background()
 	database := newSemanticTestDatabase(t, ctx)

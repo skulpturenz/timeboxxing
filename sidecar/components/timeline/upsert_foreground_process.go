@@ -68,7 +68,7 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 		id, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
 			ApplicationID: utils.ZeroNil(applicationId),
 			Pid:           utils.ZeroNil(pid),
-			CreatedAtUtc:  c.ActiveProcess.Timestamp,
+			CreatedAtUtc:  c.ActiveProcess.Timestamp.UTC(),
 		})
 		if err != nil {
 			return err

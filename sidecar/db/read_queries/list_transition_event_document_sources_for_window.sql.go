@@ -25,9 +25,11 @@ JOIN foreground_processes fp0 ON fp0.id = timeline.initial_foreground_process_id
 JOIN foreground_processes fp1 ON fp1.id = timeline.end_foreground_process_id
 LEFT JOIN applications ON applications.id = fp0.application_id
 LEFT JOIN foreground_process_metadata ON foreground_process_metadata.foreground_process_id = fp0.id
-WHERE fp0.created_at_utc < ?1
-  AND fp1.created_at_utc > ?2
-ORDER BY fp0.created_at_utc ASC, timeline.id ASC
+WHERE CAST(?1 AS TIMESTAMP) IS NOT NULL
+  AND CAST(?2 AS TIMESTAMP) IS NOT NULL
+  AND unixepoch(fp0.created_at_utc, 'subsec') < unixepoch(?1, 'subsec')
+  AND unixepoch(fp1.created_at_utc, 'subsec') > unixepoch(?2, 'subsec')
+ORDER BY timeline.id ASC
 `
 
 type ListTransitionEventDocumentSourcesForWindowParams struct {
@@ -46,6 +48,14 @@ type ListTransitionEventDocumentSourcesForWindowRow struct {
 	CdpUrl            *string
 }
 
+// created_at_utc is stored with whatever offset the observation carried while the bounds arrive
+// normalised to UTC, so both the comparisons and the ordering go through unixepoch(): as text the
+// two are wall clocks rather than instants. ids are handed out in observation order, so ordering by
+// timeline.id is the same sequence and does not need the conversion
+//
+// the leading CAST(... AS TIMESTAMP) tests are only a type anchor for sqlc, which otherwise infers
+// the bounds as interface{} once no comparison against the column types them; both bounds are
+// required, so the tests are always true
 func (q *Queries) ListTransitionEventDocumentSourcesForWindow(ctx context.Context, arg ListTransitionEventDocumentSourcesForWindowParams) ([]ListTransitionEventDocumentSourcesForWindowRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTransitionEventDocumentSourcesForWindow, arg.WindowEndedAt, arg.WindowStartedAt)
 	if err != nil {

@@ -196,25 +196,30 @@ func TestAskMapsAIRequestErrorsToSafeGrpcStatus(t *testing.T) {
 	}
 }
 
-func TestAnswerToProtoMapsAppUsageChartArtifact(t *testing.T) {
+func TestAnswerToProtoMapsUsageTimelineArtifact(t *testing.T) {
 	startedAt := time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC)
 	endedAt := startedAt.Add(24 * time.Hour)
 
 	resp := answerToProto(&semantic.Answer{
-		Answer: "Chrome was your most used app.",
+		Answer: "You spent the day in Chrome.",
 		Model:  "test-model",
 		Artifacts: []semantic.Artifact{{
-			Type: semantic.ArtifactTypeAppUsageChart,
-			AppUsageChart: &semantic.AppUsageChart{
+			Type: semantic.ArtifactTypeUsageTimeline,
+			UsageTimeline: &semantic.UsageTimeline{
 				StartedAt:            startedAt,
 				EndedAt:              endedAt,
 				TimeZone:             "UTC",
 				TotalDurationSeconds: 3600,
-				Buckets: []semantic.AppUsageBucket{{
-					Name:            "Google Chrome",
-					SourceType:      "browser",
-					DurationSeconds: 3600,
-					SessionCount:    2,
+				TotalEventCount:      1,
+				Events: []semantic.UsageTimelineEvent{{
+					TransitionEventID: 42,
+					Title:             "Docs",
+					SourceName:        "Google Chrome",
+					SourceType:        "browser",
+					StartedAt:         startedAt,
+					EndedAt:           startedAt.Add(time.Hour),
+					DurationSeconds:   3600,
+					URLHost:           "example.com",
 				}},
 			},
 		}},
@@ -223,12 +228,12 @@ func TestAnswerToProtoMapsAppUsageChartArtifact(t *testing.T) {
 	if len(resp.GetArtifacts()) != 1 {
 		t.Fatalf("expected one artifact, got %#v", resp.GetArtifacts())
 	}
-	chart := resp.GetArtifacts()[0].GetAppUsageChart()
-	if chart == nil {
-		t.Fatalf("expected app usage chart artifact, got %#v", resp.GetArtifacts()[0])
+	timeline := resp.GetArtifacts()[0].GetUsageTimeline()
+	if timeline == nil {
+		t.Fatalf("expected usage timeline artifact, got %#v", resp.GetArtifacts()[0])
 	}
-	if chart.GetTotalDurationSeconds() != 3600 || chart.GetBuckets()[0].GetName() != "Google Chrome" {
-		t.Fatalf("unexpected chart artifact %#v", chart)
+	if timeline.GetTotalDurationSeconds() != 3600 || timeline.GetEvents()[0].GetSourceName() != "Google Chrome" {
+		t.Fatalf("unexpected timeline artifact %#v", timeline)
 	}
 }
 

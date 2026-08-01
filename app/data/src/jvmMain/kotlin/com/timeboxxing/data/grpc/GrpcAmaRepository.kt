@@ -1,19 +1,13 @@
 package com.timeboxxing.data.grpc
 
 import com.timeboxxing.domain.model.AmaAnswer
-import com.timeboxxing.domain.model.AmaAppUsageBucket
-import com.timeboxxing.domain.model.AmaAppUsageChart
 import com.timeboxxing.domain.model.AmaArtifact
-import com.timeboxxing.domain.model.AmaHabitSummary
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaQueryKind
 import com.timeboxxing.domain.model.AmaSource
 import com.timeboxxing.domain.model.AmaStructuredQuery
-import com.timeboxxing.domain.model.AmaTimeOfDayBucket
 import com.timeboxxing.domain.model.AmaTimeWindow
-import com.timeboxxing.domain.model.AmaUsageComparison
-import com.timeboxxing.domain.model.AmaUsageComparisonBucket
 import com.timeboxxing.domain.model.AmaUsageTimeline
 import com.timeboxxing.domain.model.AmaUsageTimelineEvent
 import com.timeboxxing.domain.repository.AmaRepository
@@ -120,26 +114,6 @@ internal fun AskResponse.toAmaAnswer(): AmaAnswer =
 
 internal fun Artifact.toAmaArtifact(): AmaArtifact? =
     when {
-        hasAppUsageChart() -> {
-            val chart = appUsageChart
-            AmaAppUsageChart(
-                periodLabel = chart.periodLabel,
-                startedAtEpochMillis = if (chart.hasStartedAt()) chart.startedAt.toEpochMillis() else null,
-                endedAtEpochMillis = if (chart.hasEndedAt()) chart.endedAt.toEpochMillis() else null,
-                timeZone = chart.timezone,
-                totalDurationSeconds = chart.totalDurationSeconds,
-                buckets = chart.bucketsList.map { bucket ->
-                    AmaAppUsageBucket(
-                        name = bucket.name,
-                        sourceType = bucket.sourceType,
-                        durationSeconds = bucket.durationSeconds,
-                        sessionCount = bucket.sessionCount,
-                        applicationIdentifier = bucket.applicationIdentifier,
-                        applicationPath = bucket.applicationPath,
-                    )
-                },
-            )
-        }
         hasUsageTimeline() -> {
             val timeline = usageTimeline
             AmaUsageTimeline(
@@ -153,83 +127,8 @@ internal fun Artifact.toAmaArtifact(): AmaArtifact? =
                 events = timeline.eventsList.map { it.toAmaUsageTimelineEvent() },
             )
         }
-        hasUsageHabitSummary() -> {
-            val summary = usageHabitSummary
-            AmaHabitSummary(
-                periodLabel = summary.periodLabel,
-                startedAtEpochMillis = if (summary.hasStartedAt()) summary.startedAt.toEpochMillis() else null,
-                endedAtEpochMillis = if (summary.hasEndedAt()) summary.endedAt.toEpochMillis() else null,
-                timeZone = summary.timezone,
-                totalDurationSeconds = summary.totalDurationSeconds,
-                sessionCount = summary.sessionCount,
-                contextSwitchCount = summary.contextSwitchCount,
-                averageSessionSeconds = summary.averageSessionSeconds,
-                longestSession = if (summary.hasLongestSession()) summary.longestSession.toAmaUsageTimelineEvent() else null,
-                topSources = summary.topSourcesList.map { it.toAmaAppUsageBucket() },
-                timeBuckets = summary.timeBucketsList.map {
-                    AmaTimeOfDayBucket(
-                        label = it.label,
-                        durationSeconds = it.durationSeconds,
-                        sessionCount = it.sessionCount,
-                    )
-                },
-            )
-        }
-        hasUsageComparison() -> {
-            val comparison = usageComparison
-            AmaUsageComparison(
-                currentStartedAtEpochMillis = if (comparison.hasCurrentStartedAt()) {
-                    comparison.currentStartedAt.toEpochMillis()
-                } else {
-                    null
-                },
-                currentEndedAtEpochMillis = if (comparison.hasCurrentEndedAt()) {
-                    comparison.currentEndedAt.toEpochMillis()
-                } else {
-                    null
-                },
-                baselineStartedAtEpochMillis = if (comparison.hasBaselineStartedAt()) {
-                    comparison.baselineStartedAt.toEpochMillis()
-                } else {
-                    null
-                },
-                baselineEndedAtEpochMillis = if (comparison.hasBaselineEndedAt()) {
-                    comparison.baselineEndedAt.toEpochMillis()
-                } else {
-                    null
-                },
-                timeZone = comparison.timezone,
-                currentPeriodLabel = comparison.currentPeriodLabel,
-                baselinePeriodLabel = comparison.baselinePeriodLabel,
-                currentTotalDurationSeconds = comparison.currentTotalDurationSeconds,
-                baselineTotalDurationSeconds = comparison.baselineTotalDurationSeconds,
-                durationDeltaSeconds = comparison.durationDeltaSeconds,
-                durationDeltaPercent = comparison.durationDeltaPercent,
-                buckets = comparison.bucketsList.map {
-                    AmaUsageComparisonBucket(
-                        name = it.name,
-                        sourceType = it.sourceType,
-                        currentDurationSeconds = it.currentDurationSeconds,
-                        baselineDurationSeconds = it.baselineDurationSeconds,
-                        deltaDurationSeconds = it.deltaDurationSeconds,
-                        currentSessionCount = it.currentSessionCount,
-                        baselineSessionCount = it.baselineSessionCount,
-                    )
-                },
-            )
-        }
         else -> null
     }
-
-private fun com.timeboxxing.sidecar.ama.v1.AppUsageBucket.toAmaAppUsageBucket(): AmaAppUsageBucket =
-    AmaAppUsageBucket(
-        name = name,
-        sourceType = sourceType,
-        durationSeconds = durationSeconds,
-        sessionCount = sessionCount,
-        applicationIdentifier = applicationIdentifier,
-        applicationPath = applicationPath,
-    )
 
 private fun UsageTimelineEvent.toAmaUsageTimelineEvent(): AmaUsageTimelineEvent =
     AmaUsageTimelineEvent(
@@ -247,15 +146,13 @@ private fun UsageTimelineEvent.toAmaUsageTimelineEvent(): AmaUsageTimelineEvent 
     )
 
 private fun AmaStructuredQuery.toProto(): StructuredQuery {
-    val builder = StructuredQuery.newBuilder()
+    return StructuredQuery.newBuilder()
         .setKind(kind.toProto())
         .setWindow(window.toProto())
         .setLimit(limit)
         .setIncludeIdle(includeIdle)
         .setPeriodLabel(periodLabel)
-        .setBaselinePeriodLabel(baselinePeriodLabel)
-    baselineWindow?.let { builder.setBaselineWindow(it.toProto()) }
-    return builder.build()
+        .build()
 }
 
 private fun AmaTimeWindow.toProto(): TimeWindow =
@@ -266,10 +163,7 @@ private fun AmaTimeWindow.toProto(): TimeWindow =
 
 private fun AmaQueryKind.toProto(): QueryKind =
     when (this) {
-        AmaQueryKind.AppTotals -> QueryKind.QUERY_KIND_APP_TOTALS
         AmaQueryKind.Timeline -> QueryKind.QUERY_KIND_TIMELINE
-        AmaQueryKind.Habits -> QueryKind.QUERY_KIND_HABITS
-        AmaQueryKind.ComparePeriods -> QueryKind.QUERY_KIND_COMPARE_PERIODS
     }
 
 internal fun SemanticIndexStatus.toAmaIndexStatus(): AmaIndexStatus =

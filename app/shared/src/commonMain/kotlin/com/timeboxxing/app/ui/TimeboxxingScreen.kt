@@ -97,8 +97,6 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import com.timeboxxing.data.time.calendarDateForEpochMillis
 import com.timeboxxing.data.time.usageDayForCalendarDate
-import com.timeboxxing.domain.model.AmaAppUsageChart
-import com.timeboxxing.domain.model.AmaHabitSummary
 import com.timeboxxing.domain.model.AmaMessage
 import com.timeboxxing.domain.model.AmaMessageRole
 import com.timeboxxing.domain.model.AmaIndexState
@@ -107,7 +105,6 @@ import com.timeboxxing.domain.model.AmaQueryKind
 import com.timeboxxing.domain.model.AmaSource
 import com.timeboxxing.domain.model.AmaStructuredQuery
 import com.timeboxxing.domain.model.AmaTimeWindow
-import com.timeboxxing.domain.model.AmaUsageComparison
 import com.timeboxxing.domain.model.AmaUsageTimeline
 import com.timeboxxing.domain.model.AmaUsageTimelineEvent
 import com.timeboxxing.domain.model.CalendarDate
@@ -1298,7 +1295,7 @@ private fun AmaPane(
     val messageCount = state.amaMessages.size + if (state.amaLoading) 1 else 0
     val hasMessages = state.amaMessages.isNotEmpty()
     val defaultInsightDate = amaDefaultCalendarDate(state)
-    var selectedInsightKind by remember { mutableStateOf(AmaQueryKind.AppTotals) }
+    var selectedInsightKind by remember { mutableStateOf(AmaQueryKind.Timeline) }
     var selectedInsightPreset by remember { mutableStateOf(AmaPeriodPreset.SelectedDay) }
     var customInsightStartDate by remember(defaultInsightDate) { mutableStateOf(defaultInsightDate) }
     var customInsightEndDate by remember(defaultInsightDate) { mutableStateOf(defaultInsightDate) }
@@ -1734,10 +1731,7 @@ private fun AmaMessageRow(
         }
         message.artifacts.forEach { artifact ->
             when (artifact) {
-                is AmaAppUsageChart -> AmaAppUsageChartCard(artifact)
                 is AmaUsageTimeline -> AmaUsageTimelineCard(artifact, onOpenUsageSource)
-                is AmaHabitSummary -> AmaHabitSummaryCard(artifact, onOpenUsageSource)
-                is AmaUsageComparison -> AmaUsageComparisonCard(artifact)
             }
         }
         if (message.sources.isNotEmpty()) {
@@ -1841,105 +1835,6 @@ private fun AmaMarkdownText(
 }
 
 @Composable
-private fun AmaAppUsageChartCard(chart: AmaAppUsageChart) {
-    val maxSeconds = chart.buckets.maxOfOrNull { it.durationSeconds }?.coerceAtLeast(1) ?: 1
-    TbSurface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(TbTheme.radii.card),
-        color = TbTheme.colors.groupedSurface,
-        border = BorderStroke(Dp.Hairline, TbTheme.colors.separator),
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    TbText(
-                        text = "Most Used Apps",
-                        style = TbTheme.typography.label,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    TbText(
-                        text = chart.periodLabel.ifBlank { "Selected period" },
-                        style = TbTheme.typography.caption,
-                        color = TbTheme.colors.secondaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                TbText(
-                    text = "${formatUsageChartDuration(chart.totalDurationSeconds)} captured",
-                    style = TbTheme.typography.caption,
-                    color = TbTheme.colors.tertiaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            if (chart.buckets.isEmpty()) {
-                TbText(
-                    text = "No app usage found",
-                    style = TbTheme.typography.bodySmall,
-                    color = TbTheme.colors.secondaryText,
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    chart.buckets.forEach { bucket ->
-                        val fraction = (bucket.durationSeconds.toFloat() / maxSeconds.toFloat()).coerceIn(0.04f, 1f)
-                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TbText(
-                                    modifier = Modifier.weight(1f),
-                                    text = bucket.name.ifBlank { "Unknown application" },
-                                    style = TbTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                TbText(
-                                    text = "${formatUsageChartDuration(bucket.durationSeconds)} • ${formatUsageChartPercent(bucket.durationSeconds, chart.totalDurationSeconds)}",
-                                    style = TbTheme.typography.caption,
-                                    color = TbTheme.colors.secondaryText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(TbTheme.colors.controlFill),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(fraction)
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(TbTheme.colors.accent),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun AmaUsageTimelineCard(
     timeline: AmaUsageTimeline,
     onOpenUsageSource: (Long?, Long) -> Unit,
@@ -1974,116 +1869,6 @@ private fun AmaUsageTimelineCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AmaHabitSummaryCard(
-    summary: AmaHabitSummary,
-    onOpenUsageSource: (Long?, Long) -> Unit,
-) {
-    AmaInsightCard(
-        title = "Habit Summary",
-        subtitle = summary.periodLabel.ifBlank { "Selected period" },
-        trailing = "${summary.sessionCount} sessions",
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AmaMetricPill("Captured", formatUsageChartDuration(summary.totalDurationSeconds), Modifier.weight(1f))
-            AmaMetricPill("Switches", summary.contextSwitchCount.toString(), Modifier.weight(1f))
-            AmaMetricPill("Average", formatUsageChartDuration(summary.averageSessionSeconds), Modifier.weight(1f))
-        }
-        summary.longestSession?.let { longest ->
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TbText(
-                    text = "Longest session",
-                    style = TbTheme.typography.label,
-                    color = TbTheme.colors.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                AmaTimelineEventRow(
-                    event = longest,
-                    onClick = {
-                        onOpenUsageSource(longest.startedAtEpochMillis, longest.transitionEventId)
-                    },
-                )
-            }
-        }
-        if (summary.topSources.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TbText(
-                    text = "Top sources",
-                    style = TbTheme.typography.label,
-                    color = TbTheme.colors.secondaryText,
-                )
-                summary.topSources.take(5).forEach { bucket ->
-                    AmaSimpleBarRow(
-                        label = bucket.name.ifBlank { "Unknown application" },
-                        value = formatUsageChartDuration(bucket.durationSeconds),
-                        fraction = bucket.durationSeconds.toFloat() /
-                            summary.topSources.maxOf { it.durationSeconds }.coerceAtLeast(1).toFloat(),
-                    )
-                }
-            }
-        }
-        if (summary.timeBuckets.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TbText(
-                    text = "Time of day",
-                    style = TbTheme.typography.label,
-                    color = TbTheme.colors.secondaryText,
-                )
-                summary.timeBuckets.forEach { bucket ->
-                    AmaSimpleBarRow(
-                        label = bucket.label,
-                        value = formatUsageChartDuration(bucket.durationSeconds),
-                        fraction = bucket.durationSeconds.toFloat() /
-                            summary.timeBuckets.maxOf { it.durationSeconds }.coerceAtLeast(1).toFloat(),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AmaUsageComparisonCard(comparison: AmaUsageComparison) {
-    val direction = when {
-        comparison.durationDeltaSeconds > 0 -> "Up"
-        comparison.durationDeltaSeconds < 0 -> "Down"
-        else -> "Flat"
-    }
-    AmaInsightCard(
-        title = "Period Comparison",
-        subtitle = "${comparison.currentPeriodLabel.ifBlank { "Current" }} vs ${comparison.baselinePeriodLabel.ifBlank { "Baseline" }}",
-        trailing = "$direction ${formatUsageChartDuration(kotlin.math.abs(comparison.durationDeltaSeconds))}",
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AmaMetricPill("Current", formatUsageChartDuration(comparison.currentTotalDurationSeconds), Modifier.weight(1f))
-            AmaMetricPill("Baseline", formatUsageChartDuration(comparison.baselineTotalDurationSeconds), Modifier.weight(1f))
-            AmaMetricPill("Delta", "${comparison.durationDeltaPercent.formatPercentDelta()}%", Modifier.weight(1f))
-        }
-        if (comparison.buckets.isEmpty()) {
-            TbText(
-                text = "No comparable usage found",
-                style = TbTheme.typography.bodySmall,
-                color = TbTheme.colors.secondaryText,
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                comparison.buckets.forEach { bucket ->
-                    AmaComparisonRow(bucket)
-                }
             }
         }
     }
@@ -2264,45 +2049,6 @@ private fun AmaSimpleBarRow(
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp))
                     .background(TbTheme.colors.accent),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AmaComparisonRow(bucket: com.timeboxxing.domain.model.AmaUsageComparisonBucket) {
-    val maxSeconds = maxOf(bucket.currentDurationSeconds, bucket.baselineDurationSeconds).coerceAtLeast(1)
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TbText(
-                modifier = Modifier.weight(1f),
-                text = bucket.name.ifBlank { "Unknown application" },
-                style = TbTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            TbText(
-                text = "${formatUsageChartDuration(bucket.currentDurationSeconds)} / ${formatUsageChartDuration(bucket.baselineDurationSeconds)}",
-                style = TbTheme.typography.caption,
-                color = TbTheme.colors.secondaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            AmaTinyBar(
-                fraction = bucket.currentDurationSeconds.toFloat() / maxSeconds.toFloat(),
-                color = TbTheme.colors.accent,
-                modifier = Modifier.weight(1f),
-            )
-            AmaTinyBar(
-                fraction = bucket.baselineDurationSeconds.toFloat() / maxSeconds.toFloat(),
-                color = TbTheme.colors.secondaryText,
-                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -2619,12 +2365,7 @@ private fun AmaInsightKindGrid(
     selectedKind: AmaQueryKind,
     onSelectedKindChange: (AmaQueryKind) -> Unit,
 ) {
-    val kinds = listOf(
-        AmaQueryKind.AppTotals,
-        AmaQueryKind.Timeline,
-        AmaQueryKind.Habits,
-        AmaQueryKind.ComparePeriods,
-    )
+    val kinds = listOf(AmaQueryKind.Timeline)
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         if (maxWidth < 620.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3027,24 +2768,6 @@ private fun resolveAmaWindow(
         }
     }
 
-private fun comparisonBaselineWindow(current: AmaResolvedWindow): AmaResolvedWindow {
-    val dayCount = daysBetweenInclusive(current.startDate, current.endDate)
-    val baselineEnd = current.startDate.plusDays(-1)
-    val baselineStart = baselineEnd.plusDays(-(dayCount - 1))
-    val startDay = usageDayForCalendarDate(baselineStart)
-    val endBoundary = usageDayForCalendarDate(baselineEnd.plusDays(1))
-    return AmaResolvedWindow(
-        window = AmaTimeWindow(startDay.startedAtEpochMillis, endBoundary.startedAtEpochMillis),
-        label = if (baselineStart == baselineEnd) {
-            baselineStart.isoLabel()
-        } else {
-            "${baselineStart.isoLabel()} to ${baselineEnd.isoLabel()}"
-        },
-        startDate = baselineStart,
-        endDate = baselineEnd,
-    )
-}
-
 private fun buildAmaStructuredQuery(
     state: TimeboxxingScreenState,
     kind: AmaQueryKind,
@@ -3060,17 +2783,12 @@ private fun buildAmaStructuredQuery(
         customStartDate = customStartDate,
         customEndDate = customEndDate,
     ) ?: return null
-    val baseline = current
-        .takeIf { kind == AmaQueryKind.ComparePeriods }
-        ?.let { comparisonBaselineWindow(it) }
     return AmaStructuredQuery(
         kind = kind,
         window = current.window,
-        baselineWindow = baseline?.window,
         limit = limit,
         includeIdle = includeIdle,
         periodLabel = current.label,
-        baselinePeriodLabel = baseline?.label.orEmpty(),
     )
 }
 
@@ -3081,39 +2799,27 @@ private fun amaDefaultCalendarDate(state: TimeboxxingScreenState): CalendarDate 
 
 private val AmaQueryKind.icon: ImageVector
     get() = when (this) {
-        AmaQueryKind.AppTotals -> Icons.Rounded.BarChart
         AmaQueryKind.Timeline -> Icons.AutoMirrored.Rounded.ListAlt
-        AmaQueryKind.Habits -> Icons.Rounded.Insights
-        AmaQueryKind.ComparePeriods -> Icons.AutoMirrored.Rounded.CompareArrows
     }
 
 private val AmaQueryKind.label: String
     get() = when (this) {
-        AmaQueryKind.AppTotals -> "Apps"
         AmaQueryKind.Timeline -> "Timeline"
-        AmaQueryKind.Habits -> "Habits"
-        AmaQueryKind.ComparePeriods -> "Compare"
     }
 
 private val AmaQueryKind.caption: String
     get() = when (this) {
-        AmaQueryKind.AppTotals -> "Totals by app"
         AmaQueryKind.Timeline -> "Exact events"
-        AmaQueryKind.Habits -> "Patterns"
-        AmaQueryKind.ComparePeriods -> "Period deltas"
     }
 
 private val AmaQueryKind.limitLabel: String
     get() = when (this) {
         AmaQueryKind.Timeline -> "Rows"
-        else -> "Apps"
     }
 
 private fun amaLimitOptionsFor(kind: AmaQueryKind): List<Int> =
-    if (kind == AmaQueryKind.Timeline) {
-        listOf(20, 50, 100)
-    } else {
-        listOf(5, 10, 20)
+    when (kind) {
+        AmaQueryKind.Timeline -> listOf(20, 50, 100)
     }
 
 @Composable

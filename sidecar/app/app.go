@@ -15,8 +15,6 @@ import (
 	componentTimeline "github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
 	timelineConverters "github.com/skulpturenz/timeboxxing/sidecar/components/timeline/converters"
 	timelineModels "github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
-	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
-	componentUsage "github.com/skulpturenz/timeboxxing/sidecar/components/usage"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	"github.com/skulpturenz/timeboxxing/sidecar/envs"
@@ -24,13 +22,11 @@ import (
 	projectsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/projects/v1"
 	settingsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/settings/v1"
 	timesheetsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/timesheets/v1"
-	transitionsv1 "github.com/skulpturenz/timeboxxing/sidecar/gen/transitions/v1"
 	usagev1 "github.com/skulpturenz/timeboxxing/sidecar/gen/usage/v1"
 	grpcAma "github.com/skulpturenz/timeboxxing/sidecar/grpc/ama"
 	grpcProjects "github.com/skulpturenz/timeboxxing/sidecar/grpc/projects"
 	grpcSettings "github.com/skulpturenz/timeboxxing/sidecar/grpc/settings"
 	grpcTimesheets "github.com/skulpturenz/timeboxxing/sidecar/grpc/timesheets"
-	grpcTransitions "github.com/skulpturenz/timeboxxing/sidecar/grpc/transitions"
 	grpcUsage "github.com/skulpturenz/timeboxxing/sidecar/grpc/usage"
 	sidecarLogging "github.com/skulpturenz/timeboxxing/sidecar/logging"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor"
@@ -102,7 +98,6 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 	}()
 
 	semanticRuntime := buildSemanticRuntime(ctx, registry, database, logger)
-	componentTransitions.NewService(registry)
 	workerRuntime := workers.NewRuntime(registry)
 	for _, cleanup := range startWorkers(ctx, registry, workerRuntime, semanticRuntime) {
 		defer cleanup()
@@ -113,9 +108,8 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 
 	startStartupSemanticBackfill(semanticRuntime)
 
-	usageService := componentUsage.NewService(registry)
 	if semanticRuntime.Answerer != nil {
-		semanticRuntime.Answerer.SetToolRunner(grpcAma.NewAppUsageToolRunner(usageService))
+		semanticRuntime.Answerer.SetToolRunner(grpcAma.NewAppUsageToolRunner(registry))
 	}
 
 	// The removed Service.Project ingest carried the semantic-indexing enqueuer via
@@ -294,7 +288,6 @@ func serveGRPC(ctx context.Context, registry *services.Services[any, any], logge
 		),
 	)
 	reflection.Register(server)
-	transitionsv1.RegisterTransitionsServiceServer(server, grpcTransitions.NewServer(registry))
 	amav1.RegisterAmaServiceServer(server, grpcAma.NewServer(registry))
 	projectsv1.RegisterProjectsServiceServer(server, grpcProjects.NewServer(registry))
 	settingsv1.RegisterSettingsServiceServer(server, grpcSettings.NewServer(registry))
