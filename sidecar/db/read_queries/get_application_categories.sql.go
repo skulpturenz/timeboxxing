@@ -28,10 +28,6 @@ type GetApplicationCategoriesRow struct {
 	Code          string
 }
 
-// GetApplicationCategories returns the taxonomy codes each of the given applications is classified
-// under, grouped by application and lowest surrogate id first. An application maps to categories
-// many-to-many, but ingest links exactly one today, so callers read the first. An application with
-// no classification yields no rows rather than a null one.
 func (q *Queries) GetApplicationCategories(ctx context.Context, applicationids []int64) ([]GetApplicationCategoriesRow, error) {
 	query := getApplicationCategories
 	var queryParams []interface{}

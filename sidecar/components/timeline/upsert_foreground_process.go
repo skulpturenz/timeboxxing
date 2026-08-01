@@ -18,6 +18,17 @@ type CommandUpsertForegroundProcess struct {
 	ActiveProcess   models.ForegroundProcess
 }
 
+// titleSourceCode renders a title source as the code the read path parses back, or nil when there
+// is none. TitleSourceUnknown collapses to nil rather than its String(): "unknown" is not one of the
+// codes models.ParseTitleSource accepts, so storing it would fail the read.
+func titleSourceCode(titleSource *models.TitleSource) *string {
+	if titleSource == nil || *titleSource == models.TitleSourceUnknown {
+		return nil
+	}
+
+	return utils.ZeroNil(titleSource.String())
+}
+
 func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services.Services[any, any]) error {
 	database, ok := db.FromServices(svcs)
 	assert.True(ok)
@@ -77,11 +88,15 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 		_, err = q.InsertForegroundProcessMetadata(ctx, writequeries.InsertForegroundProcessMetadataParams{
 			ForegroundProcessID: id,
 			Browser:             c.ActiveProcess.IsBrowser(),
+			BrowserVendor:       utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.Vendor),
 			Idle:                c.ActiveProcess.IsIdle(),
 			Tab:                 utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.Tab),
 			CdpUrl:              utils.ZeroNil(c.ActiveProcess.Enrichments.Browser.CdpURL),
 			Latitude:            c.ActiveProcess.Enrichments.Location.Latitude,
 			Longitude:           c.ActiveProcess.Enrichments.Location.Longitude,
+			PublicIp:            c.ActiveProcess.Enrichments.Location.PublicIP,
+			TitleSource:         titleSourceCode(c.ActiveProcess.TitleSource),
+			WindowTitle:         c.ActiveProcess.WindowTitle,
 		})
 		if err != nil {
 			return err

@@ -3,8 +3,9 @@
 The `monitor` module captures what the user is doing right now: it polls the OS
 for the active window, detects idle, decorates each sample with derived context
 (app metadata, browser tab/URL, location), and hands a stream of *change events*
-to the timeline. It is the source of every observation that later becomes a
-transition/usage event.
+to the timeline. It is the source of every observation that the
+[`timeline`](../components/timeline/README.md) component turns into a persisted
+timeline entry.
 
 Everything downstream depends on one type — [`monitor.ForegroundProcess`](monitor.go)
 — flowing through the cooperating packages listed in the package map below.
@@ -30,13 +31,27 @@ The pipeline is assembled in [`app/app.go`](../app/app.go) →
 1. `stack.Stack()` builds the enrichment `Enricher` + the permission list.
 2. `monitor.New(ctx, Options{Permissions})` starts the poll goroutine and
    requests those permissions.
-3. `reporter.From(ctx, m.Stream)` starts the single consumer of the ring buffer.
+3. `reporter.From(ctx, m.Stream)` starts the single consumer of the ring buffer. It
+   returns `(*PubSubReporter, func())`; the call site **discards the cleanup func**
+   ([app.go:143](../app/app.go#L143)) because shutdown rides on `ctx` instead.
 4. `pubsub.Subscribe("timeline")` yields a change-event channel that a goroutine
    drains, `enrich`-es, adapts to `models.ForegroundProcess` via
    `MonitorForegroundProcessConverter`, and feeds a channel consumed by the
    [`timeline`](../components/timeline/README.md) ingest command
-   (`CommandSubscribeReporter` → `CommandUpsertForegroundProcess`), which persists
-   each observation into the event store.
+   (`CommandSubscribeReporter` → `CommandUpsertForegroundProcess`).
+
+Each observation lands in **one write transaction**
+([upsert_foreground_process.go:30-109](../components/timeline/upsert_foreground_process.go#L30-L109)):
+
+- only when *not* idle: `UpsertApplicationCategory` → `UpsertApplication` →
+  `UpsertApplicationCategoryMap` (an idle sample has no app identity, so all three
+  are skipped and the foreground-process row gets a null application/PID);
+- always: `UpsertForegroundProcess`, then `InsertForegroundProcessMetadata` (browser
+  and idle flags, tab, CDP URL, lat/long, public IP);
+- then `UpsertTimeline` — `InitialForegroundProcessID` on the very first observation,
+  `EndForegroundProcessID` on every one after it. `CommandSubscribeReporter` carries
+  the last-seen process forward as `PreviousProcess`, and it is that field being `nil`
+  that selects the first branch.
 
 Shutdown is a single `ctx` cancel observed independently at each stage: the poll
 loop stops the ring buffer, the reporter goroutine closes its subscriber channels,
@@ -85,24 +100,43 @@ type ForegroundProcess struct {
 }
 ```
 
+`Options` ([monitor.go:27-32](monitor.go#L27-L32)) is how the caller tunes it — the
+three tunables are **pointers** so `nil` means "use the default", resolved through
+`utils.Coalesce`:
+
+```go
+type Options struct {
+    PollInterval *time.Duration   // default 200ms
+    IdleAfter    *time.Duration   // default 5min
+    BufferSize   *int             // default 10 (≈2s of samples)
+    Permissions  []permission.Permission
+}
+```
+
 `New` ([monitor.go:41-74](monitor.go#L41-L74)) constructs the tracker and idle
-detector, requests permissions, applies defaults via `utils.Coalesce`, builds the
-ring buffer, and launches the poll goroutine — the `Monitor` is **live on
-construction**. Two failure policies differ deliberately:
+detector, requests permissions, applies those defaults, builds the ring buffer, and
+launches the poll goroutine — the `Monitor` is **live on construction**. Two failure
+policies differ deliberately:
 
 - **Tracker creation is a hard error** — without a window source there is nothing
   to capture.
 - **Idle detection degrades gracefully** to `idle.Nop()` ([monitor.go:47-50](monitor.go#L47-L50))
   — idle is best-effort.
 
-Defaults: poll every **200 ms**, idle after **5 min**, ring buffer size **10**
-(≈2 s of samples).
+`New` also **hardcodes `platform.Config{PromptPermissions: true}`**
+([monitor.go:42](monitor.go#L42)) — there is no `Options` knob for it, so constructing
+a `Monitor` always lets the tracker raise the OS permission dialog (on macOS,
+[darwin.go:140](platform/darwin.go#L140)).
 
 The poll loop ([monitor.go:76-88](monitor.go#L76-L88)) ticks a `time.Ticker` and
 stops the ring buffer on `ctx.Done()`. Each `tick`
 ([monitor.go:90-121](monitor.go#L90-L121)):
 
 - `tracker.Poll` fails → **skip the tick** (no sample).
+- The idle detector's error is **discarded** ([monitor.go:96](monitor.go#L96) is
+  `idleSeconds, _ := ...`), leaving `idleSeconds` at `0` — so a failing detector makes
+  every tick read as *active*. That is the per-tick counterpart to the construction-time
+  `Nop()` fallback: both fail toward capturing rather than toward a false idle.
 - Idle (`idleSeconds >= idleAfter`) → emit a minimal `{Idle: true}` sample whose
   `Timestamp` is **back-dated** to when idleness began, then return early.
 - Active → build a full `ForegroundProcess` from the `WindowInfo` with an empty
@@ -131,14 +165,25 @@ type Tracker interface {
 `WindowInfo` ([platform.go:24-32](platform/platform.go#L24-L32)) is the raw
 per-tick observation (string fields, not pointers). `TitleSource`
 ([platform.go:16-21](platform/platform.go#L16-L21)) is a **provenance tag** —
-`ax` / `osascript` / `window_api` / `none` — telling downstream consumers which
-OS API produced the title and how much to trust it. Every backend runs its result
+`ax` / `osascript` / `window_api` / `none` — recording which OS API produced the
+title and how much to trust it. Note it currently **stops at the ingest boundary**:
+`MonitorForegroundProcessConverter` drops it (`// goverter:ignore TitleSource Killed`,
+[monitor_foreground_process.go:14](../components/timeline/converters/monitor_foreground_process.go#L14))
+and `InsertForegroundProcessMetadata` has no `title_source` or `window_title` param,
+so this pipeline leaves both columns NULL — even though the read side is already
+wired for them (`get_timeline`, `get_unenriched`/`get_unindexed_foreground_processes`
+all select `title_source` and parse it via `parseOptionalTitleSource`, and
+`export_csv.go` emits it). Every backend runs its result
 through `FinalizeWindowInfo` ([platform.go:39-57](platform/platform.go#L39-L57)),
 which trims fields, derives a display name from path → identifier → title, and
 falls back to `"Unknown app"` only when there is genuine foreground evidence.
 
 `New(ctx, Config)` is defined **once per OS via build tags** — the Go build
 selects exactly one. Linux is the only OS with additional *runtime* dispatch.
+`Config` ([platform.go:104-112](platform/platform.go#L104-L112)) carries just two
+tunables: `PromptPermissions bool` (macOS — raise the system dialog at startup) and
+`Logger *slog.Logger` (backends surface setup hints through it, e.g. the GNOME
+extension instructions; `nil` falls back to `slog.Default()`).
 
 | OS | File(s) | Mechanism | cgo? | Setup / gotchas |
 | --- | --- | --- | --- | --- |
@@ -152,10 +197,21 @@ selects exactly one. Linux is the only OS with additional *runtime* dispatch.
 
 **Two poll models:** X11 and GNOME poll *synchronously* each tick (XGB query /
 D-Bus call); wlr and plasma are *event-driven* with a background reconnecting
-goroutine and a mutex-guarded snapshot that `Poll` simply reads. Backend selection
-lives in `selectLinuxBackend` ([linux.go](platform/linux.go)) and keys off
-`WAYLAND_DISPLAY` / `XDG_SESSION_TYPE` / desktop-environment env vars plus the
-compositor's advertised Wayland globals.
+goroutine and a mutex-guarded snapshot that `Poll` simply reads.
+
+Backend selection lives in `selectLinuxBackend`
+([linux.go:70-97](platform/linux.go#L70-L97)) and is a **branch, not one linear
+fallback chain**. The first question is whether this is a Wayland session
+(`WAYLAND_DISPLAY` set, or `XDG_SESSION_TYPE=wayland`):
+
+| Session | Order attempted | Degraded reason if all fail |
+| --- | --- | --- |
+| Wayland | wlr → plasma (both via the compositor's advertised globals) → GNOME **only if** `desktopIsGNOME()` → XWayland **only if** `DISPLAY` is set | "this Wayland compositor exposes no supported active-window protocol" |
+| anything else | X11 — nothing else is attempted | "no X11 display reachable (set DISPLAY, or start a supported Wayland compositor)" |
+
+So GNOME is never tried outside GNOME, and X11 is reached from a Wayland session only
+as **XWayland** — which sees X11 clients only, so native Wayland windows go untracked.
+That case logs a warning saying exactly that.
 
 The event-driven half is shared: [`linux_wayland.go`](platform/linux_wayland.go)
 holds `newWaylandForegroundBackend` (the wlr → plasma runtime dispatch),
@@ -198,6 +254,11 @@ subscribers — a fan-in → fan-out bridge. `Subscribe`
 ([pub_sub_reporter.go:62-79](reporter/pub_sub_reporter.go#L62-L79)) hands out a
 **buffered channel of size 1** (there is only ever one foreground process; items
 carry timestamps so out-of-order processing is fine).
+
+Today the fan-out is a **fan-out of one** — `pubsub.Subscribe("timeline")`
+([app.go:144](../app/app.go#L144)) is the only subscriber in the tree. The
+per-subscriber dedup state and drop policy below are what make adding a second one
+safe, not something the current wiring already exercises.
 
 `publish` ([pub_sub_reporter.go:81-107](reporter/pub_sub_reporter.go#L81-L107))
 does two things per subscriber:
@@ -243,7 +304,10 @@ The `bool` means "did I contribute anything." Three combinators:
   parallel writes never race on the shared map. This is why enrichers store
   **pointers** (below): `mergo` needs a pointer to carry a struct value across the
   merge. `stack.Stack()` uses `Merge` to run the three `app_metadata` sources
-  concurrently.
+  concurrently. Note `Merge` is **all-or-nothing on failure**: if any `mergo.Merge`
+  errors it returns the *original* process and `false`
+  ([enrichment.go:48-52](enrichment/enrichment.go#L48-L52)), discarding **every**
+  branch's result, not just the one that failed.
 
 Enrichers never touch process identity — they write a **pointer** to a typed
 struct into the `Enrichments map[string]any` bag under well-known keys (pointers so
@@ -252,7 +316,7 @@ return values):
 
 | Enricher | Key | Stored value | External I/O & caching | Permission? |
 | --- | --- | --- | --- | --- |
-| `app_metadata` | `"appmetadata"` | `*Metadata` (friendly name, description, `Category`, icon path, `Source`) | Three sources run concurrently under `Merge` and are combined field-by-field by `mergo`: local OS metadata (plist/.desktop/PE), the **Flathub** feed (**Linux only**), and the **winget** feed (**Windows only**) — each feed gated by `runtime.GOOS`, so at most one supplements local per OS. Local wins each field; a feed fills the gaps (e.g. description/category). Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
+| `app_metadata` | `"appmetadata"` | `*Metadata` (friendly name, description, `Category`, icon path, `Source`) | Three sources run concurrently under `Merge` and are combined field-by-field by `mergo`: local OS metadata (plist/.desktop/PE), the **Flathub** feed (**Linux only**), and the **winget** feed (**Windows only**). Local wins each field; a feed fills the gaps (e.g. description/category). Both feeds share one client — **4 s timeout, 2 MiB body cap, 2 retries** (200 ms → 2 s backoff) on transport errors/429/5xx but **never on 4xx**, since a 404 for an unknown app must stay a fast negative. Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
 | `browser` | `"browser"` | `*Tab` (browser, title, URL, domain) | Tab title parsed from the window title by `ParseTabTitle`; URL recovered via **Chrome DevTools Protocol** at `localhost:9222`. Self-rate-limited (500 ms), 1 s timeout, no HTTP retries; after a failed connectivity probe the poller goes no-op and re-probes on a **30 s backoff**. **Not memoized** (tab changes constantly) | none |
 | `location` | `"location"` | `*Environment` (nullable lat/long + public IP) | Location read non-blockingly from an OS provider on a background thread (macOS CoreLocation, Windows WinRT Geolocator; no-op elsewhere). Public IP via `api.ipify.org` — 5 s timeout, 64-byte response cap, 2 retries with backoff (transport errors/429/5xx only), **memoized 1-hour TTL** | **yes** (location) |
 
@@ -286,13 +350,24 @@ enrichment.Pipe(
 The top-level combinator is `Pipe` (metadata, browser, and location are orthogonal
 and all apply); `Merge` sits inside it to fan the metadata sources out concurrently.
 
+The three metadata sources are OS-gated **two different ways**, which matters when
+reading the code: the feeds are a *runtime* check (`runtime.GOOS != "linux"` /
+`!= "windows"` short-circuits inside the enricher, so at most one feed supplements
+local on any OS), while `LocalMetadataEnricher` is a *build-tag* choice — one
+implementation each in `enrich_darwin.go` / `enrich_linux.go` / `enrich_windows.go`
+with **no fallback file**, so this package (and therefore `stack.Stack()`) only
+builds on those three platforms.
+
 `Stack` also gathers the permission set — today only `location.Requestable`
 contributes one. This factory is the single seam where sources, the CDP port, TTLs,
 and permissions are chosen, keeping `app.go` ignorant of enrichment internals.
 
 Memoization uses the [`memo`](../memo/) package (a `go-cache` TTL cache +
-`singleflight` to dedup concurrent lookups); **only successes are cached**, and
-processes with empty identity bypass the cache.
+`singleflight` to dedup concurrent lookups). `memo` itself contributes one policy —
+**only successes are cached** ([memo.go:54-56](../memo/memo.go#L54-L56)). The other,
+skipping the cache entirely for a process with **empty identity**, is the caller's:
+`app_metadata.Memoized` builds the cache key and calls straight through when it comes
+out blank ([enricher.go:31-34](enrichment/app_metadata/enricher.go#L31-L34)).
 
 ## Permissions (`permission/`)
 
@@ -333,10 +408,12 @@ vendored protocol `*.xml`, generated `*.xml.go`, a hand-written `types.go`
 
 ## Cross-cutting design themes
 
-- **Graceful degradation is a first-class state.** Idle falls back to `Nop`;
-  Linux window tracking falls back through wlr → plasma → GNOME → X11 →
-  `degradedBackend`; missing browser CDP or location providers just yield empty
-  enrichments. The one hard failure is an un-constructable window tracker.
+- **Graceful degradation is a first-class state.** Idle falls back to `Nop` at
+  construction *and* reads as active on a per-tick detector error; Linux window
+  tracking walks a session-dependent branch down to `degradedBackend`, which keeps the
+  app alive and explains itself through `Permissions()`; missing browser CDP or
+  location providers just yield empty enrichments. The one hard failure is an
+  un-constructable window tracker.
 - **Absent vs empty.** Pointer fields on `ForegroundProcess` + Go 1.26 `new(expr)`
   cleanly express "this sample has no app identity" (idle) vs "the app has no name".
 - **Change events, not a sample firehose.** Per-subscriber dedup turns a 5/sec raw

@@ -18,9 +18,7 @@ SELECT
     initial_app.name AS initial_application_name,
     initial_app.identifier AS initial_application_identifier,
     initial_app.path AS initial_application_path,
-    -- the application's category is not selected here: it maps to categories many-to-many, so a
-    -- join would fan this row out into one duplicate per classification. GetApplicationCategories
-    -- resolves it per application, keyed off the application_id above
+    -- app category not selected, use ` + "`" + `GetApplicationCategories` + "`" + ` and merge
     initial.application_id AS initial_application_id,
     initial.pid AS initial_pid,
     initial.created_at_utc AS initial_created_at_utc,
@@ -41,6 +39,7 @@ SELECT
     final_app.name AS final_application_name,
     final_app.identifier AS final_application_identifier,
     final_app.path AS final_application_path,
+    -- app category not selected, use ` + "`" + `GetApplicationCategories` + "`" + ` and merge
     final.application_id AS final_application_id,
     final.pid AS final_pid,
     final.created_at_utc AS final_created_at_utc,
@@ -67,25 +66,10 @@ LEFT JOIN application_categories initial_bc ON initial_bc.id = initial_fpm.brows
 LEFT JOIN application_categories final_bc ON final_bc.id = final_fpm.browser_category
 WHERE   timeline.id > ?1
     AND timeline.initial_foreground_process_id IS NOT NULL
-    -- an open entry is never too short to report: it is still running. the floor is a parameter
-    -- because it breaks the entry chain (row N's final observation is row N+1's initial one), so
-    -- callers that derive durations from adjacency must pass 0
-    AND (   timeline.end_foreground_process_id IS NULL
+    AND (   timeline.end_foreground_process_id IS NULL -- active app. if killed or idle it should be non null
         OR  unixepoch(final.created_at_utc) - unixepoch(initial.created_at_utc)
                 >= CAST(?2 AS INTEGER)
         )
-    -- half-open, strict: an entry overlaps the window when it ends after the window opens and
-    -- starts before it closes. an open entry has not ended, so it always passes the lower bound.
-    --
-    -- both sides go through unixepoch() because the two are not comparable as text: created_at_utc
-    -- is stored with whatever offset the observation carried, while the bounds arrive normalised to
-    -- UTC, so a text comparison compares wall clocks rather than instants. unixepoch() also spans
-    -- the column's other stored format, the schema default's %Y-%m-%dT%H:%M:%fZ. it truncates to
-    -- milliseconds, which is far below the observation interval.
-    --
-    -- the CAST(... AS TIMESTAMP) guards are only a null test and a type anchor for sqlc: sqlite has
-    -- no TIMESTAMP type, so the cast is NUMERIC affinity and mangles the value: it must never wrap
-    -- one that is then compared
     AND (   timeline.end_foreground_process_id IS NULL
         OR  (   CAST(?3 AS TIMESTAMP) IS NULL
             OR  unixepoch(final.created_at_utc, 'subsec')
@@ -148,10 +132,6 @@ type GetTimelineRow struct {
 	FinalWindowTitle             *string
 }
 
-// GetTimeline returns each timeline entry with both of its endpoints side by side, keyset
-// paginated on timeline.id. The final side is absent while the entry is still open; closed
-// entries shorter than min_duration_seconds are switch noise and are filtered out. started_at
-// and ended_at are optional window bounds.
 func (q *Queries) GetTimeline(ctx context.Context, arg GetTimelineParams) ([]GetTimelineRow, error) {
 	rows, err := q.db.QueryContext(ctx, getTimeline,
 		arg.TimelineId,

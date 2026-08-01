@@ -10,32 +10,38 @@ import (
 )
 
 const insertForegroundProcessMetadata = `-- name: InsertForegroundProcessMetadata :one
-INSERT INTO foreground_process_metadata (foreground_process_id, browser, idle, tab, cdp_url, latitude, longitude, public_ip)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO foreground_process_metadata (foreground_process_id, browser, browser_vendor, idle, tab, cdp_url, latitude, longitude, public_ip, title_source, window_title)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
 type InsertForegroundProcessMetadataParams struct {
 	ForegroundProcessID int64
 	Browser             bool
+	BrowserVendor       *string
 	Idle                bool
 	Tab                 *string
 	CdpUrl              *string
 	Latitude            *float64
 	Longitude           *float64
 	PublicIp            *string
+	TitleSource         *string
+	WindowTitle         *string
 }
 
 func (q *Queries) InsertForegroundProcessMetadata(ctx context.Context, arg InsertForegroundProcessMetadataParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, insertForegroundProcessMetadata,
 		arg.ForegroundProcessID,
 		arg.Browser,
+		arg.BrowserVendor,
 		arg.Idle,
 		arg.Tab,
 		arg.CdpUrl,
 		arg.Latitude,
 		arg.Longitude,
 		arg.PublicIp,
+		arg.TitleSource,
+		arg.WindowTitle,
 	)
 	var id int64
 	err := row.Scan(&id)

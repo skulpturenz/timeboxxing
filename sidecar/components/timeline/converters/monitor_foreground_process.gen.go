@@ -17,6 +17,7 @@ func (c *MonitorForegroundProcessConverter) ToForegroundProcess(source monitor.F
 	modelsForegroundProcess.AppPath = source.AppPath
 	modelsForegroundProcess.PID = pidInt32ToInt64(source.PID)
 	modelsForegroundProcess.WindowTitle = source.WindowTitle
+	modelsForegroundProcess.TitleSource = platformTitleSource(source.TitleSource)
 	modelsForegroundProcess.Timestamp = source.Timestamp
 	modelsForegroundProcess.Idle = source.Idle
 	modelsForegroundProcess.Enrichments = monitorEnrichments(source)

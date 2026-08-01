@@ -11,6 +11,7 @@ import (
 	appmetadata "github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment/app_metadata"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment/browser"
 	"github.com/skulpturenz/timeboxxing/sidecar/monitor/enrichment/location"
+	"github.com/skulpturenz/timeboxxing/sidecar/monitor/platform"
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
@@ -46,6 +47,20 @@ func parseOptionalTitleSource(v *string) *models.TitleSource {
 	return parseTitleSource(v)
 }
 
+// platformTitleSource bridges the monitor's title source to the model's. The two are distinct
+// types — the platform enum is a string, the model's an int — but the platform values are exactly
+// the codes models.ParseTitleSource accepts, so parsing is the mapping.
+//
+// An empty source is absent rather than unrecognized: the monitor always allocates the pointer for
+// a non-idle sample, so a platform that could not determine a source arrives as "".
+func platformTitleSource(v *platform.TitleSource) *models.TitleSource {
+	if v == nil || *v == "" {
+		return nil
+	}
+
+	return parseTitleSource(utils.ZeroNil(string(*v)))
+}
+
 // parseOptionalBrowserCategory is parseBrowserCategory for left-joined category codes, where an
 // absent code means "no category" — a non-browser observation has no browser category.
 func parseOptionalBrowserCategory(v *string) *enumscategories.Category {
@@ -78,6 +93,18 @@ func initialBrowserVendor(row readqueries.GetTimelineRow) string {
 // finalBrowserVendor is initialBrowserVendor for the final side of a timeline row.
 func finalBrowserVendor(row readqueries.GetTimelineRow) string {
 	return browserVendor(row.FinalBrowser, row.FinalBrowserVendor)
+}
+
+// unenrichedBrowserVendor is initialBrowserVendor for a backlog row. The flag is a plain bool here
+// rather than a *bool: the backlog queries inner-join the metadata, so the NOT NULL column keeps
+// its type.
+func unenrichedBrowserVendor(row readqueries.GetUnenrichedForegroundProcessesRow) string {
+	return browserVendor(&row.Browser, row.BrowserVendor)
+}
+
+// unindexedBrowserVendor is unenrichedBrowserVendor for the unindexed backlog row.
+func unindexedBrowserVendor(row readqueries.GetUnindexedForegroundProcessesRow) string {
+	return browserVendor(&row.Browser, row.BrowserVendor)
 }
 
 func browserVendor(browser *bool, vendor *string) string {

@@ -6,7 +6,7 @@ constraints enforce natural keys. Deleting a `foreground_processes` row cascades
 directly and indirectly. Referential actions (`delete: cascade`) are defined as standalone `Ref`
 blocks at the end, since DBML does not support relationship settings on inline column refs.
 
-Two caveats when comparing this against a live database:
+Three caveats when comparing this against a live database:
 
 - **Runtime-managed tables are not listed here.** `db/migrations.go` creates `schema_migrations`
   (golang-migrate's bookkeeping table) plus one `seed_migrations_<name>` table per directory under
@@ -17,6 +17,10 @@ Two caveats when comparing this against a live database:
   `CONSTRAINT unique_x UNIQUE (...)` but discards the name, generating `sqlite_autoindex_<table>_<n>`
   instead. The `name:` values in the `indexes` blocks match `schema/*.sql`; they will not appear in
   `PRAGMA index_list`.
+- **The cascades below only fire when foreign keys are enabled.** SQLite defaults `PRAGMA
+  foreign_keys` to off, per connection. `db/dsn.go` sets `_foreign_keys=on` in the DSN, so the
+  application always has them on; a DB opened by an external tool (`sqlite3` CLI, a GUI browser)
+  will not enforce the `Ref` blocks unless the pragma is set there too.
 
 ```
 // Event store
@@ -216,7 +220,7 @@ TABLE project_costing_types {
 }
 
 TABLE model_providers {
-  id SMALLINT [pk, NOT NULL] // auto increment
+  id SMALLINT [pk] // auto increment
   label TEXT [NOT NULL]
 
   indexes {

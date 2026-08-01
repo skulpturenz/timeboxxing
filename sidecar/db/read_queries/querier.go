@@ -9,19 +9,11 @@ import (
 )
 
 type Querier interface {
-	// GetApplicationCategories returns the taxonomy codes each of the given applications is classified
-	// under, grouped by application and lowest surrogate id first. An application maps to categories
-	// many-to-many, but ingest links exactly one today, so callers read the first. An application with
-	// no classification yields no rows rather than a null one.
 	GetApplicationCategories(ctx context.Context, applicationids []int64) ([]GetApplicationCategoriesRow, error)
 	GetApplicationSettings(ctx context.Context) (GetApplicationSettingsRow, error)
 	GetProjectColorIDByColor(ctx context.Context, color int64) (int64, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
 	GetSemanticIndexCounts(ctx context.Context, embeddingModelID *int64) (GetSemanticIndexCountsRow, error)
-	// GetTimeline returns each timeline entry with both of its endpoints side by side, keyset
-	// paginated on timeline.id. The final side is absent while the entry is still open; closed
-	// entries shorter than min_duration_seconds are switch noise and are filtered out. started_at
-	// and ended_at are optional window bounds.
 	GetTimeline(ctx context.Context, arg GetTimelineParams) ([]GetTimelineRow, error)
 	GetUnenrichedForegroundProcesses(ctx context.Context, arg GetUnenrichedForegroundProcessesParams) ([]GetUnenrichedForegroundProcessesRow, error)
 	GetUnindexedForegroundProcesses(ctx context.Context, arg GetUnindexedForegroundProcessesParams) ([]GetUnindexedForegroundProcessesRow, error)

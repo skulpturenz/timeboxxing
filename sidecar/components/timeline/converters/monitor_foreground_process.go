@@ -11,7 +11,8 @@ import (
 // goverter:skipCopySameType
 // goverter:useZeroValueOnPointerInconsistency
 type monitorForegroundProcessConverter interface {
-	// goverter:ignore TitleSource Killed
+	// goverter:ignore Killed
+	// goverter:map TitleSource TitleSource | platformTitleSource
 	// goverter:map PID PID | pidInt32ToInt64
 	// goverter:map . Enrichments | monitorEnrichments
 	ToForegroundProcess(source monitor.ForegroundProcess) models.ForegroundProcess
