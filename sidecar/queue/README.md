@@ -6,12 +6,20 @@ processed by a background worker, and delivered on a returned channel — so not
 flight is lost across a restart, and a slow consumer never forces the backlog into
 memory.
 
-Its concrete use in the system is the handoff from the [`timeline`](../components/timeline/README.md)
-write path to semantic indexing: when a timeline entry is finalized a
-`TransitionEventReported{TransitionEventId}` is enqueued, buffered durably here, and
-picked up by the semantic-indexer worker. The queue is what lets "a transition event
-happened" and "the transition event is indexed" run at different speeds and survive
-process death in between.
+Its concrete use in the system is the handoff from the **semantic backfiller** to the
+semantic indexer: the backfiller asks the DB for timeline entries missing a semantic
+document (`ListMissingSemanticEventDocumentIds`) and enqueues each id as a
+`TransitionEventReported{TransitionEventId}`; the queue buffers them durably and
+`Runtime.TransitionEventIndexerWorker` picks them up. The queue is what lets "an entry
+needs indexing" and "the entry is indexed" run at different speeds and survive process
+death in between.
+
+> **Note:** the [`timeline`](../components/timeline/README.md) ingest does **not** enqueue.
+> An earlier design had the timeline write path push finalized entries onto this queue
+> directly via an injected enqueuer; that wiring was removed and is preserved
+> commented-out in [`app/app.go`](../app/app.go) so it is trivial to restore. Today the
+> backfiller (`semantic/backfiller.go`) is the only producer, kicked off at startup by
+> `startStartupSemanticBackfill` and on demand through the backfill coordinator.
 
 ## API
 
@@ -22,10 +30,13 @@ func New[T any](ctx context.Context, opts QueueOptions[T]) (<-chan T, error)
 
 type QueueOptions[T any] struct {
     Manager sqliteq.Queues // shared SQLite handle (owned by the caller)
-    Name    string         // queue table name, e.g. workers.TransitionEventReportedQueueName
+    Name    string         // queue table name, e.g. workers.TransitionEventReportedQueueName.String()
     InChan  <-chan T       // producer side: items to enqueue durably
 }
 ```
+
+Note the `.String()`: the constants in [`workers/queue_names.go`](../workers/queue_names.go)
+are of type `workers.QueueName`, not `string`.
 
 `New` wires a producer channel to a consumer channel through persistent storage and
 returns the **consumer** side: range over it to receive each item, exactly as you would
@@ -34,9 +45,9 @@ enqueue pump) plus a [varmq](https://github.com/goptics/varmq) worker; both are 
 down on shutdown (see below).
 
 Preconditions and invariants are expressed with [`negrel/assert`](https://github.com/negrel/assert)
-— `Name` non-zero, `Manager`/`InChan` non-nil, and every `Add` succeeding. These are
-build-tag gated (active in dev/test, compiled out in release), matching the convention
-across the sidecar.
+— `Name` non-zero, `Manager`/`InChan` non-nil, `Manager.NewQueue` returning no error, and
+every `Add` succeeding. These are build-tag gated (active in dev/test, compiled out in
+release), matching the convention across the sidecar.
 
 ## Data flow
 
@@ -117,14 +128,17 @@ co-located with the data it derives from.
 
 ## Queue instances
 
-Concrete queue names are defined alongside the consumers in
-[`workers/queue_names.go`](../workers/queue_names.go):
+[`app/app.go`](../app/app.go) calls `queue.New` exactly once, so there is a single live
+queue:
 
 | Name | Purpose |
 | --- | --- |
-| `queue_transition_event_reported` | finalized timeline entries awaiting semantic indexing (the active path) |
-| `queue_transition_event_indexed` | indexed transition events (downstream fan-out) |
-| `queue_transition_events` | raw transition events |
+| `queue_transition_event_reported` | timeline entries missing a semantic document, awaiting indexing |
+
+[`workers/queue_names.go`](../workers/queue_names.go) declares two further names —
+`queue_transition_events` and `queue_transition_event_indexed` — but nothing constructs a
+queue for either, so no such table exists. They are reserved names, accepted by
+`ParseQueueName` and otherwise unused.
 
 ## Cross-cutting design themes
 

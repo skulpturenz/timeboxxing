@@ -11,7 +11,8 @@ import (
 	"time"
 
 	"github.com/goptics/sqliteq"
-	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
+	componentTimeline "github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
+	timelineModels "github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	"github.com/skulpturenz/timeboxxing/sidecar/db"
 	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
 	"github.com/skulpturenz/timeboxxing/sidecar/logging"
@@ -79,7 +80,6 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 		TransitionEventReportedIn:  inChan,
 		TransitionEventReportedOut: outChan,
 	})
-	transitions := componentTransitions.NewService(registry)
 	semantic.RegisterRuntime(registry, &semantic.Runtime{
 		Indexer: semantic.NewIndexer(database.WriteQuerier, database.ReadQuerier, workerFakeEmbedder{}, 1),
 	})
@@ -92,20 +92,13 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 		cleanupIndexer()
 	}()
 
-	tab := "Backfill Notes"
-	url := "https://example.com/backfill"
-	eventID, err := transitions.RecordTransitionEvent(ctx, componentTransitions.RecordTransitionEventParams{
-		ApplicationName: "Google Chrome",
-		Reason:          "focus_change",
-		StartedAt:       time.Date(2026, 6, 13, 11, 0, 0, 0, time.UTC),
-		EndedAt:         time.Date(2026, 6, 13, 11, 5, 0, 0, time.UTC),
-		Browser:         true,
-		Tab:             &tab,
-		CDPURL:          &url,
-	})
-	if err != nil {
-		t.Fatalf("record transition event: %v", err)
-	}
+	// the ingest chains observations: each one closes the entry the previous one opened, so two
+	// observations are the minimum that produces a closed — and therefore indexable — entry
+	seedIndexerObservations(t, ctx, registry,
+		browserForegroundProcess("Google Chrome", "Backfill Notes", "https://example.com/backfill", time.Date(2026, 6, 13, 11, 0, 0, 0, time.UTC)),
+		browserForegroundProcess("Google Chrome", "Follow up", "https://example.com/follow-up", time.Date(2026, 6, 13, 11, 5, 0, 0, time.UTC)),
+	)
+	eventID := latestClosedTimelineID(t, ctx, database.ReadConn)
 
 	enqueuer := NewTransitionEventReportedEnqueuer(inChan)
 	if err := enqueuer.EnqueueTransitionEvent(ctx, eventID); err != nil {
@@ -137,4 +130,54 @@ func waitForWorkerRowCount(t *testing.T, ctx context.Context, conn *sql.DB, tabl
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+}
+
+// seedIndexerObservations writes observations through the real ingest command so the timeline
+// entries under test are shaped exactly as production writes them.
+func seedIndexerObservations(t *testing.T, ctx context.Context, registry *services.Services[any, any], observations ...timelineModels.ForegroundProcess) {
+	t.Helper()
+
+	var previous *timelineModels.ForegroundProcess
+	for i := range observations {
+		cmd := componentTimeline.CommandUpsertForegroundProcess{
+			PreviousProcess: previous,
+			ActiveProcess:   observations[i],
+		}
+		if err := cmd.Exec(ctx, registry); err != nil {
+			t.Fatalf("seed observation %d: %v", i, err)
+		}
+
+		previous = &observations[i]
+	}
+}
+
+func browserForegroundProcess(name string, tab string, cdpURL string, timestamp time.Time) timelineModels.ForegroundProcess {
+	identifier := "com." + strings.ToLower(strings.ReplaceAll(name, " ", "."))
+	path := "/Applications/" + name + ".app"
+	pid := int64(4242)
+
+	return timelineModels.ForegroundProcess{
+		AppName:       &name,
+		AppIdentifier: &identifier,
+		AppPath:       &path,
+		PID:           &pid,
+		Timestamp:     timestamp,
+		Enrichments: timelineModels.Enrichments{
+			Browser: timelineModels.Browser{Vendor: name, Tab: tab, CdpURL: cdpURL},
+		},
+	}
+}
+
+// latestClosedTimelineID is the newest entry that has both endpoints — an open entry has no final
+// observation, and the semantic document source requires one.
+func latestClosedTimelineID(t *testing.T, ctx context.Context, conn *sql.DB) int64 {
+	t.Helper()
+
+	var id int64
+	query := "SELECT id FROM timeline WHERE end_foreground_process_id IS NOT NULL ORDER BY id DESC LIMIT 1"
+	if err := conn.QueryRowContext(ctx, query).Scan(&id); err != nil {
+		t.Fatalf("latest closed timeline entry: %v", err)
+	}
+
+	return id
 }

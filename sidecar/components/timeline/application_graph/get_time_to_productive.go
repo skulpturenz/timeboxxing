@@ -36,7 +36,9 @@ func (graph *ApplicationGraph) GetTimeToProductive() time.Duration {
 				continue
 			}
 
-			durationsToProductive = append(durationsToProductive, toMeta.Duration)
+			edge := graph.edgeMetaMap[Edge{e.Source().Label(), e.Destination().Label()}]
+
+			durationsToProductive = append(durationsToProductive, edge.IncomingDuration)
 		}
 	}
 

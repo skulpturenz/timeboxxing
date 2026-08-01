@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	componentTransitions "github.com/skulpturenz/timeboxxing/sidecar/components/transitions"
 	"github.com/skulpturenz/timeboxxing/sidecar/logging"
 	"github.com/skulpturenz/timeboxxing/sidecar/semantic"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
@@ -17,10 +16,9 @@ type transitionEventIndexer interface {
 }
 
 type Runtime struct {
-	logger      *slog.Logger
-	queues      Queues
-	indexer     transitionEventIndexer
-	transitions *componentTransitions.Service
+	logger  *slog.Logger
+	queues  Queues
+	indexer transitionEventIndexer
 }
 
 type Queues struct {
@@ -60,17 +58,15 @@ func RuntimeFromServices(registry *services.Services[any, any]) (*Runtime, bool)
 
 func NewRuntime(registry *services.Services[any, any]) *Runtime {
 	queues, _ := QueuesFromServices(registry)
-	transitions, _ := componentTransitions.ServiceFromServices(registry)
 	var indexer transitionEventIndexer
 	if semanticRuntime, ok := semantic.RuntimeFromServices(registry); ok && semanticRuntime != nil && semanticRuntime.Indexer != nil {
 		indexer = semanticRuntime.Indexer
 	}
 
 	runtime := &Runtime{
-		logger:      logging.LoggerFromServices(registry).With("service", "workers"),
-		queues:      queues,
-		indexer:     indexer,
-		transitions: transitions,
+		logger:  logging.LoggerFromServices(registry).With("service", "workers"),
+		queues:  queues,
+		indexer: indexer,
 	}
 	RegisterRuntime(registry, runtime)
 	return runtime

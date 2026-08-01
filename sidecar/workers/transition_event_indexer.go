@@ -10,8 +10,10 @@ import (
 
 const transitionEventIndexAttempts = 3
 
-// TransitionEventReported is enqueued when a timeline entry is finalized, to be picked up by the
-// semantic indexer worker below.
+// TransitionEventReported carries the id of a timeline entry that needs a semantic document. The
+// semantic backfiller is the only producer today — it enqueues the ids returned by
+// ListMissingSemanticEventDocumentIds — and the indexer worker below consumes them. (The timeline
+// ingest used to enqueue on finalization; that wiring is commented out in app/app.go.)
 type TransitionEventReported struct {
 	TransitionEventId int64
 }

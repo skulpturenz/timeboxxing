@@ -1,15 +1,16 @@
 package usage
 
 import (
-	componentUsage "github.com/skulpturenz/timeboxxing/sidecar/components/usage"
 	usagev1 "github.com/skulpturenz/timeboxxing/sidecar/gen/usage/v1"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
 
+// The timeline queries resolve their dependencies from the registry per call, so the server carries
+// the registry rather than a component handle.
 type Server struct {
 	usagev1.UnimplementedUsageServiceServer
 
-	usage *componentUsage.Service
+	registry *services.Services[any, any]
 }
 
 type serverKey struct{}
@@ -27,8 +28,7 @@ func ServerFromServices(registry *services.Services[any, any]) (*Server, bool) {
 }
 
 func NewServer(registry *services.Services[any, any]) *Server {
-	usage, _ := componentUsage.ServiceFromServices(registry)
-	server := &Server{usage: usage}
+	server := &Server{registry: registry}
 	RegisterServer(registry, server)
 	return server
 }

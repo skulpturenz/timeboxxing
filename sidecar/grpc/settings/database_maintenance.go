@@ -173,11 +173,15 @@ func createPruneTempTables(ctx context.Context, tx *sql.Tx, startedAt time.Time,
 		{query: "DROP TABLE IF EXISTS temp.prune_applications"},
 		{query: "CREATE TEMP TABLE prune_foreground_processes (id INTEGER PRIMARY KEY)"},
 		{
+			// created_at_utc is stored with whatever offset the observation carried while the bounds
+			// are normalised to UTC, so the comparison goes through unixepoch(): as text the two are
+			// wall clocks rather than instants, and this one deletes.
 			query: `
 INSERT INTO prune_foreground_processes (id)
 SELECT id
 FROM foreground_processes
-WHERE created_at_utc >= ? AND created_at_utc < ?`,
+WHERE unixepoch(created_at_utc, 'subsec') >= unixepoch(?, 'subsec')
+  AND unixepoch(created_at_utc, 'subsec') < unixepoch(?, 'subsec')`,
 			args: []any{startedAt, endedAt},
 		},
 		// Timelines cascade-delete when either boundary foreground process is removed.

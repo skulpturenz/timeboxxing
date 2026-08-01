@@ -6,6 +6,18 @@ constraints enforce natural keys. Deleting a `foreground_processes` row cascades
 directly and indirectly. Referential actions (`delete: cascade`) are defined as standalone `Ref`
 blocks at the end, since DBML does not support relationship settings on inline column refs.
 
+Two caveats when comparing this against a live database:
+
+- **Runtime-managed tables are not listed here.** `db/migrations.go` creates `schema_migrations`
+  (golang-migrate's bookkeeping table) plus one `seed_migrations_<name>` table per directory under
+  `db/seeds/` — currently nine: `application_categories`, `application_settings`, `model_providers`,
+  `models`, `operating_systems`, `project_colors`, `project_costing_types`, `release_channels`,
+  `semantic_document_types`. A live DB therefore has ten tables beyond the ones below.
+- **The `unique_*` index names are DDL text, not runtime index names.** SQLite accepts
+  `CONSTRAINT unique_x UNIQUE (...)` but discards the name, generating `sqlite_autoindex_<table>_<n>`
+  instead. The `name:` values in the `indexes` blocks match `schema/*.sql`; they will not appear in
+  `PRAGMA index_list`.
+
 ```
 // Event store
 Table foreground_processes {
@@ -80,8 +92,8 @@ TABLE timeline_embeddings {
 // Entries
 TABLE ledger {
   id BIGINT [pk] // auto increment
-  created_at_utc TIMESTAMP [NOT NULL]
-  updated_at_utc TIMESTAMP [NOT NULL]
+  created_at_utc TIMESTAMP [NOT NULL] // default: strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  updated_at_utc TIMESTAMP [NOT NULL] // default: strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 }
 
 TABLE ledger_items {

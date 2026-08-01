@@ -2,8 +2,7 @@ package com.timeboxxing.app
 
 import androidx.compose.ui.graphics.Color
 import com.timeboxxing.domain.model.AmaAnswer
-import com.timeboxxing.domain.model.AmaAppUsageBucket
-import com.timeboxxing.domain.model.AmaAppUsageChart
+import com.timeboxxing.domain.model.AmaUsageTimeline
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaMessageRole
@@ -369,37 +368,13 @@ class TimeboxxingReducerTest {
             startedAtEpochMillis = 1_000L,
             endedAtEpochMillis = 2_000L,
         )
-        val baselineWindow = AmaTimeWindow(
-            startedAtEpochMillis = 0L,
-            endedAtEpochMillis = 1_000L,
-        )
         val cases = listOf(
-            AmaStructuredQuery(
-                kind = AmaQueryKind.AppTotals,
-                window = window,
-                limit = 5,
-                periodLabel = "Today",
-            ) to "Show app totals for Today",
             AmaStructuredQuery(
                 kind = AmaQueryKind.Timeline,
                 window = window,
                 limit = 20,
                 periodLabel = "Today",
             ) to "Show usage timeline for Today",
-            AmaStructuredQuery(
-                kind = AmaQueryKind.Habits,
-                window = window,
-                limit = 5,
-                periodLabel = "Today",
-            ) to "Summarize habits for Today",
-            AmaStructuredQuery(
-                kind = AmaQueryKind.ComparePeriods,
-                window = window,
-                baselineWindow = baselineWindow,
-                limit = 5,
-                periodLabel = "Today",
-                baselinePeriodLabel = "Yesterday",
-            ) to "Compare Today with Yesterday",
         )
 
         cases.forEach { (query, expectedMessage) ->
@@ -442,22 +417,15 @@ class TimeboxxingReducerTest {
                         ),
                     ),
                     artifacts = listOf(
-                        AmaAppUsageChart(
+                        AmaUsageTimeline(
                             periodLabel = "Today",
                             startedAtEpochMillis = null,
                             endedAtEpochMillis = null,
                             timeZone = "UTC",
                             totalDurationSeconds = 3600,
-                            buckets = listOf(
-                                AmaAppUsageBucket(
-                                    name = "Chrome",
-                                    sourceType = "browser",
-                                    durationSeconds = 3600,
-                                    sessionCount = 1,
-                                    applicationIdentifier = "com.google.Chrome",
-                                    applicationPath = "/Applications/Google Chrome.app",
-                                ),
-                            ),
+                            totalEventCount = 1,
+                            truncated = false,
+                            events = emptyList(),
                         ),
                     ),
                 ),

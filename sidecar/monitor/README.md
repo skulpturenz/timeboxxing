@@ -7,7 +7,7 @@ to the timeline. It is the source of every observation that later becomes a
 transition/usage event.
 
 Everything downstream depends on one type — [`monitor.ForegroundProcess`](monitor.go)
-— flowing through five cooperating packages.
+— flowing through the cooperating packages listed in the package map below.
 
 ## End-to-end data flow
 
@@ -24,7 +24,8 @@ flowchart LR
 ```
 
 The pipeline is assembled in [`app/app.go`](../app/app.go) →
-`startForegroundProjection` ([app.go:124](../app/app.go#L124)):
+`startForegroundProjection` ([app.go:131-168](../app/app.go#L131-L168), called from
+[app.go:126](../app/app.go#L126)):
 
 1. `stack.Stack()` builds the enrichment `Enricher` + the permission list.
 2. `monitor.New(ctx, Options{Permissions})` starts the poll goroutine and
@@ -37,9 +38,13 @@ The pipeline is assembled in [`app/app.go`](../app/app.go) →
    (`CommandSubscribeReporter` → `CommandUpsertForegroundProcess`), which persists
    each observation into the event store.
 
-Shutdown is a single `ctx` cancel that cascades: poll loop stops the ring buffer
-→ reporter goroutine closes subscriber channels → the enrich/convert loop closes
-its output channel → the ingest command loop exits.
+Shutdown is a single `ctx` cancel observed independently at each stage: the poll
+loop stops the ring buffer, the reporter goroutine closes its subscriber channels,
+and the enrich/convert loop returns and closes its output channel. The ingest loop
+exits on the *same* `ctx`, not on that close —
+[`subscribe_reporter.go`](../components/timeline/subscribe_reporter.go) receives
+without a comma-ok check, so a closed input channel would otherwise yield zero
+values forever; it is the `ctx.Done()` arm of its `select` that ends it.
 
 ## Package map
 
@@ -140,8 +145,8 @@ selects exactly one. Linux is the only OS with additional *runtime* dispatch.
 | macOS | `darwin.go` | Accessibility API (`AXUIElementCreateSystemWide` + focused app), `osascript`/System Events fallback | yes (AppKit/ApplicationServices/CoreGraphics) | Needs **Accessibility** grant; without it only the osascript fallback works (which itself needs Automation permission) |
 | Windows | `windows.go` | `GetForegroundWindow` + `QueryFullProcessImageName` via `x/sys/windows` lazy DLLs | no | No special permission needed |
 | Linux (X11) | `linux_x11.go` | EWMH atoms over `BurntSushi/xgb` (`_NET_ACTIVE_WINDOW`, `_NET_WM_NAME`, `WM_CLASS`, `_NET_WM_PID`) | no | Synchronous poll; used for XWayland too |
-| Linux (wlr) | `linux_wayland_wlr.go` | `zwlr_foreign_toplevel_manager_v1` (Sway, Hyprland, KWin, …) | no | Event-driven; **no PID** exposed by toplevel protocol |
-| Linux (plasma) | `linux_wayland_plasma.go` | `org_kde_plasma_window_management` | no | KDE fallback when wlr absent; no PID |
+| Linux (wlr) | `linux_wayland_wlr.go` + `linux_wayland.go` | `zwlr_foreign_toplevel_manager_v1` (Sway, Hyprland, KWin, …) | no | Event-driven; **no PID** exposed by toplevel protocol |
+| Linux (plasma) | `linux_wayland_plasma.go` + `linux_wayland.go` | `org_kde_plasma_window_management` | no | KDE fallback when wlr absent; no PID |
 | Linux (GNOME) | `linux_gnome.go` + `gnome_extension/` | Bundled Shell extension over D-Bus (Mutter implements no focus protocol) | no | Extension auto-installed but **needs logout/login** to activate; exposes PID via `get_pid()` |
 | Linux (fallback) | `linux.go` `degradedBackend` | none | no | Keeps the app alive, explains itself via `Permissions()` |
 
@@ -151,6 +156,12 @@ goroutine and a mutex-guarded snapshot that `Poll` simply reads. Backend selecti
 lives in `selectLinuxBackend` ([linux.go](platform/linux.go)) and keys off
 `WAYLAND_DISPLAY` / `XDG_SESSION_TYPE` / desktop-environment env vars plus the
 compositor's advertised Wayland globals.
+
+The event-driven half is shared: [`linux_wayland.go`](platform/linux_wayland.go)
+holds `newWaylandForegroundBackend` (the wlr → plasma runtime dispatch),
+`waylandSnapshot` (the mutex-guarded state `Poll` reads) and the `waylandRunner`
+reconnect loop. The two `linux_wayland_*.go` files supply only the per-protocol
+event handling.
 
 ## Idle detection (`idle/`)
 
@@ -174,8 +185,10 @@ fallback when detection is unsupported. Each OS provides its own build-tagged
   derives elapsed time from the cached state.
 
 Linux `New` ([linux.go:15-32](idle/linux.go#L15-L32)) prefers Wayland, falls
-through to X11 (works under XWayland too), then `Nop()` — it **never returns an
-error**, always yielding a working detector.
+through to X11 (works under XWayland too), then `Nop()` — so an unsupported
+environment still yields a working detector rather than an error. The one error it
+does return is the caller's own cancelled context, checked before any backend is
+attempted.
 
 ## Reporter (`reporter/`)
 
@@ -239,9 +252,16 @@ return values):
 
 | Enricher | Key | Stored value | External I/O & caching | Permission? |
 | --- | --- | --- | --- | --- |
-| `app_metadata` | `"appmetadata"` | `*Metadata` (friendly name, description, `Category`, icon path) | Three sources run concurrently under `Merge` and are combined field-by-field by `mergo`: local OS metadata (plist/.desktop/PE), the **Flathub** feed (**Linux only**), and the **winget** feed (**Windows only**) — each feed gated by `runtime.GOOS`, so at most one supplements local per OS. Local wins each field; a feed fills the gaps (e.g. description/category). Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
-| `browser` | `"browser"` | `*Tab` (browser, title, URL, domain) | Tab title parsed from window title; URL recovered via **Chrome DevTools Protocol** at `localhost:9222`. Self-rate-limited (500 ms), 1 s timeout, no HTTP retries. **Not memoized** (tab changes constantly) | none |
-| `location` | `"location"` | `*Environment` (nullable lat/long + public IP) | Location read non-blockingly from an OS provider on a background thread (macOS CoreLocation, Windows WinRT Geolocator; no-op elsewhere). Public IP via `api.ipify.org`, **memoized 1-hour TTL** | **yes** (location) |
+| `app_metadata` | `"appmetadata"` | `*Metadata` (friendly name, description, `Category`, icon path, `Source`) | Three sources run concurrently under `Merge` and are combined field-by-field by `mergo`: local OS metadata (plist/.desktop/PE), the **Flathub** feed (**Linux only**), and the **winget** feed (**Windows only**) — each feed gated by `runtime.GOOS`, so at most one supplements local per OS. Local wins each field; a feed fills the gaps (e.g. description/category). Icons cached under `<UserCacheDir>/timeboxxing/app-icons/`. **Memoized 15-min TTL** (metadata rarely changes) | none |
+| `browser` | `"browser"` | `*Tab` (browser, title, URL, domain) | Tab title parsed from the window title by `ParseTabTitle`; URL recovered via **Chrome DevTools Protocol** at `localhost:9222`. Self-rate-limited (500 ms), 1 s timeout, no HTTP retries; after a failed connectivity probe the poller goes no-op and re-probes on a **30 s backoff**. **Not memoized** (tab changes constantly) | none |
+| `location` | `"location"` | `*Environment` (nullable lat/long + public IP) | Location read non-blockingly from an OS provider on a background thread (macOS CoreLocation, Windows WinRT Geolocator; no-op elsewhere). Public IP via `api.ipify.org` — 5 s timeout, 64-byte response cap, 2 retries with backoff (transport errors/429/5xx only), **memoized 1-hour TTL** | **yes** (location) |
+
+`Metadata.Source` records which of those sources won: `bundle` (macOS Info.plist),
+`desktop` (Linux `.desktop` entry), `pe` (Windows PE version resource), `flathub`,
+or `winget`. Browser detection itself is `IsBrowser(appName) BrowserKind`; the
+title-suffix parsing that yields `TabInfo` lives beside it in
+[`browser.go`](enrichment/browser/browser.go) and is what makes the CDP call
+optional rather than required.
 
 The `location` enricher is the only one that guards against the **nil**
 `Enrichments` map ([location.go:81-83](enrichment/location/location.go#L81-L83)),

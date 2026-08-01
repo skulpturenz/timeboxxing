@@ -105,26 +105,14 @@ func structuredQueryFromProto(req *amav1.StructuredQuery) (semantic.StructuredQu
 		return semantic.StructuredQuery{}, err
 	}
 	query := semantic.StructuredQuery{
-		Window:              window,
-		Limit:               int(req.GetLimit()),
-		IncludeIdle:         req.GetIncludeIdle(),
-		PeriodLabel:         strings.TrimSpace(req.GetPeriodLabel()),
-		BaselinePeriodLabel: strings.TrimSpace(req.GetBaselinePeriodLabel()),
+		Window:      window,
+		Limit:       int(req.GetLimit()),
+		IncludeIdle: req.GetIncludeIdle(),
+		PeriodLabel: strings.TrimSpace(req.GetPeriodLabel()),
 	}
 	switch req.GetKind() {
-	case amav1.QueryKind_QUERY_KIND_APP_TOTALS:
-		query.Kind = semantic.StructuredQueryKindAppTotals
 	case amav1.QueryKind_QUERY_KIND_TIMELINE:
 		query.Kind = semantic.StructuredQueryKindTimeline
-	case amav1.QueryKind_QUERY_KIND_HABITS:
-		query.Kind = semantic.StructuredQueryKindHabits
-	case amav1.QueryKind_QUERY_KIND_COMPARE_PERIODS:
-		query.Kind = semantic.StructuredQueryKindComparePeriods
-		baseline, err := timeWindowFromProto(req.GetBaselineWindow(), "baseline_window")
-		if err != nil {
-			return semantic.StructuredQuery{}, err
-		}
-		query.BaselineWindow = baseline
 	default:
 		return semantic.StructuredQuery{}, status.Error(codes.InvalidArgument, "structured_query kind is required")
 	}
@@ -223,34 +211,6 @@ func answerToProto(answer *semantic.Answer, indexStatus semantic.IndexStatus) *a
 
 func artifactToProto(artifact semantic.Artifact) *amav1.Artifact {
 	switch artifact.Type {
-	case semantic.ArtifactTypeAppUsageChart:
-		if artifact.AppUsageChart == nil {
-			return nil
-		}
-		chart := artifact.AppUsageChart
-		buckets := make([]*amav1.AppUsageBucket, 0, len(chart.Buckets))
-		for _, bucket := range chart.Buckets {
-			buckets = append(buckets, &amav1.AppUsageBucket{
-				Name:                  bucket.Name,
-				SourceType:            bucket.SourceType,
-				DurationSeconds:       bucket.DurationSeconds,
-				SessionCount:          bucket.SessionCount,
-				ApplicationIdentifier: bucket.ApplicationIdentifier,
-				ApplicationPath:       bucket.ApplicationPath,
-			})
-		}
-		return &amav1.Artifact{
-			Value: &amav1.Artifact_AppUsageChart{
-				AppUsageChart: &amav1.AppUsageChart{
-					StartedAt:            timestampOrNil(chart.StartedAt),
-					EndedAt:              timestampOrNil(chart.EndedAt),
-					Timezone:             chart.TimeZone,
-					TotalDurationSeconds: chart.TotalDurationSeconds,
-					Buckets:              buckets,
-					PeriodLabel:          chart.PeriodLabel,
-				},
-			},
-		}
 	case semantic.ArtifactTypeUsageTimeline:
 		if artifact.UsageTimeline == nil {
 			return nil
@@ -274,92 +234,8 @@ func artifactToProto(artifact semantic.Artifact) *amav1.Artifact {
 				},
 			},
 		}
-	case semantic.ArtifactTypeUsageHabitSummary:
-		if artifact.UsageHabitSummary == nil {
-			return nil
-		}
-		summary := artifact.UsageHabitSummary
-		topSources := make([]*amav1.AppUsageBucket, 0, len(summary.TopSources))
-		for _, bucket := range summary.TopSources {
-			topSources = append(topSources, appUsageBucketToProto(bucket))
-		}
-		timeBuckets := make([]*amav1.TimeOfDayBucket, 0, len(summary.TimeBuckets))
-		for _, bucket := range summary.TimeBuckets {
-			timeBuckets = append(timeBuckets, &amav1.TimeOfDayBucket{
-				Label:           bucket.Label,
-				DurationSeconds: bucket.DurationSeconds,
-				SessionCount:    bucket.SessionCount,
-			})
-		}
-		var longest *amav1.UsageTimelineEvent
-		if summary.LongestSession != nil {
-			longest = usageTimelineEventToProto(*summary.LongestSession)
-		}
-		return &amav1.Artifact{
-			Value: &amav1.Artifact_UsageHabitSummary{
-				UsageHabitSummary: &amav1.UsageHabitSummary{
-					StartedAt:             timestampOrNil(summary.StartedAt),
-					EndedAt:               timestampOrNil(summary.EndedAt),
-					Timezone:              summary.TimeZone,
-					PeriodLabel:           summary.PeriodLabel,
-					TotalDurationSeconds:  summary.TotalDurationSeconds,
-					SessionCount:          summary.SessionCount,
-					ContextSwitchCount:    summary.ContextSwitchCount,
-					AverageSessionSeconds: summary.AverageSessionSeconds,
-					LongestSession:        longest,
-					TopSources:            topSources,
-					TimeBuckets:           timeBuckets,
-				},
-			},
-		}
-	case semantic.ArtifactTypeUsageComparison:
-		if artifact.UsageComparison == nil {
-			return nil
-		}
-		comparison := artifact.UsageComparison
-		buckets := make([]*amav1.UsageComparisonBucket, 0, len(comparison.Buckets))
-		for _, bucket := range comparison.Buckets {
-			buckets = append(buckets, &amav1.UsageComparisonBucket{
-				Name:                    bucket.Name,
-				SourceType:              bucket.SourceType,
-				CurrentDurationSeconds:  bucket.CurrentDurationSeconds,
-				BaselineDurationSeconds: bucket.BaselineDurationSeconds,
-				DeltaDurationSeconds:    bucket.DeltaDurationSeconds,
-				CurrentSessionCount:     bucket.CurrentSessionCount,
-				BaselineSessionCount:    bucket.BaselineSessionCount,
-			})
-		}
-		return &amav1.Artifact{
-			Value: &amav1.Artifact_UsageComparison{
-				UsageComparison: &amav1.UsageComparison{
-					CurrentStartedAt:             timestampOrNil(comparison.CurrentStartedAt),
-					CurrentEndedAt:               timestampOrNil(comparison.CurrentEndedAt),
-					BaselineStartedAt:            timestampOrNil(comparison.BaselineStartedAt),
-					BaselineEndedAt:              timestampOrNil(comparison.BaselineEndedAt),
-					Timezone:                     comparison.TimeZone,
-					CurrentPeriodLabel:           comparison.CurrentPeriodLabel,
-					BaselinePeriodLabel:          comparison.BaselinePeriodLabel,
-					CurrentTotalDurationSeconds:  comparison.CurrentTotalDurationSeconds,
-					BaselineTotalDurationSeconds: comparison.BaselineTotalDurationSeconds,
-					DurationDeltaSeconds:         comparison.DurationDeltaSeconds,
-					DurationDeltaPercent:         comparison.DurationDeltaPercent,
-					Buckets:                      buckets,
-				},
-			},
-		}
 	default:
 		return nil
-	}
-}
-
-func appUsageBucketToProto(bucket semantic.AppUsageBucket) *amav1.AppUsageBucket {
-	return &amav1.AppUsageBucket{
-		Name:                  bucket.Name,
-		SourceType:            bucket.SourceType,
-		DurationSeconds:       bucket.DurationSeconds,
-		SessionCount:          bucket.SessionCount,
-		ApplicationIdentifier: bucket.ApplicationIdentifier,
-		ApplicationPath:       bucket.ApplicationPath,
 	}
 }
 

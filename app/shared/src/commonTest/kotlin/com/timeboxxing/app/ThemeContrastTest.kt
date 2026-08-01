@@ -2,8 +2,6 @@ package com.timeboxxing.app
 
 import androidx.compose.ui.graphics.Color
 import com.timeboxxing.domain.model.AmaAnswer
-import com.timeboxxing.domain.model.AmaAppUsageBucket
-import com.timeboxxing.domain.model.AmaAppUsageChart
 import com.timeboxxing.domain.model.AmaIndexState
 import com.timeboxxing.domain.model.AmaIndexStatus
 import com.timeboxxing.domain.model.AmaMessageRole

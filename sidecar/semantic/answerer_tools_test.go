@@ -2,144 +2,83 @@ package semantic
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestAnswererRoutesAppUsageQuestionsDirectlyToChartTool(t *testing.T) {
-	loc := time.UTC
-	now := time.Date(2026, 6, 30, 10, 0, 0, 0, loc)
-	tests := []struct {
-		name        string
-		question    string
-		wantStart   time.Time
-		wantEnd     time.Time
-		wantLabel   string
-		wantIdle    bool
-		wantSnippet string
-	}{
-		{
-			name:        "applications use the most yesterday",
-			question:    "Which applications did I use the most yesterday?",
-			wantStart:   time.Date(2026, 6, 29, 0, 0, 0, 0, loc),
-			wantEnd:     time.Date(2026, 6, 30, 0, 0, 0, 0, loc),
-			wantLabel:   "Yesterday",
-			wantSnippet: "Your most used app for Yesterday was Chrome",
-		},
-		{
-			name:        "applications use most yesterday",
-			question:    "Which applications did I use most yesterday?",
-			wantStart:   time.Date(2026, 6, 29, 0, 0, 0, 0, loc),
-			wantEnd:     time.Date(2026, 6, 30, 0, 0, 0, 0, loc),
-			wantLabel:   "Yesterday",
-			wantSnippet: "Your most used app for Yesterday was Chrome",
-		},
-		{
-			name:        "top apps today",
-			question:    "What were my top apps today?",
-			wantStart:   time.Date(2026, 6, 30, 0, 0, 0, 0, loc),
-			wantEnd:     time.Date(2026, 7, 1, 0, 0, 0, 0, loc),
-			wantLabel:   "Today",
-			wantSnippet: "Your most used app for Today was Chrome",
-		},
-		{
-			name:        "time by app last week",
-			question:    "How much time did I spend by app last week?",
-			wantStart:   time.Date(2026, 6, 22, 0, 0, 0, 0, loc),
-			wantEnd:     time.Date(2026, 6, 29, 0, 0, 0, 0, loc),
-			wantLabel:   "Last week",
-			wantSnippet: "Your most used app for Last week was Chrome",
-		},
-		{
-			name:        "idle opt in",
-			question:    "What were my top apps including idle today?",
-			wantStart:   time.Date(2026, 6, 30, 0, 0, 0, 0, loc),
-			wantEnd:     time.Date(2026, 7, 1, 0, 0, 0, 0, loc),
-			wantLabel:   "Today",
-			wantIdle:    true,
-			wantSnippet: "Your most used app for Today was Chrome",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			searcher := &fakeDocumentSearcher{
-				results: []SearchResult{{Content: "Application: Should not be used"}},
-			}
-			generator := &fakeToolCallingGenerator{}
-			toolRunner := &fakeToolRunner{
-				result: ToolResult{
-					Content: `{"buckets":[{"name":"Chrome","duration_seconds":3600}]}`,
-					Artifacts: []Artifact{{
-						Type: ArtifactTypeAppUsageChart,
-						AppUsageChart: &AppUsageChart{
-							StartedAt:            tt.wantStart,
-							EndedAt:              tt.wantEnd,
-							TimeZone:             "UTC",
-							TotalDurationSeconds: 3600,
-							Buckets: []AppUsageBucket{{
-								Name:            "Chrome",
-								SourceType:      "browser",
-								DurationSeconds: 3600,
-								SessionCount:    1,
-							}},
-						},
-					}},
-				},
-			}
-			answerer := NewAnswerer(searcher, generator)
-			answerer.clock = func() time.Time { return now }
-			answerer.location = loc
-			answerer.SetToolRunner(toolRunner)
-
-			answer, err := answerer.Answer(context.Background(), tt.question, 5)
-			if err != nil {
-				t.Fatalf("answer: %v", err)
-			}
-
-			if searcher.query != "" {
-				t.Fatalf("expected chart route to skip semantic search, got query %q", searcher.query)
-			}
-			if len(generator.messages) != 0 {
-				t.Fatalf("expected chart route to skip model tool decision, got %d calls", len(generator.messages))
-			}
-			if toolRunner.call.Name != "get_app_usage_totals" {
-				t.Fatalf("expected usage tool call, got %#v", toolRunner.call)
-			}
-			var args appUsageToolArgs
-			if err := json.Unmarshal([]byte(toolRunner.call.Arguments), &args); err != nil {
-				t.Fatalf("parse tool args: %v", err)
-			}
-			if args.StartedAt != tt.wantStart.Format(time.RFC3339) || args.EndedAt != tt.wantEnd.Format(time.RFC3339) {
-				t.Fatalf("unexpected time window: %+v", args)
-			}
-			if args.Limit != 5 {
-				t.Fatalf("expected default top 5 limit, got %d", args.Limit)
-			}
-			if args.IncludeIdle != tt.wantIdle {
-				t.Fatalf("unexpected include_idle: %+v", args)
-			}
-			if len(answer.Artifacts) != 1 || answer.Artifacts[0].AppUsageChart == nil {
-				t.Fatalf("expected chart artifact, got %#v", answer.Artifacts)
-			}
-			if answer.Artifacts[0].AppUsageChart.PeriodLabel != tt.wantLabel {
-				t.Fatalf("expected period label %q, got %q", tt.wantLabel, answer.Artifacts[0].AppUsageChart.PeriodLabel)
-			}
-			if !strings.Contains(answer.Answer, tt.wantSnippet) {
-				t.Fatalf("expected %q to contain %q", answer.Answer, tt.wantSnippet)
-			}
-		})
-	}
-}
-
-func TestAnswererClarifiesAppUsageQuestionWithoutPeriod(t *testing.T) {
+// A usage-shaped question is routed to the timeline tool by the model, which infers the window from
+// the question: there is no hand-rolled period parser any more.
+func TestAnswererRoutesUsageQuestionsToTheTimelineTool(t *testing.T) {
+	startedAt := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
+	endedAt := startedAt.AddDate(0, 0, 1)
 	searcher := &fakeDocumentSearcher{
 		results: []SearchResult{{Content: "Application: Should not be used"}},
 	}
-	generator := &fakeToolCallingGenerator{}
-	toolRunner := &fakeToolRunner{}
+	generator := &fakeToolCallingGenerator{
+		responses: []ChatResponse{
+			{ToolCalls: []ChatToolCall{{
+				ID:        "call-1",
+				Name:      "get_usage_timeline",
+				Arguments: `{"started_at":"2026-06-29T00:00:00Z","ended_at":"2026-06-30T00:00:00Z"}`,
+			}}},
+			{Content: "You spent yesterday in Chrome."},
+		},
+	}
+	toolRunner := &fakeToolRunner{
+		result: ToolResult{
+			Content: `{"events":[{"title":"Docs"}]}`,
+			Artifacts: []Artifact{{
+				Type: ArtifactTypeUsageTimeline,
+				UsageTimeline: &UsageTimeline{
+					StartedAt:            startedAt,
+					EndedAt:              endedAt,
+					TimeZone:             "UTC",
+					TotalDurationSeconds: 3600,
+					TotalEventCount:      1,
+				},
+			}},
+		},
+	}
+	answerer := NewAnswerer(searcher, generator)
+	answerer.SetToolRunner(toolRunner)
+
+	answer, err := answerer.Answer(context.Background(), "Which applications did I use the most yesterday?", 5)
+	if err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+
+	if searcher.query != "" {
+		t.Fatalf("expected the tool route to skip semantic search, got query %q", searcher.query)
+	}
+	if toolRunner.call.Name != "get_usage_timeline" {
+		t.Fatalf("expected the timeline tool to be called, got %#v", toolRunner.call)
+	}
+	if answer.Answer != "You spent yesterday in Chrome." {
+		t.Fatalf("unexpected answer %q", answer.Answer)
+	}
+	if len(answer.Artifacts) != 1 || answer.Artifacts[0].UsageTimeline == nil {
+		t.Fatalf("expected a timeline artifact, got %#v", answer.Artifacts)
+	}
+}
+
+// With no answer text from the model, the artifact itself has to say something useful.
+func TestAnswererFallsBackToTheArtifactWhenTheModelSaysNothing(t *testing.T) {
+	searcher := &fakeDocumentSearcher{}
+	generator := &fakeToolCallingGenerator{
+		responses: []ChatResponse{
+			{ToolCalls: []ChatToolCall{{ID: "call-1", Name: "get_usage_timeline", Arguments: `{}`}}},
+			{Content: "   "},
+		},
+	}
+	toolRunner := &fakeToolRunner{
+		result: ToolResult{
+			Artifacts: []Artifact{{
+				Type:          ArtifactTypeUsageTimeline,
+				UsageTimeline: &UsageTimeline{},
+			}},
+		},
+	}
 	answerer := NewAnswerer(searcher, generator)
 	answerer.SetToolRunner(toolRunner)
 
@@ -147,14 +86,8 @@ func TestAnswererClarifiesAppUsageQuestionWithoutPeriod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("answer: %v", err)
 	}
-	if searcher.query != "" {
-		t.Fatalf("expected no semantic search, got query %q", searcher.query)
-	}
-	if toolRunner.call.Name != "" {
-		t.Fatalf("expected no tool call without a period, got %#v", toolRunner.call)
-	}
-	if answer.Answer != "Which time period should I chart for app usage?" {
-		t.Fatalf("unexpected clarification %q", answer.Answer)
+	if answer.Answer != "I did not find any usage events in that period." {
+		t.Fatalf("unexpected fallback answer %q", answer.Answer)
 	}
 }
 
@@ -282,7 +215,7 @@ type fakeToolRunner struct {
 }
 
 func (f *fakeToolRunner) Tools() []ChatTool {
-	return []ChatTool{{Name: "get_app_usage_totals"}}
+	return []ChatTool{{Name: "get_usage_timeline"}}
 }
 
 func (f *fakeToolRunner) Execute(_ context.Context, call ChatToolCall) (ToolResult, error) {
