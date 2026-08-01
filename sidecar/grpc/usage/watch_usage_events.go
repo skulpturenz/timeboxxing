@@ -10,9 +10,9 @@ import (
 	"google.golang.org/grpc"
 )
 
-// WatchUsageEvents reports every stretch recorded from the window's opening bound onwards and then
-// ends: QueryGetTimeline takes no closing bound, but it does report itself done once it has caught
-// up with the ingest, so this closes the stream rather than following the ingest from there. Keyset
+// WatchUsageEvents reports every stretch recorded from the window's opening bound onwards and stays
+// open: QueryGetTimeline takes no closing bound and never reports itself done, so catching up with
+// the ingest does not end the stream — only ctx cancellation (the client going away) does. Keyset
 // pagination never yields an entry twice, so nothing has to be deduplicated here.
 func (s *Server) WatchUsageEvents(req *usagev1.GetUsageEventsRequest, stream grpc.ServerStreamingServer[usagev1.UsageEvent]) error {
 	window, err := windowFromRequest(req)

@@ -26,11 +26,13 @@ where both the read and write queriers hang off:
 
 There is no named interface for this contract — it is a structural convention. The
 free functions `CollectTimeline` / `SeqTimeline` are pure in-memory helpers with no
-DB dependency.
+DB dependency, and `QueryExportCSV` wears the `Query*` shape without honouring it: it
+ignores `svcs` and reads no table, because its input is already an in-memory list.
 
-Every `Stream` reports itself done once its pages run dry, and none of them stay open waiting
-for more. A caller that wants the whole thing as a slice drains the stream itself — there is no
-`Collect` on the query:
+Most `Stream`s report themselves done once their pages run dry; `QueryGetTimeline` is the
+exception and never terminates (see [Timeline entry streams](#timeline-entry-streams-get_timelinego-get_timeline_rangego)).
+A caller that wants a terminating stream as a slice drains it itself — there is no `Collect` on
+the query:
 
 ```go
 entries := slices.Collect(utils.SeqChan(utils.Stream(ctx, pageSize, query.Stream(ctx, svcs))))
@@ -51,21 +53,31 @@ flowchart LR
         SR -->|per event| UP[CommandUpsertForegroundProcess]
         UP -->|WriteTx| DB[(SQLite event store)]
     end
-    subgraph derive [Read / derive]
-        DB --> UN[Query*ForegroundProcesses<br/>streams] --> W[enrichment / indexing workers]
-        DB --> AG[application_graph<br/>GraphFrom / GraphChan] --> M[focus scores,<br/>entry suggestions]
-        DB --> CT[CollectTimeline / SeqTimeline] --> CSV[QueryExportCSV]
+    subgraph derive [Read / derive — wired]
         DB --> GT[QueryGetTimeline<br/>open-ended UsageSeq stream] --> WU[grpc/usage<br/>WatchUsageEvents]
         DB --> GR[QueryGetTimelineRange<br/>bounded UsageSeq stream] --> RU[grpc/usage GetUsageEvents,<br/>grpc/ama get_usage_timeline]
     end
+    subgraph planned [Read / derive — built, not yet wired]
+        DB -.-> UN[Query*ForegroundProcesses<br/>streams] -.-> W[enrichment / indexing workers]
+        DB -.-> AG[application_graph<br/>GraphFrom / GraphChan] -.-> M[focus scores,<br/>entry suggestions]
+        DB -.-> CT[CollectTimeline / SeqTimeline] -.-> CSV[QueryExportCSV]
+    end
 ```
+
+> **Only the solid paths have production callers.** The dashed subgraph is implemented and
+> tested but nothing in `app/` or `grpc/` calls it yet: the `GetUn*` streams have no consumer
+> (`app/app.go` records that indexing "is intended to move to the
+> `GetUnindexedForegroundProcesses` stream"), and `application_graph`, `CollectTimeline` /
+> `SeqTimeline` and `QueryExportCSV` are referenced only from tests.
 
 The ingest side is assembled in [`app/app.go`](../../app/app.go) →
 `startForegroundProjection`: it subscribes to the reporter, `enrich`-es each change
 event, adapts it with `MonitorForegroundProcessConverter`, and feeds a
 `chan models.ForegroundProcess` into `CommandSubscribeReporter.Exec`, which runs one
-`CommandUpsertForegroundProcess` per event. Shutdown is a single `ctx` cancel that
-closes the channel and exits the command loop.
+`CommandUpsertForegroundProcess` per event. Shutdown is a single `ctx` cancel: the bridging
+goroutine returns and closes the channel, and the command loop exits on the same `ctx`. The
+close alone would not stop it — the loop receives without a comma-ok check, so it is the
+`ctx.Done()` arm of its `select` that terminates it.
 
 ## Package map
 
@@ -121,8 +133,13 @@ flowchart TD
   `application_id`/`pid` collapse to `NULL` when idle via `utils.ZeroNil`.
 - **Timeline**: the first observation opens an entry (`initial_foreground_process_id`);
   each subsequent observation closes the open entry
-  (`end_foreground_process_id`). Boundary rows are shared through the
-  `created_at_utc` upsert on `foreground_processes`.
+  (`end_foreground_process_id`). Boundary rows are shared by
+  [`upsert_timeline.sql`](../../db/write_queries/upsert_timeline.sql): when no initial id is
+  supplied it falls back to `ORDER BY id DESC LIMIT 1 OFFSET 1` — the observation *before* the
+  one just written — and `UNIQUE (initial_foreground_process_id)` turns the second write for
+  the same opening row into the `ON CONFLICT … DO UPDATE SET end_foreground_process_id` that
+  closes it. (The `created_at_utc` conflict on `foreground_processes` is unrelated; it only
+  collapses two observations recorded at the identical instant.)
 
 > This is the streaming Command ingest. It records raw observations and defers
 > enrichment/indexing to the pull-based streams below; it does not publish transition
@@ -141,8 +158,14 @@ work:
 
 Each page is fetched via the corresponding `read_queries` query (keyed off the last
 seen `foreground_process` id), and every row is turned into a `models.ForegroundProcess`
-by the matching `converters` row converter. These feed background workers that pull
-work rather than being pushed to.
+by the matching `converters` row converter.
+
+> **Not yet consumed.** These are built and tested but have no production caller — the
+> pull-based workers they are meant to feed do not exist yet. `app/app.go` keeps the
+> removed push-based enqueue wiring commented out and notes that indexing "is intended to
+> move to the `GetUnindexedForegroundProcesses` stream"; until that lands, semantic indexing
+> runs off the [`semantic`](../../semantic/) backfiller and the
+> [`queue`](../../queue/README.md) instead.
 
 ## Timeline entry streams (`get_timeline.go`, `get_timeline_range.go`)
 
@@ -155,13 +178,18 @@ bounds they pass:
 
 | Query | Shape | Ends when |
 | --- | --- | --- |
-| `QueryGetTimeline` | optional `StartedAt`, no closing bound | its pages run dry |
+| `QueryGetTimeline` | optional `StartedAt`, no closing bound | **never** — an empty page reports `done == false` |
 | `QueryGetTimelineRange` | `StartedAt`/`EndedAt` | the window is drained |
 
-Neither one follows the ingest: an empty page is the end of the stream, so a consumer that
+`QueryGetTimelineRange` terminates: an empty page is the end of the stream, so a consumer that
 wants the entries recorded since it last looked asks again with a fresh query. Keyset
 pagination is what makes that cheap and duplicate-free — the cursor only ever moves forward, so
 no consumer has to deduplicate.
+
+`QueryGetTimeline` deliberately does not, so that `WatchUsageEvents` can stay open across a
+quiet period. Note that it does not *follow* the ingest either — nothing signals it when a new
+entry lands, so an exhausted stream re-queries on the caller's paging cadence rather than
+blocking. A consumer must therefore rely on `ctx` cancellation to stop it.
 
 - **`End == nil` marks an open entry.** An entry is open until an observation closes it
   (`timeline.end_foreground_process_id IS NULL`), so the whole final side is absent; the
@@ -171,9 +199,10 @@ no consumer has to deduplicate.
   entry's opening one, so dropping one punches a hole that hands its time to a neighbour.
   Consumers that derive durations from that adjacency — the reporting surfaces in `grpc/` —
   must pass `0`.
-- **`StartedAt` / `EndedAt` bound the stream to a window**, half-open and strict, comparing
-  instants rather than text: `created_at_utc` carries whatever offset the observation was
-  recorded in, so both sides of each bound go through `unixepoch(…, 'subsec')`.
+- **`StartedAt` / `EndedAt` bound the stream to a window**, strict on both sides (an open
+  interval: `… > started_at`, `… < ended_at`), comparing instants rather than text:
+  `created_at_utc` carries whatever offset the observation was recorded in, so both sides of
+  each bound go through `unixepoch(…, 'subsec')`.
   `QueryGetTimeline` passes no upper bound. An open entry has not ended, so it always passes
   the lower bound.
 - **Every join is a `LEFT JOIN`**, which is load-bearing rather than defensive: an open entry
@@ -186,8 +215,20 @@ no consumer has to deduplicate.
   [`QueryGetApplicationCategories`](../application/get_application_categories.go) read —
   deduplicated because entries chain, so a row's closing observation is the next row's opening
   one. `ApplicationCategoriesConverter` merges the result onto both endpoints.
-- `Killed` comes from the closing observation (the span ended because the app was terminated),
-  and stays `false` while the entry is open.
+- `Killed` is *intended* to come from the closing observation (the span ended because the app
+  was terminated) and to stay `false` while the entry is open. **It is not populated today** —
+  see the gap below.
+
+> **Read-only columns.** `get_timeline.sql` selects `killed`, `window_title`, `title_source`,
+> `browser_vendor` and `browser_category` from `foreground_process_metadata`, but
+> `InsertForegroundProcessMetadata` writes only `foreground_process_id, browser, idle, tab,
+> cdp_url, latitude, longitude, public_ip`. Those five columns therefore always read back as
+> their schema default, so on any DB-sourced entry `Killed` is `false`, the window title and
+> title source are absent, and a browser entry carries no vendor or category. Everything
+> downstream that consumes them — `UsageSeq.Killed`, `models.Title`/`SourceName`, the CSV
+> export, `parseOptionalTitleSource` / `parseOptionalBrowserCategory` — is written for the
+> intended behaviour and currently sees zero values. The monitor *does* capture all of them;
+> only the write query is missing them.
 
 `UsageSeq.ID` carries `timeline.id` — it is both the keyset cursor and the identity consumers
 report and deduplicate on (semantic documents, embeddings, the usage event id on the wire).
@@ -201,8 +242,9 @@ with `done == false` and reports exhaustion on the next (empty) call.
 To feed the [`application_graph`](application_graph/) from the store, collect a window and
 rebuild the observation sequence from it: drain `QueryGetTimelineRange` → each entry's
 `Start` (plus the last entry's `End`) → `CollectTimeline` → `GraphFrom`. The graph labels an
-observation by its application identifier and dereferences it unconditionally, so the caller
-owns filling one in.
+idle observation `"idle"` and a browser by its `Enrichments.Browser.AppIdentifier`; only the
+remaining case falls through to dereferencing `AppIdentifier`, which it asserts non-nil — so
+the caller owns filling one in for ordinary applications.
 
 ## In-memory timeline shaping (`foreground_process.go`)
 
@@ -218,8 +260,15 @@ Pure helpers over a sorted slice of observations (no DB):
 ## CSV export (`export_csv.go`)
 
 `QueryExportCSV{Timeline list.List}.Exec` renders a linked list of observations into
-a CSV string (header + one row per process: identifiers, pid, window title, title
-source, timestamp, idle, killed).
+a CSV string: a header plus one row per process. It is the one `Query*` that ignores
+`svcs` entirely and touches no DB — a pure in-memory renderer wearing the query shape,
+since its input is a `CollectTimeline` list rather than a table.
+
+> **Known bug — header/row mismatch.** The header declares nine columns
+> (`appName, appIdentifier, appPath, pid, windowTitle, titleSource, timestamp, idle, killed`)
+> but each row writes eight values, starting at `AppIdentifier`: `AppName` is never emitted.
+> Every column from `appIdentifier` onward is therefore shifted one position left relative to
+> its header. Consumers should not trust the header until this is fixed.
 
 ## `models/` — domain types
 
@@ -239,8 +288,9 @@ type ForegroundProcess struct {
 ```
 
 Enrichment sub-structs: `AppMetadata` (FriendlyName, Description, `Category`, IconPath,
-Source), `Browser` (Vendor, `Category`, Tab, CdpURL, Domain), `Location` (nullable
-lat/long + public IP). Accessors carry the semantics: `IsIdle()` (asserts identity
+Source), `Browser` (Vendor, `Category`, Tab, CdpURL, Domain, AppIdentifier), `Location`
+(nullable lat/long + public IP). `Browser.AppIdentifier` is load-bearing rather than
+incidental: it is the label `application_graph` prefers for a browser vertex. Accessors carry the semantics: `IsIdle()` (asserts identity
 fields are nil when idle), `IsBrowser()` (non-zero browser enrichment), `IsEqual()`
 (the change-key used by `CollectTimeline`), and `Category.IsProductive()` (drives the
 graph's productive/unproductive split). `UsageSeq` is the neighbor-triple type;
@@ -249,8 +299,9 @@ graph's productive/unproductive split). `UsageSeq` is the neighbor-triple type;
 ## `converters/` — goverter adapters
 
 Boundary mapping is generated, not hand-written (`//go:generate go tool goverter gen .`).
-Each converter is an annotated interface compiled to an exported zero-size struct with
-a `ToForegroundProcess` method:
+Each converter is an annotated interface compiled to an exported zero-size struct. The row
+and monitor converters expose a `ToForegroundProcess` method; `ApplicationCategoriesConverter`
+is the exception, exposing only `MergeAppMetadata` (see below):
 
 | Converter | Source | Used by |
 | --- | --- | --- |
@@ -278,19 +329,27 @@ model carries), `pidInt32ToInt64`, `parseTitleSource`, `parseBrowserCategory`, `
 two parsers: they treat an absent code as "no value" instead of asserting, since an idle
 observation has no title source and a non-browser observation has no browser category.
 
+`initialBrowserVendor` / `finalBrowserVendor` (both over shared `browserVendor`) resolve the
+vendor for each endpoint of a timeline row. They exist for the sentinel: a row the event store
+flagged as a browser but never enriched has no vendor, and substituting
+`unknownBrowserVendor` (`"unknown"`) keeps the enrichment struct non-zero — without it
+`IsBrowser()` goes false and the entry reads back as a plain application.
+
 ## `application_graph/` — app-switch analytics
 
 Builds a directed graph (backed by [`gograph`](https://github.com/hmdsefi/gograph))
-whose vertices are apps and whose edges are observed switches, guarded by an embedded
-`sync.RWMutex`. Two constructors:
+whose vertices are apps and whose edges are observed switches, guarded by an exported
+`RWMu sync.RWMutex` field. The incremental path locks internally; the read-side analytics
+below do not, so a caller mixing `GraphChan` with reads takes `RWMu` itself. Two
+constructors:
 
 - `GraphFrom(*list.List)` — batch-build from a `CollectTimeline` list.
 - `GraphChan(ctx, <-chan ForegroundProcess)` — incremental; a goroutine folds live
   observations in.
 
 Vertex/edge meta accumulate duration, visit/switch counts, intervals, and category.
-Analytics methods (each takes `numMutualConnections`, the threshold for treating an
-app cluster as strongly connected via Tarjan SCC):
+Analytics methods — the first three take `numMutualConnections`, the threshold for treating
+an app cluster as strongly connected via Tarjan SCC:
 
 | Method | Returns |
 | --- | --- |
@@ -305,10 +364,11 @@ app cluster as strongly connected via Tarjan SCC):
 
 - **CQRS-ish surface.** `Command*`/`Query*` structs each own their inputs and pull
   DB dependencies from the service registry in `Exec`/`Stream`, so callers never wire
-  queriers by hand.
+  queriers by hand — `QueryExportCSV` being the one member that needs no dependency at all.
 - **The event store is the source of truth.** Every observation is persisted raw;
-  the timeline, category links, graph, and exports are all *derived* from it, and
-  enrichment/indexing are pull-based backlogs rather than inline work.
+  the timeline, category links, graph, and exports are all *derived* from it. Enrichment and
+  indexing are designed as pull-based backlogs rather than inline work — the streams exist,
+  the workers that drain them do not yet.
 - **Absent vs empty, persisted.** Pointer identity fields survive the monitor→model
   boundary, and `utils.ZeroNil` maps idle zero-values back to `NULL` columns.
 - **Generated boundaries.** Row→model and monitor→model conversions are goverter
