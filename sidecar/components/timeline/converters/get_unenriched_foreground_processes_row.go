@@ -15,7 +15,7 @@ type getUnenrichedForegroundProcessesRowConverter interface {
 	// goverter:map ApplicationName AppName | zeroNilString
 	// goverter:map ApplicationIdentifier AppIdentifier
 	// goverter:map Pid PID
-	// goverter:map TitleSource TitleSource | parseTitleSource
+	// goverter:map TitleSource TitleSource | parseOptionalTitleSource
 	// goverter:map CreatedAtUtc Timestamp
 	// goverter:map . Enrichments
 	ToForegroundProcess(source readqueries.GetUnenrichedForegroundProcessesRow) models.ForegroundProcess
@@ -25,9 +25,10 @@ type getUnenrichedForegroundProcessesRowConverter interface {
 	// goverter:map . Location
 	toEnrichments(source readqueries.GetUnenrichedForegroundProcessesRow) models.Enrichments
 
-	// goverter:ignore AppIdentifier CdpURL Domain
-	// goverter:map BrowserVendor Vendor
-	// goverter:map BrowserCategory Category | parseBrowserCategory
+	// goverter:ignore AppIdentifier Domain
+	// goverter:map . Vendor | unenrichedBrowserVendor
+	// goverter:map BrowserCategory Category | parseOptionalBrowserCategory
+	// goverter:map CdpUrl CdpURL
 	toBrowser(source readqueries.GetUnenrichedForegroundProcessesRow) models.Browser
 
 	// goverter:map PublicIp PublicIP

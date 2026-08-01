@@ -44,13 +44,16 @@ func window(fromSeconds int, toSeconds int) utils.TimeSpan {
 }
 
 // appObs builds a non-browser observation. Distinct applications must use distinct identifiers and
-// distinct PIDs, since ForegroundProcess.IsEqual keys on PID.
+// distinct PIDs, since ForegroundProcess.IsEqual keys on PID. Every observation carries a window
+// title and title source, so the columns that hold them stay covered on the round trip.
 func appObs(name string, identifier string, pid int64, category enumscategories.Category, timestamp time.Time) models.ForegroundProcess {
 	return models.ForegroundProcess{
 		AppName:       ptr(name),
 		AppIdentifier: ptr(identifier),
 		AppPath:       ptr("/Applications/" + name + ".app"),
 		PID:           ptr(pid),
+		WindowTitle:   ptr(name + " window"),
+		TitleSource:   ptr(models.TitleSourceAX),
 		Timestamp:     timestamp,
 		Enrichments: models.Enrichments{
 			Appmetadata: models.AppMetadata{Category: category},

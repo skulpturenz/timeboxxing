@@ -16,7 +16,7 @@ func (c *GetUnindexedForegroundProcessesRowConverter) ToForegroundProcess(source
 	modelsForegroundProcess.AppIdentifier = source.ApplicationIdentifier
 	modelsForegroundProcess.PID = source.Pid
 	modelsForegroundProcess.WindowTitle = source.WindowTitle
-	modelsForegroundProcess.TitleSource = parseTitleSource(source.TitleSource)
+	modelsForegroundProcess.TitleSource = parseOptionalTitleSource(source.TitleSource)
 	modelsForegroundProcess.Timestamp = source.CreatedAtUtc
 	modelsForegroundProcess.Idle = source.Idle
 	modelsForegroundProcess.Killed = source.Killed
@@ -25,12 +25,13 @@ func (c *GetUnindexedForegroundProcessesRowConverter) ToForegroundProcess(source
 }
 func (c *GetUnindexedForegroundProcessesRowConverter) toBrowser(source readqueries.GetUnindexedForegroundProcessesRow) models.Browser {
 	var modelsBrowser models.Browser
-	if source.BrowserVendor != nil {
-		modelsBrowser.Vendor = *source.BrowserVendor
-	}
-	modelsBrowser.Category = parseBrowserCategory(source.BrowserCategory)
+	modelsBrowser.Vendor = unindexedBrowserVendor(source)
+	modelsBrowser.Category = parseOptionalBrowserCategory(source.BrowserCategory)
 	if source.Tab != nil {
 		modelsBrowser.Tab = *source.Tab
+	}
+	if source.CdpUrl != nil {
+		modelsBrowser.CdpURL = *source.CdpUrl
 	}
 	return modelsBrowser
 }

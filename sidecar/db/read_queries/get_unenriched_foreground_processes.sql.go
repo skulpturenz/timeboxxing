@@ -32,8 +32,8 @@ SELECT
     foreground_process_metadata.window_title
 FROM foreground_processes
 JOIN applications ON applications.id = foreground_processes.application_id
-LEFT JOIN application_categories bc ON bc.id = foreground_process_metadata.browser_category
 JOIN foreground_process_metadata ON foreground_process_metadata.foreground_process_id = foreground_processes.id
+LEFT JOIN application_categories bc ON bc.id = foreground_process_metadata.browser_category
 WHERE  ((foreground_process_metadata.tab IS NULL AND foreground_process_metadata.browser = 1)
     OR (    foreground_process_metadata.latitude IS NULL
         AND foreground_process_metadata.longitude IS NULL
@@ -57,7 +57,7 @@ type GetUnenrichedForegroundProcessesRow struct {
 	CreatedAtUtc          time.Time
 	Browser               bool
 	BrowserVendor         *string
-	BrowserCategory       string
+	BrowserCategory       *string
 	Idle                  bool
 	Killed                bool
 	Tab                   *string

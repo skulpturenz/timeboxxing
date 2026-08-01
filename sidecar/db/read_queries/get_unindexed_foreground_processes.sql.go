@@ -32,8 +32,8 @@ SELECT
     foreground_process_metadata.window_title
 FROM foreground_processes
 JOIN applications ON applications.id = foreground_processes.application_id
-LEFT JOIN application_categories bc ON bc.id = foreground_process_metadata.browser_category
 JOIN foreground_process_metadata ON foreground_process_metadata.foreground_process_id = foreground_processes.id
+LEFT JOIN application_categories bc ON bc.id = foreground_process_metadata.browser_category
 WHERE       foreground_processes.id NOT IN (SELECT timeline.initial_foreground_process_id AS foreground_process_id
                                           FROM timeline
                                           JOIN timeline_semantic_documents ON timeline_semantic_documents.timeline_id = timeline.id
@@ -62,7 +62,7 @@ type GetUnindexedForegroundProcessesRow struct {
 	CreatedAtUtc          time.Time
 	Browser               bool
 	BrowserVendor         *string
-	BrowserCategory       string
+	BrowserCategory       *string
 	Idle                  bool
 	Killed                bool
 	Tab                   *string

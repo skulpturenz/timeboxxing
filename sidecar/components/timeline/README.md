@@ -57,18 +57,20 @@ flowchart LR
         DB --> GT[QueryGetTimeline<br/>open-ended UsageSeq stream] --> WU[grpc/usage<br/>WatchUsageEvents]
         DB --> GR[QueryGetTimelineRange<br/>bounded UsageSeq stream] --> RU[grpc/usage GetUsageEvents,<br/>grpc/ama get_usage_timeline]
     end
-    subgraph planned [Read / derive — built, not yet wired]
+    subgraph planned [Read / derive — unwired]
         DB -.-> UN[Query*ForegroundProcesses<br/>streams] -.-> W[enrichment / indexing workers]
         DB -.-> AG[application_graph<br/>GraphFrom / GraphChan] -.-> M[focus scores,<br/>entry suggestions]
         DB -.-> CT[CollectTimeline / SeqTimeline] -.-> CSV[QueryExportCSV]
     end
 ```
 
-> **Only the solid paths have production callers.** The dashed subgraph is implemented and
-> tested but nothing in `app/` or `grpc/` calls it yet: the `GetUn*` streams have no consumer
-> (`app/app.go` records that indexing "is intended to move to the
-> `GetUnindexedForegroundProcesses` stream"), and `application_graph`, `CollectTimeline` /
-> `SeqTimeline` and `QueryExportCSV` are referenced only from tests.
+> **Only the solid paths have production callers**, and the dashed subgraph is not uniformly
+> ready. [`application_graph`](application_graph/) is unwired but well covered — it has a test
+> suite of its own. The other four —
+> `QueryGetUnenriched`/`QueryGetUnindexedForegroundProcesses`, `CollectTimeline` / `SeqTimeline`,
+> and `QueryExportCSV` — have **no references at all**: no caller in `app/` or `grpc/`, and no
+> test either. This package's tests cover only the two timeline entry streams. Treat those four
+> as unverified rather than merely unwired; nothing has ever executed them.
 
 The ingest side is assembled in [`app/app.go`](../../app/app.go) →
 `startForegroundProjection`: it subscribes to the reporter, `enrich`-es each change
@@ -130,7 +132,11 @@ flowchart TD
   value), and the returned surrogate id is linked to the application via
   `application_application_categories_map`.
 - **Foreground process + metadata** are written for every sample (idle included);
-  `application_id`/`pid` collapse to `NULL` when idle via `utils.ZeroNil`.
+  `application_id`/`pid` collapse to `NULL` when idle via `utils.ZeroNil`. The metadata row carries
+  the per-observation enrichments — browser flag and vendor, tab, CDP url, location, window title
+  and title source. `title_source` goes through `titleSourceCode`, which stores `NULL` rather than
+  `TitleSourceUnknown.String()`: `"unknown"` is not a code `models.ParseTitleSource` accepts, so
+  storing it would fail the read.
 - **Timeline**: the first observation opens an entry (`initial_foreground_process_id`);
   each subsequent observation closes the open entry
   (`end_foreground_process_id`). Boundary rows are shared by
@@ -152,20 +158,34 @@ each expose `Stream(ctx, svcs) utils.StreamFn[models.ForegroundProcess]` — a
 keyset-paginated closure that walks the event store for observations still needing
 work:
 
-- **unenriched** — rows whose metadata has not yet been decorated (app category,
-  browser vendor, …).
-- **unindexed** — rows not yet turned into semantic documents/embeddings.
+- **unenriched** — narrower than the name suggests. The predicate in
+  [`get_unenriched_foreground_processes.sql`](../../db/read_queries/get_unenriched_foreground_processes.sql)
+  matches a browser row with no `tab`, **or** a row with no `latitude`/`longitude` but a
+  non-`NULL` `public_ip`. It says nothing about app category or browser vendor — those are
+  enriched at ingest, not backfilled here.
+- **unindexed** — rows not yet turned into semantic documents/embeddings: neither endpoint of
+  the row appears in any `timeline` entry that has a `timeline_semantic_documents` row.
 
 Each page is fetched via the corresponding `read_queries` query (keyed off the last
 seen `foreground_process` id), and every row is turned into a `models.ForegroundProcess`
 by the matching `converters` row converter.
 
-> **Not yet consumed.** These are built and tested but have no production caller — the
-> pull-based workers they are meant to feed do not exist yet. `app/app.go` keeps the
-> removed push-based enqueue wiring commented out and notes that indexing "is intended to
-> move to the `GetUnindexedForegroundProcesses` stream"; until that lands, semantic indexing
-> runs off the [`semantic`](../../semantic/) backfiller and the
-> [`queue`](../../queue/README.md) instead.
+Both queries **inner** `JOIN applications`, so an idle observation (`application_id IS NULL`)
+can never surface in either backlog regardless of what its metadata is missing.
+
+> **No caller, no test.** The pull-based workers these are meant to feed do not exist yet, and
+> nothing else references them. Until recently they did not even execute: both placed the
+> `LEFT JOIN application_categories` ahead of the `JOIN foreground_process_metadata` that
+> introduces the table it keys on, which SQLite rejects at prepare time (*"ON clause references
+> tables to its right"*). The join order is fixed and both now run, but they remain uncovered —
+> add tests alongside the first worker that drains them.
+>
+> `app/app.go` keeps the removed push-based enqueue wiring commented out and notes that indexing
+> "is intended to move to the `GetUnindexedForegroundProcesses` stream", but that block is stale
+> and no longer re-enable-able as written: it names `queues.TransitionEventReportedQueue` (the
+> live channel is `queues.TransitionEventReportedIn`) and `componentTimeline.Options{}`, a type
+> this package no longer has. Until a worker lands, semantic indexing runs off the
+> [`semantic`](../../semantic/) backfiller and the [`queue`](../../queue/README.md) instead.
 
 ## Timeline entry streams (`get_timeline.go`, `get_timeline_range.go`)
 
@@ -219,16 +239,20 @@ blocking. A consumer must therefore rely on `ctx` cancellation to stop it.
   was terminated) and to stay `false` while the entry is open. **It is not populated today** —
   see the gap below.
 
-> **Read-only columns.** `get_timeline.sql` selects `killed`, `window_title`, `title_source`,
-> `browser_vendor` and `browser_category` from `foreground_process_metadata`, but
-> `InsertForegroundProcessMetadata` writes only `foreground_process_id, browser, idle, tab,
-> cdp_url, latitude, longitude, public_ip`. Those five columns therefore always read back as
-> their schema default, so on any DB-sourced entry `Killed` is `false`, the window title and
-> title source are absent, and a browser entry carries no vendor or category. Everything
-> downstream that consumes them — `UsageSeq.Killed`, `models.Title`/`SourceName`, the CSV
-> export, `parseOptionalTitleSource` / `parseOptionalBrowserCategory` — is written for the
-> intended behaviour and currently sees zero values. The monitor *does* capture all of them;
-> only the write query is missing them.
+> **Read-only columns.** Two columns of `foreground_process_metadata` are still only ever read:
+> `killed` and `browser_category` are selected by `get_timeline.sql` but absent from the
+> [`insert_foreground_process_metadata.sql`](../../db/write_queries/insert_foreground_process_metadata.sql)
+> column list — and unlike the rest, there is nothing upstream to write. `monitor.ForegroundProcess`
+> has no `Killed` field at all (nothing detects termination), and nothing on the ingest side
+> classifies a browser tab, so `models.Browser.Category` is always nil before the write. Both are
+> features rather than wiring gaps.
+>
+> So on any DB-sourced entry `Killed` is `false` and a browser entry carries no category.
+> `UsageSeq.Killed` and `parseOptionalBrowserCategory` are written for the intended behaviour and
+> currently see zero values.
+>
+> `Browser.Domain` is the inverse case: the monitor captures it and `monitorEnrichments` maps it,
+> but there is no column to put it in and nothing reads it back.
 
 `UsageSeq.ID` carries `timeline.id` — it is both the keyset cursor and the identity consumers
 report and deduplicate on (semantic documents, embeddings, the usage event id on the wire).
@@ -264,11 +288,22 @@ a CSV string: a header plus one row per process. It is the one `Query*` that ign
 `svcs` entirely and touches no DB — a pure in-memory renderer wearing the query shape,
 since its input is a `CollectTimeline` list rather than a table.
 
-> **Known bug — header/row mismatch.** The header declares nine columns
-> (`appName, appIdentifier, appPath, pid, windowTitle, titleSource, timestamp, idle, killed`)
-> but each row writes eight values, starting at `AppIdentifier`: `AppName` is never emitted.
-> Every column from `appIdentifier` onward is therefore shifted one position left relative to
-> its header. Consumers should not trust the header until this is fixed.
+The row carries eight values — `appIdentifier, appPath, pid, windowTitle, titleSource,
+timestamp, idle, killed` — and that set is deliberate: it is the minimum from which every other
+field can be re-derived. `AppName` is enrichment, recoverable from `AppIdentifier`, and not
+guaranteed stable across re-enrichment, so exporting it would bake a snapshot of mutable
+derived state into the file.
+
+> **Stale header.** `headers` in [`export_csv.go`](export_csv.go) still declares nine columns —
+> it leads with `appName`, which no row emits. Every column from `appIdentifier` onward is
+> therefore shifted one position left relative to its header. The fix is to drop `appName` from
+> `headers`, *not* to start emitting `AppName`. Outstanding; consumers should not trust the
+> header until it lands.
+
+One of the eight is empty in practice on anything sourced from the store: `killed` is a column the
+write path never persists (see
+[Read-only columns](#timeline-entry-streams-get_timelinego-get_timeline_rangego) above), so an
+export rebuilt from the DB always reports `false` for it.
 
 ## `models/` — domain types
 
@@ -293,8 +328,9 @@ Source), `Browser` (Vendor, `Category`, Tab, CdpURL, Domain, AppIdentifier), `Lo
 incidental: it is the label `application_graph` prefers for a browser vertex. Accessors carry the semantics: `IsIdle()` (asserts identity
 fields are nil when idle), `IsBrowser()` (non-zero browser enrichment), `IsEqual()`
 (the change-key used by `CollectTimeline`), and `Category.IsProductive()` (drives the
-graph's productive/unproductive split). `UsageSeq` is the neighbor-triple type;
-`Usage.IsKilled()` reports termination.
+graph's productive/unproductive split). `UsageSeq` is the neighbor-triple type. (`Usage` and
+its `IsKilled()` sit alongside these but are unreferenced anywhere in the repo — not part of the
+working surface.)
 
 ## `converters/` — goverter adapters
 
@@ -329,19 +365,34 @@ model carries), `pidInt32ToInt64`, `parseTitleSource`, `parseBrowserCategory`, `
 two parsers: they treat an absent code as "no value" instead of asserting, since an idle
 observation has no title source and a non-browser observation has no browser category.
 
-`initialBrowserVendor` / `finalBrowserVendor` (both over shared `browserVendor`) resolve the
-vendor for each endpoint of a timeline row. They exist for the sentinel: a row the event store
-flagged as a browser but never enriched has no vendor, and substituting
-`unknownBrowserVendor` (`"unknown"`) keeps the enrichment struct non-zero — without it
-`IsBrowser()` goes false and the entry reads back as a plain application.
+`platformTitleSource` is the ingest-side counterpart: the monitor's `platform.TitleSource` is a
+string enum and the model's an int enum, but the platform's values are exactly the codes
+`models.ParseTitleSource` accepts, so parsing *is* the mapping. It treats `""` as absent rather
+than unrecognized — the monitor always allocates the pointer for a non-idle sample, so a platform
+that could not determine a source arrives empty rather than nil.
+
+`initialBrowserVendor` / `finalBrowserVendor` and their backlog counterparts
+`unenrichedBrowserVendor` / `unindexedBrowserVendor` (all over shared `browserVendor`) resolve the
+vendor for a row endpoint. The vendor is persisted, so they normally pass it straight through; the
+`unknownBrowserVendor` (`"unknown"`) sentinel covers rows written before it was — a row flagged as
+a browser but stored without a vendor. It is load-bearing for those rows: `IsBrowser()` reports on
+the zero-ness of the whole `Browser` enrichment, so without a substitute an unenriched browser
+reads back as a plain application. One converter per row type because goverter resolves pipes by
+signature, and the backlog rows type the `browser` flag as `bool` rather than the timeline row's
+`*bool` — the backlog queries inner-join the metadata, so the `NOT NULL` column keeps its type.
 
 ## `application_graph/` — app-switch analytics
 
 Builds a directed graph (backed by [`gograph`](https://github.com/hmdsefi/gograph))
 whose vertices are apps and whose edges are observed switches, guarded by an exported
-`RWMu sync.RWMutex` field. The incremental path locks internally; the read-side analytics
-below do not, so a caller mixing `GraphChan` with reads takes `RWMu` itself. Two
-constructors:
+`RWMu sync.RWMutex` field. Both sides lock internally: the write paths (`GraphFrom` and the
+`GraphChan` fold) take the write lock, and the analytics below take the read lock themselves —
+with one deliberate exception. `GetStronglyConnectedApps` does **not** lock, because
+`GetFocusScores` and `GetEntrySuggestions` call it while already holding the read lock, and
+re-acquiring would deadlock. That is what `RWMu` is exported for: an external caller of
+`GetStronglyConnectedApps` — and only that one — must hold `RWMu.RLock()` around the call.
+
+Two constructors:
 
 - `GraphFrom(*list.List)` — batch-build from a `CollectTimeline` list.
 - `GraphChan(ctx, <-chan ForegroundProcess)` — incremental; a goroutine folds live
@@ -355,7 +406,7 @@ an app cluster as strongly connected via Tarjan SCC:
 | --- | --- |
 | `GetFocusScores(n)` | `map[string]float64` — per-app focus metric (cycle-collapsed spans) |
 | `GetEntrySuggestions(start, n)` | `[]EntrySuggestion` — contiguous app-cluster time blocks to log |
-| `GetStronglyConnectedApps(n)` | `map[string][]StronglyConnectedEdgesMeta` — mutually-connected app clusters |
+| `GetStronglyConnectedApps(n)` | `map[string][]StronglyConnectedEdgesMeta` — mutually-connected app clusters (**caller locks**) |
 | `GetAverageProductiveDuration()` / `GetAverageUnproductiveDuration()` | `time.Duration` — split by `Category.IsProductive()` |
 | `GetTimeToProductive()` | `time.Duration` |
 | `GetVertexMeta(label)` / `GetEdgeMeta(from, to)` | accumulated meta for one node/edge |

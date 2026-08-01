@@ -7,6 +7,7 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	enumscategories "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_categories"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
+	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,6 +53,50 @@ func TestQueryGetTimelineRange_KeepsBrowserEnrichments(t *testing.T) {
 	assert.Equal(t, "Pull requests", entries[0].Start.Title())
 	assert.Equal(t, "Google Chrome", entries[0].Start.SourceName())
 	assert.Equal(t, "https://example.com/pulls", entries[0].Start.Enrichments.Browser.CdpURL)
+
+	// the vendor is persisted, so it reads back as itself rather than the sentinel the converters
+	// substitute for a row flagged as a browser but stored without one
+	assert.Equal(t, "Google Chrome", entries[0].Start.Enrichments.Browser.Vendor)
+}
+
+// The window title and its source are captured per observation rather than per application, so they
+// are the two columns that must survive the round trip for an entry to report what was on screen.
+func TestQueryGetTimelineRange_KeepsTheWindowTitleAndItsSource(t *testing.T) {
+	ctx := context.Background()
+	svcs := newTestServices(t, ctx)
+
+	seedObservations(t, ctx, svcs,
+		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
+		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
+	)
+
+	entries := rangeOf(t, ctx, svcs, 0, 200)
+
+	require.Len(t, entries, 1)
+	assert.Equal(t, "Ghostty window", utils.Coalesce(entries[0].Start.WindowTitle, ""))
+	require.NotNil(t, entries[0].Start.TitleSource, "the title source round trips as its stored code")
+	assert.Equal(t, models.TitleSourceAX, *entries[0].Start.TitleSource)
+
+	assert.Equal(t, "Slack window", utils.Coalesce(entries[0].End.WindowTitle, ""),
+		"an entry closes on the next observation, which has its own window")
+}
+
+// An idle observation has no window, so there is no title source to store. TitleSourceUnknown is not
+// a code the read path can parse, so it must be stored as absent rather than as its name.
+func TestQueryGetTimelineRange_ReportsNoTitleSourceForIdle(t *testing.T) {
+	ctx := context.Background()
+	svcs := newTestServices(t, ctx)
+
+	seedObservations(t, ctx, svcs,
+		idleObs(at(0)),
+		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(60)),
+	)
+
+	entries := rangeOf(t, ctx, svcs, 0, 200)
+
+	require.Len(t, entries, 1)
+	assert.Nil(t, entries[0].Start.TitleSource)
+	assert.Nil(t, entries[0].Start.WindowTitle)
 }
 
 // The category is the one part of the app-metadata enrichment the event store keeps, and it hangs

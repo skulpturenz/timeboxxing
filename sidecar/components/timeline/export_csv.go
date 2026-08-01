@@ -32,8 +32,7 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 	var csvBuilder strings.Builder
 	csvBuilder.Grow(len(fps) + 1)
 
-	headers := []string{"appName",
-		"appIdentifier",
+	headers := []string{"appIdentifier",
 		"appPath",
 		"pid",
 		"windowTitle",
@@ -44,6 +43,8 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 	fmt.Fprintf(&csvBuilder, "%v\n", strings.Join(headers, ","))
 
 	for _, fp := range fps {
+		// the minimum we need to derive all other state
+		// enrichment data is not guaranteed to be static
 		row := []string{
 			utils.Coalesce(fp.AppIdentifier, ""),
 			utils.Coalesce(fp.AppPath, ""),
@@ -55,7 +56,7 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 			fmt.Sprintf("%v", fp.Killed),
 		}
 
-		csvBuilder.WriteString(fmt.Sprintf("%v\n", strings.Join(row, ",")))
+		fmt.Fprintf(&csvBuilder, "%v\n", strings.Join(row, ","))
 	}
 
 	return csvBuilder.String(), nil
