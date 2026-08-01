@@ -59,7 +59,7 @@ flowchart LR
     end
     subgraph planned [Read / derive — unwired]
         DB -.-> UN[Query*ForegroundProcesses<br/>streams] -.-> W[enrichment / indexing workers]
-        DB -.-> AG[application_graph<br/>GraphFrom / GraphChan] -.-> M[focus scores,<br/>entry suggestions]
+        DB -.-> AG[application_graph<br/>ApplicationGraphFrom / ApplicationGraphChan] -.-> M[focus scores,<br/>entry suggestions]
         DB -.-> CT[CollectTimeline / SeqTimeline] -.-> CSV[QueryExportCSV]
     end
 ```
@@ -265,7 +265,7 @@ with `done == false` and reports exhaustion on the next (empty) call.
 
 To feed the [`application_graph`](application_graph/) from the store, collect a window and
 rebuild the observation sequence from it: drain `QueryGetTimelineRange` → each entry's
-`Start` (plus the last entry's `End`) → `CollectTimeline` → `GraphFrom`. The graph labels an
+`Start` (plus the last entry's `End`) → `CollectTimeline` → `ApplicationGraphFrom`. The graph labels an
 idle observation `"idle"` and a browser by its `Enrichments.Browser.AppIdentifier`; only the
 remaining case falls through to dereferencing `AppIdentifier`, which it asserts non-nil — so
 the caller owns filling one in for ordinary applications.
@@ -385,18 +385,56 @@ signature, and the backlog rows type the `browser` flag as `bool` rather than th
 
 Builds a directed graph (backed by [`gograph`](https://github.com/hmdsefi/gograph))
 whose vertices are apps and whose edges are observed switches, guarded by an exported
-`RWMu sync.RWMutex` field. Both sides lock internally: the write paths (`GraphFrom` and the
-`GraphChan` fold) take the write lock, and the analytics below take the read lock themselves —
-with one deliberate exception. `GetStronglyConnectedApps` does **not** lock, because
-`GetFocusScores` and `GetEntrySuggestions` call it while already holding the read lock, and
-re-acquiring would deadlock. That is what `RWMu` is exported for: an external caller of
+`RWMu sync.RWMutex` field. Both sides lock internally: the write paths (`ApplicationGraphFrom`
+and the `ApplicationGraphChan` fold) take the write lock, and the analytics below take the read
+lock themselves — with one deliberate exception. `GetStronglyConnectedApps` does **not** lock,
+because `GetFocusScores` and `GetEntrySuggestions` call it while already holding the read lock,
+and re-acquiring would deadlock. That is what `RWMu` is exported for: an external caller of
 `GetStronglyConnectedApps` — and only that one — must hold `RWMu.RLock()` around the call.
 
 Two constructors:
 
-- `GraphFrom(*list.List)` — batch-build from a `CollectTimeline` list.
-- `GraphChan(ctx, <-chan ForegroundProcess)` — incremental; a goroutine folds live
+- `ApplicationGraphFrom(*list.List)` — batch-build from a `CollectTimeline` list.
+- `ApplicationGraphChan(ctx, <-chan ForegroundProcess)` — incremental; a goroutine folds live
   observations in.
+
+### Storage / strategy split
+
+Storage and traversal are generic; the app-specific decisions sit behind a strategy:
+
+```go
+type BaseGraph[V, E any] struct {
+    RWMu          sync.RWMutex
+    Graph         gograph.Graph[string]
+    activeProcess *ForegroundProcess
+    vertexMetaMap map[string]V
+    edgeMetaMap   map[Edge]E
+}
+
+type GraphConnectionStrategy[V, E any] interface {
+    AddVertexMeta(graph *BaseGraph[V, E], curr ForegroundProcess) (bool, bool)
+    Build(graph *BaseGraph[V, E])
+}
+```
+
+`GraphFrom(strategy, *list.List)` owns the walk — lock, assert each element is a
+`ForegroundProcess`, fold it via `AddVertexMeta`, then `Build`. Everything that is specific to
+*this* graph lives in `ApplicationGraphConnectionStrategy`: how a process resolves to a vertex
+label (`"idle"`, else the browser's `AppIdentifier`, else the app's), what meta accumulates, and
+that the graph is directed — `Build` owns the `gograph.New[string](gograph.Directed())` call.
+A second graph flavour is a new strategy, not a second `GraphFrom`.
+
+`ApplicationGraph` embeds `*BaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta]`,
+so the analytics methods read concretely-typed meta through field promotion rather than
+asserting out of `any`. The embed is by **pointer** because `BaseGraph` carries the mutex —
+embedding it by value would make `ApplicationGraph` uncopyable in a way `GraphFrom` could not
+return around. `var _ GraphConnectionStrategy[…] = ApplicationGraphConnectionStrategy{}` is the
+compile-time check that the strategy is actually satisfied.
+
+The incremental path is the one part still outside the interface: `upsertForegroundProcess` and
+`addVertexAndEdge` stay `*ApplicationGraph` methods and delegate to the strategy, so
+`ApplicationGraphChan` has no generic counterpart. `Build` runs once at construction there to
+give the fold a non-nil empty graph.
 
 Vertex/edge meta accumulate duration, visit/switch counts, intervals, and category.
 Analytics methods — the first three take `numMutualConnections`, the threshold for treating

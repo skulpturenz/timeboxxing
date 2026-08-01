@@ -17,7 +17,7 @@ import (
 // itself and is filtered out by the same IsProductive check, so only outgoing edges contribute.
 
 func TestGetTimeToProductive_ReportsTimeSpentOnADistractionBeforeSwitching(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(0)),
 		appProc("vscode", 2, enumscategories.CategoryDevelopment, at(60)),
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(180)),
@@ -28,7 +28,7 @@ func TestGetTimeToProductive_ReportsTimeSpentOnADistractionBeforeSwitching(t *te
 }
 
 func TestGetTimeToProductive_AveragesAcrossDistractions(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(0)),
 		appProc("vscode", 2, enumscategories.CategoryDevelopment, at(60)),
 		appProc("spotify", 3, enumscategories.CategoryMedia, at(120)),
@@ -45,7 +45,7 @@ func TestGetTimeToProductive_AveragesAcrossDistractions(t *testing.T) {
 // single sample, so a distraction returned to repeatedly contributes the sum of its stretches rather
 // than one entry per switch.
 func TestGetTimeToProductive_SumsRepeatedTraversalsOfOneEdge(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(0)),
 		appProc("vscode", 2, enumscategories.CategoryDevelopment, at(60)),
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(120)),
@@ -63,7 +63,7 @@ func TestGetTimeToProductive_SumsRepeatedTraversalsOfOneEdge(t *testing.T) {
 }
 
 func TestGetTimeToProductive_IsZeroWhenAlwaysProductive(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("notes", 2, enumscategories.CategoryProductivity, at(60)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(120)),
@@ -74,7 +74,7 @@ func TestGetTimeToProductive_IsZeroWhenAlwaysProductive(t *testing.T) {
 
 // The same zero as the always-productive case, despite meaning the opposite.
 func TestGetTimeToProductive_IsZeroWhenNothingProductiveWasReached(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(0)),
 		appProc("spotify", 2, enumscategories.CategoryMedia, at(60)),
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(120)),
@@ -84,5 +84,5 @@ func TestGetTimeToProductive_IsZeroWhenNothingProductiveWasReached(t *testing.T)
 }
 
 func TestGetTimeToProductive_IsZeroForAnEmptyGraph(t *testing.T) {
-	assert.Zero(t, GraphFrom(list.New()).GetTimeToProductive())
+	assert.Zero(t, ApplicationGraphFrom(list.New()).GetTimeToProductive())
 }

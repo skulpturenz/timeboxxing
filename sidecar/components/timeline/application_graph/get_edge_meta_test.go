@@ -11,7 +11,7 @@ import (
 )
 
 func TestGetEdgeMeta_ReturnsMetaForAKnownTransition(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(90)),
@@ -28,7 +28,7 @@ func TestGetEdgeMeta_ReturnsMetaForAKnownTransition(t *testing.T) {
 }
 
 func TestGetEdgeMeta_IsDirectional(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(60)),
 		appProc("C", 3, enumscategories.CategoryMedia, at(90)),
@@ -43,7 +43,7 @@ func TestGetEdgeMeta_IsDirectional(t *testing.T) {
 }
 
 func TestGetEdgeMeta_ReportsAMissForAnUnknownTransition(t *testing.T) {
-	g := GraphFrom(listOf(
+	g := ApplicationGraphFrom(listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(60)),
 	))
@@ -52,7 +52,7 @@ func TestGetEdgeMeta_ReportsAMissForAnUnknownTransition(t *testing.T) {
 	assert.False(t, ok)
 	assert.Nil(t, meta, "a miss must be nil so a caller cannot dereference it by accident")
 
-	empty, ok := GraphFrom(list.New()).GetEdgeMeta("A", "B")
+	empty, ok := ApplicationGraphFrom(list.New()).GetEdgeMeta("A", "B")
 	assert.False(t, ok)
 	assert.Nil(t, empty)
 }
