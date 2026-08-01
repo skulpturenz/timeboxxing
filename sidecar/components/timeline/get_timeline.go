@@ -38,13 +38,13 @@ func (q *QueryGetTimeline) Stream(ctx context.Context, svcs *services.Services[a
 			MinDurationSeconds: q.MinDurationSeconds,
 			PageSize:           int64(pageSize),
 		})
-		assert.NoError(err)
+		assert.Condition(func() bool { return ctx.Err() != nil || err == nil })
 		if err != nil {
 			return nil, true
 		}
 
 		if len(rows) == 0 {
-			return nil, false
+			return nil, false // live stream, never stops
 		}
 
 		applicationIds := map[int64]struct{}{}

@@ -40,13 +40,13 @@ func (q *QueryGetTimelineRange) Stream(ctx context.Context, svcs *services.Servi
 			MinDurationSeconds: q.MinDurationSeconds,
 			PageSize:           int64(pageSize),
 		})
-		assert.NoError(err)
+		assert.Condition(func() bool { return ctx.Err() != nil || err == nil })
 		if err != nil {
 			return nil, true
 		}
 
 		if len(rows) == 0 {
-			return nil, true
+			return nil, true // stream ends when there are no more rows
 		}
 
 		applicationIds := map[int64]struct{}{}
