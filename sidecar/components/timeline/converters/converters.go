@@ -131,7 +131,7 @@ func pidInt32ToInt64(pid *int32) *int64 {
 // monitorEnrichments reads the app-metadata, browser, and location enrichments off the monitor
 // process's dynamic enrichment bag (via the accessors that populate them) into the typed model.
 func monitorEnrichments(fp monitor.ForegroundProcess) models.Enrichments {
-	enrichments := models.Enrichments{}
+	var enrichments models.Enrichments
 	if md, ok := appmetadata.Get(fp); ok {
 		enrichments.Appmetadata = models.AppMetadata{
 			FriendlyName: md.FriendlyName,
@@ -143,10 +143,12 @@ func monitorEnrichments(fp monitor.ForegroundProcess) models.Enrichments {
 	}
 	if tab, ok := browser.Get(fp); ok {
 		enrichments.Browser = models.Browser{
-			Vendor: tab.Browser,
-			Tab:    tab.Title,
-			CdpURL: tab.URL,
-			Domain: tab.Domain,
+			Vendor:        tab.Browser,
+			Category:      nil,
+			AppIdentifier: nil,
+			Tab:           tab.Title,
+			CdpURL:        tab.URL,
+			Domain:        tab.Domain,
 		}
 	}
 	if env, ok := location.Get(fp); ok {

@@ -11,28 +11,32 @@ import (
 
 // The classification ingest wrote is the classification the read reports.
 func TestQueryGetApplicationCategories_ReportsTheLinkedCategory(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	svcs := newTestServices(ctx, t)
 
-	applicationId := seedApplication(t, ctx, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
+	applicationID := seedApplication(ctx, t, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
 
-	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: []int64{applicationId}}.Exec(ctx, svcs)
+	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: []int64{applicationID}}.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[int64][]enumscategories.Category{
-		applicationId: {enumscategories.CategoryDevelopment},
+		applicationID: {enumscategories.CategoryDevelopment},
 	}, byApplication)
 }
 
 // The whole point of taking a set: a page of timeline rows spans several applications and must cost
 // one read, not one per application.
 func TestQueryGetApplicationCategories_ReportsEveryApplicationInOneRead(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	ghostty := seedApplication(t, ctx, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
-	slack := seedApplication(t, ctx, svcs, "com.slack", enumscategories.CategoryCommunication)
-	figma := seedApplication(t, ctx, svcs, "com.figma", enumscategories.CategoryGraphicsDesign)
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	ghostty := seedApplication(ctx, t, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
+	slack := seedApplication(ctx, t, svcs, "com.slack", enumscategories.CategoryCommunication)
+	figma := seedApplication(ctx, t, svcs, "com.figma", enumscategories.CategoryGraphicsDesign)
 
 	byApplication, err := QueryGetApplicationCategories{
 		ApplicationIDs: []int64{ghostty, slack, figma},
@@ -50,11 +54,13 @@ func TestQueryGetApplicationCategories_ReportsEveryApplicationInOneRead(t *testi
 // which is the empty classification. Consumers that carry a single category read that back as
 // CategoryUnknown.
 func TestQueryGetApplicationCategories_OmitsAnUnclassifiedApplication(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	classified := seedApplication(t, ctx, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
-	unclassified := seedApplication(t, ctx, svcs, "com.unclassified")
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	classified := seedApplication(ctx, t, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
+	unclassified := seedApplication(ctx, t, svcs, "com.unclassified")
 
 	byApplication, err := QueryGetApplicationCategories{
 		ApplicationIDs: []int64{classified, unclassified},
@@ -67,8 +73,10 @@ func TestQueryGetApplicationCategories_OmitsAnUnclassifiedApplication(t *testing
 
 // Nor is an application that was never recorded at all.
 func TestQueryGetApplicationCategories_OmitsAnUnknownApplication(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	svcs := newTestServices(ctx, t)
 
 	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: []int64{404}}.Exec(ctx, svcs)
 	require.NoError(t, err)
@@ -78,10 +86,12 @@ func TestQueryGetApplicationCategories_OmitsAnUnknownApplication(t *testing.T) {
 
 // A page of nothing but idle observations has no application to ask about, which is not a query.
 func TestQueryGetApplicationCategories_ReadsNothingForAnEmptySet(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	byApplication, err := QueryGetApplicationCategories{}.Exec(ctx, svcs)
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: nil}.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Empty(t, byApplication)
@@ -90,19 +100,21 @@ func TestQueryGetApplicationCategories_ReadsNothingForAnEmptySet(t *testing.T) {
 // The read resolves categories by parsing the seeded code, so a category whose code the enum does
 // not accept is unreadable. "productivity" and "games" were exactly that.
 func TestQueryGetApplicationCategories_ResolvesEveryCategoryInTheTaxonomy(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	svcs := newTestServices(ctx, t)
 
 	expected := map[int64][]enumscategories.Category{}
-	applicationIds := []int64{}
+	applicationIDs := []int64{}
 	for category := enumscategories.CategoryUnknown; category <= enumscategories.CategoryOther; category++ {
-		applicationId := seedApplication(t, ctx, svcs, "com."+category.String(), category)
+		applicationID := seedApplication(ctx, t, svcs, "com."+category.String(), category)
 
-		expected[applicationId] = []enumscategories.Category{category}
-		applicationIds = append(applicationIds, applicationId)
+		expected[applicationID] = []enumscategories.Category{category}
+		applicationIDs = append(applicationIDs, applicationID)
 	}
 
-	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: applicationIds}.Exec(ctx, svcs)
+	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: applicationIDs}.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Equal(t, expected, byApplication)

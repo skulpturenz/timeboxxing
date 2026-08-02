@@ -1,3 +1,4 @@
+//nolint:goconst // some category codes repeat but it is false duplication
 package enumscategories
 
 import (
@@ -25,7 +26,8 @@ const (
 )
 
 func (category Category) String() string {
-	categories := []string{"unknown",
+	categories := []string{
+		"unknown",
 		"development",
 		"productivity",
 		"communication",
@@ -38,13 +40,15 @@ func (category Category) String() string {
 		"education",
 		"social",
 		"system",
-		"other"}
+		"other",
+	}
 
 	return categories[category]
 }
 
 func (category Category) Label() string {
-	labels := []string{"Unknown",
+	labels := []string{
+		"Unknown",
 		"Development",
 		"Productivity",
 		"Communication",
@@ -57,23 +61,20 @@ func (category Category) Label() string {
 		"Education",
 		"Social Networking",
 		"System",
-		"Other"}
+		"Other",
+	}
 
 	return labels[category]
 }
 
 func (category Category) IsProductive() bool {
 	switch category {
-	case CategoryDevelopment:
-		fallthrough
-	case CategoryProductivity:
-		fallthrough
-	case CategoryGraphicsDesign:
-		fallthrough
-	case CategoryBusiness:
-		fallthrough
-	case CategoryEducation:
+	case CategoryDevelopment, CategoryProductivity, CategoryGraphicsDesign, CategoryBusiness,
+		CategoryEducation:
 		return true
+	case CategoryUnknown, CategoryCommunication, CategoryWebBrowsing, CategoryMedia, CategoryGames,
+		CategoryUtilities, CategorySocial, CategorySystem, CategoryOther:
+		return false
 	}
 
 	return false
@@ -117,10 +118,9 @@ func Parse(code string) (Category, error) {
 	return CategoryUnknown, fmt.Errorf("unrecognized category: %s", code)
 }
 
-// https://developer.apple.com/documentation/bundleresources/information-property-list/lsapplicationcategorytype
-// prefix: "public.app-category."
-// subcategories:
-//   - games: *-games
+// ParseAppleCategory reads an LSApplicationCategoryType code. Codes carry the
+// "public.app-category." prefix, and any "*-games" subcategory folds into games.
+// See https://developer.apple.com/documentation/bundleresources/information-property-list/lsapplicationcategorytype
 func ParseAppleCategory(code string) (Category, error) {
 	switch strings.TrimPrefix(strings.ToLower(strings.TrimSpace(code)), "public.app-category.") {
 	case "developer-tools":
@@ -153,7 +153,7 @@ func ParseAppleCategory(code string) (Category, error) {
 	return CategoryUnknown, fmt.Errorf("unrecognized category: %s", code)
 }
 
-// https://specifications.freedesktop.org/menu-spec/latest/apas02.html
+// ParseFreedesktopCategory see: https://specifications.freedesktop.org/menu-spec/latest/apas02.html
 func ParseFreedesktopCategory(code string) (Category, error) {
 	switch strings.ToLower(strings.TrimSpace(code)) {
 	case "webbrowser":
@@ -203,7 +203,7 @@ func ParseFreedesktopCategories(categories string) (Category, error) {
 	return parsed[len(parsed)-1], nil
 }
 
-// keywords are free text
+// ParseWingetKeyword matches one winget keyword. Keywords are free text, so a miss is expected.
 func ParseWingetKeyword(keyword string) (Category, error) {
 	switch strings.ToLower(strings.TrimSpace(keyword)) {
 	case "developer", "development", "ide", "editor", "terminal", "git":

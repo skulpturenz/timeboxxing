@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 
 	enumsjournalmode "github.com/skulpturenz/timeboxxing/sidecar/enums/enums_journal_mode"
@@ -20,7 +21,14 @@ type DSN struct {
 
 func NewDSN(path string) DSN {
 	pathWithEnv := fmt.Sprintf("%v_%v", path, envs.GO_ENV.Value())
-	return DSN{path: pathWithEnv}
+	return DSN{
+		path:              pathWithEnv,
+		journalMode:       0,
+		enableForeignKeys: false,
+		enableEncryption:  false,
+		encryptionKey:     nil,
+		busyTimeout:       nil,
+	}
 }
 
 func (dsn *DSN) SetJournalMode(mode enumsjournalmode.JournalMode) {
@@ -32,7 +40,7 @@ func (dsn *DSN) SetBusyTimeout(timeout time.Duration) {
 	dsn.busyTimeout = &busyTimeout
 }
 
-func (dsn DSN) GetPath() string {
+func (dsn *DSN) GetPath() string {
 	return dsn.path
 }
 
@@ -54,7 +62,7 @@ func (dsn *DSN) EnableEncryption(key string) error {
 }
 
 func (dsn *DSN) IsEncrypted() bool {
-	return dsn.enableEncryption == true && dsn.encryptionKey != nil
+	return dsn.enableEncryption && dsn.encryptionKey != nil
 }
 
 func (dsn *DSN) String() string {
@@ -72,7 +80,7 @@ func (dsn *DSN) String() string {
 	}
 
 	if dsn.busyTimeout != nil {
-		params.Set("_busy_timeout", fmt.Sprintf("%v", dsn.busyTimeout.Milliseconds()))
+		params.Set("_busy_timeout", strconv.FormatInt(dsn.busyTimeout.Milliseconds(), 10))
 	}
 
 	return fmt.Sprintf("%v?%v", dsn.path, params.Encode())

@@ -41,3 +41,4 @@ go.work.sum
 *.db-wal
 .idea
 .claude
+sidecar

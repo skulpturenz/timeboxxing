@@ -26,7 +26,15 @@ func CollectTimeline(stream []models.ForegroundProcess) *list.List {
 
 	for _, v := range stream {
 		prev := list.Back()
-		if prev == nil || !prev.Value.(models.ForegroundProcess).IsEqual(v) {
+		if prev == nil {
+			list.PushBack(v)
+			continue
+		}
+
+		previous, ok := prev.Value.(models.ForegroundProcess)
+		assert.True(ok)
+
+		if !ok || !previous.IsEqual(v) {
 			list.PushBack(v)
 		}
 	}
@@ -61,6 +69,7 @@ func SeqTimeline(timeline *list.List) []models.UsageSeq {
 		assert.True(ok)
 
 		item := models.UsageSeq{
+			ID:     0, // only when foreground process is from db
 			Start:  start,
 			End:    end,
 			Killed: current.Killed,

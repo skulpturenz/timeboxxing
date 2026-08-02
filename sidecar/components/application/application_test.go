@@ -14,11 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestServices(t *testing.T, ctx context.Context) *services.Services[any, any] {
+func newTestServices(ctx context.Context, t *testing.T) *services.Services[any, any] {
 	t.Helper()
 
 	database, err := db.New(ctx, db.Options{
-		DSN: db.NewDSN(filepath.Join(t.TempDir(), "test.db")),
+		SQLiteVectorExtensionPath: nil,
+		DSN:                       db.NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	require.NoError(t, err, "create test database")
 	t.Cleanup(func() {
@@ -37,7 +38,13 @@ func newTestServices(t *testing.T, ctx context.Context) *services.Services[any, 
 // Unlike the timeline component, this seeds the write queries directly rather than through the
 // ingest command: an observation would drag in the timeline package, and the timeline package reads
 // this one.
-func seedApplication(t *testing.T, ctx context.Context, svcs *services.Services[any, any], identifier string, categories ...enumscategories.Category) int64 {
+func seedApplication(
+	ctx context.Context,
+	t *testing.T,
+	svcs *services.Services[any, any],
+	identifier string,
+	categories ...enumscategories.Category,
+) int64 {
 	t.Helper()
 
 	database, ok := db.FromServices(svcs)
@@ -46,12 +53,13 @@ func seedApplication(t *testing.T, ctx context.Context, svcs *services.Services[
 	os, err := enumsoperatingsystem.Parse(runtime.GOOS)
 	require.NoError(t, err, "parse operating system")
 
-	var applicationId int64
+	var applicationID int64
 	require.NoError(t, database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
-		applicationId, err = q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+		applicationID, err = q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 			Name:              identifier,
 			Identifier:        &identifier,
 			OperatingSystemID: int64(os),
+			Path:              nil,
 		})
 		if err != nil {
 			return err
@@ -60,7 +68,7 @@ func seedApplication(t *testing.T, ctx context.Context, svcs *services.Services[
 		for _, category := range categories {
 			// the taxonomy is seeded, so this resolves the existing row by its natural key rather
 			// than inserting a new one
-			applicationCategoryId, err := q.UpsertApplicationCategory(ctx, writequeries.UpsertApplicationCategoryParams{
+			applicationCategoryID, err := q.UpsertApplicationCategory(ctx, writequeries.UpsertApplicationCategoryParams{
 				CategoryID: int64(category),
 				Code:       category.String(),
 				Label:      category.Label(),
@@ -70,8 +78,8 @@ func seedApplication(t *testing.T, ctx context.Context, svcs *services.Services[
 			}
 
 			if err := q.UpsertApplicationCategoryMap(ctx, writequeries.UpsertApplicationCategoryMapParams{
-				ApplicationID:           applicationId,
-				ApplicationCategoriesID: applicationCategoryId,
+				ApplicationID:           applicationID,
+				ApplicationCategoriesID: applicationCategoryID,
 			}); err != nil {
 				return err
 			}
@@ -80,5 +88,5 @@ func seedApplication(t *testing.T, ctx context.Context, svcs *services.Services[
 		return nil
 	}), "seed application %s", identifier)
 
-	return applicationId
+	return applicationID
 }

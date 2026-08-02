@@ -18,17 +18,19 @@ import (
 // StartedAt is the only bound this query takes, and it is strict: an entry that ended exactly as the
 // window opened spent none of its time inside it.
 func TestQueryGetTimeline_ReportsEveryEntryFromStartedAtOnwards(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appObs("Zed", "dev.zed.Zed", 3, enumscategories.CategoryDevelopment, at(120)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(180)),
 	)
 
-	entries := timelineOf(t, ctx, svcs, ptr(at(60)), 2)
+	entries := timelineOf(ctx, t, svcs, new(at(60)), 2)
 
 	assert.Equal(t, []string{"Slack", "Zed"}, entryTitles(entries),
 		"the entry ending on the opening bound is outside it")
@@ -36,17 +38,19 @@ func TestQueryGetTimeline_ReportsEveryEntryFromStartedAtOnwards(t *testing.T) {
 
 // No bound at all reports from the first entry ever recorded.
 func TestQueryGetTimeline_StartsAtTheFirstEntryWhenUnbounded(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appObs("Zed", "dev.zed.Zed", 3, enumscategories.CategoryDevelopment, at(120)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(180)),
 	)
 
-	entries := timelineOf(t, ctx, svcs, nil, 3)
+	entries := timelineOf(ctx, t, svcs, nil, 3)
 
 	assert.Equal(t, []string{"Ghostty", "Slack", "Zed"}, entryTitles(entries))
 }
@@ -54,16 +58,18 @@ func TestQueryGetTimeline_StartsAtTheFirstEntryWhenUnbounded(t *testing.T) {
 // This is what separates the query from QueryGetTimelineRange: there is no closing bound to fall
 // outside of, however far past StartedAt an entry was recorded.
 func TestQueryGetTimeline_HasNoClosingBound(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appObs("Zed", "dev.zed.Zed", 3, enumscategories.CategoryDevelopment, at(24*60*60)),
 	)
 
-	entries := timelineOf(t, ctx, svcs, ptr(at(0)), 2)
+	entries := timelineOf(ctx, t, svcs, new(at(0)), 2)
 
 	require.Len(t, entries, 2)
 	assert.Equal(t, "Slack", entries[1].Start.Title())
@@ -74,10 +80,12 @@ func TestQueryGetTimeline_HasNoClosingBound(t *testing.T) {
 // chain — dropping one hands its time to its neighbour — so only callers that do not derive
 // durations from that adjacency set it.
 func TestQueryGetTimeline_FiltersEntriesShorterThanTheFloor(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(30)),
 		appObs("Zed", "dev.zed.Zed", 3, enumscategories.CategoryDevelopment, at(120)),
@@ -86,7 +94,7 @@ func TestQueryGetTimeline_FiltersEntriesShorterThanTheFloor(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	query := &QueryGetTimeline{MinDurationSeconds: 60}
+	query := &QueryGetTimeline{StartedAt: nil, MinDurationSeconds: 60, lastItemID: 0}
 	entries := take(t, utils.Stream(ctx, timelinePageSize, query.Stream(ctx, svcs)), 1)
 
 	assert.Equal(t, []string{"Slack"}, entryTitles(entries),
@@ -99,16 +107,17 @@ func TestQueryGetTimeline_FiltersEntriesShorterThanTheFloor(t *testing.T) {
 // ingest and reports whatever is recorded next. Only an error ends it — a consumer that wants an
 // ending cancels ctx.
 func TestQueryGetTimeline_KeepsStreamingPastTheRecordedEntries(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := t.Context()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 	)
 
-	query := &QueryGetTimeline{StartedAt: ptr(at(0))}
+	query := &QueryGetTimeline{StartedAt: new(at(0)), MinDurationSeconds: 0, lastItemID: 0}
 	entries := utils.Stream(ctx, timelinePageSize, query.Stream(ctx, svcs))
 
 	// everything recorded so far, after which the stream has caught up and is waiting rather than
@@ -117,7 +126,7 @@ func TestQueryGetTimeline_KeepsStreamingPastTheRecordedEntries(t *testing.T) {
 
 	// recorded while that stream is still open. this seed starts its own chain, so it opens an entry
 	// at Zed rather than closing the one Slack opened
-	seedObservations(t, ctx, svcs,
+	seedObservations(ctx, t, svcs,
 		appObs("Zed", "dev.zed.Zed", 3, enumscategories.CategoryDevelopment, at(120)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(180)),
 	)
@@ -129,16 +138,18 @@ func TestQueryGetTimeline_KeepsStreamingPastTheRecordedEntries(t *testing.T) {
 // Cancelling is the only way a consumer ends a live stream, and it must actually end it rather than
 // leaking the goroutine behind the channel.
 func TestQueryGetTimeline_EndsWhenTheContextIsCancelled(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	svcs := newTestServices(t, ctx)
+	svcs := newTestServices(ctx, t)
 
-	seedObservations(t, ctx, svcs,
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 	)
 
-	query := &QueryGetTimeline{StartedAt: ptr(at(0))}
+	query := &QueryGetTimeline{StartedAt: new(at(0)), MinDurationSeconds: 0, lastItemID: 0}
 	entries := utils.Stream(ctx, timelinePageSize, query.Stream(ctx, svcs))
 
 	require.Len(t, take(t, entries, 1), 1)
@@ -160,8 +171,10 @@ func TestQueryGetTimeline_EndsWhenTheContextIsCancelled(t *testing.T) {
 
 // The window is drained across as many keyset pages as it takes, and each entry is reported once.
 func TestQueryGetTimeline_ReportsEachEntryOnce(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	svcs := newTestServices(ctx, t)
 
 	observations := make([]models.ForegroundProcess, 0, timelinePageSize+10)
 	for i := range cap(observations) {
@@ -169,11 +182,14 @@ func TestQueryGetTimeline_ReportsEachEntryOnce(t *testing.T) {
 		if i%2 == 1 {
 			name = "Other"
 		}
-		observations = append(observations, appObs(name, "com."+name, int64(i%2), enumscategories.CategoryDevelopment, at(i*60)))
+		observations = append(
+			observations,
+			appObs(name, "com."+name, int64(i%2), enumscategories.CategoryDevelopment, at(i*60)),
+		)
 	}
-	seedObservations(t, ctx, svcs, observations...)
+	seedObservations(ctx, t, svcs, observations...)
 
-	entries := timelineOf(t, ctx, svcs, nil, len(observations)-1)
+	entries := timelineOf(ctx, t, svcs, nil, len(observations)-1)
 
 	require.Len(t, entries, len(observations)-1, "every observation but the last opens an entry")
 
@@ -189,13 +205,19 @@ func TestQueryGetTimeline_ReportsEachEntryOnce(t *testing.T) {
 const streamDeadline = 5 * time.Second
 
 // timelineOf opens a live stream, reads the count of entries the test expects, and tears it down.
-func timelineOf(t *testing.T, ctx context.Context, svcs *services.Services[any, any], startedAt *time.Time, count int) []models.UsageSeq {
+func timelineOf(
+	ctx context.Context,
+	t *testing.T,
+	svcs *services.Services[any, any],
+	startedAt *time.Time,
+	count int,
+) []models.UsageSeq {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	query := &QueryGetTimeline{StartedAt: startedAt}
+	query := &QueryGetTimeline{StartedAt: startedAt, MinDurationSeconds: 0, lastItemID: 0}
 
 	return take(t, utils.Stream(ctx, timelinePageSize, query.Stream(ctx, svcs)), count)
 }

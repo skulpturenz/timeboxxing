@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ type QueryExportCSV struct {
 	Timeline list.List
 }
 
-func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, any]) (string, error) {
+func (q QueryExportCSV) Exec(ctx context.Context, _ *services.Services[any, any]) (string, error) {
 	fps := []models.ForegroundProcess{}
 	for v, i := q.Timeline.Front(), 0; v != nil; v, i = v.Next(), i+1 {
 		c, ok := v.Value.(models.ForegroundProcess)
@@ -32,14 +33,16 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 	var csvBuilder strings.Builder
 	csvBuilder.Grow(len(fps) + 1)
 
-	headers := []string{"appIdentifier",
+	headers := []string{
+		"appIdentifier",
 		"appPath",
 		"pid",
 		"windowTitle",
 		"titleSource",
 		"timestamp",
 		"idle",
-		"killed"}
+		"killed",
+	}
 	fmt.Fprintf(&csvBuilder, "%v\n", strings.Join(headers, ","))
 
 	for _, fp := range fps {
@@ -48,12 +51,12 @@ func (q QueryExportCSV) Exec(ctx context.Context, svcs *services.Services[any, a
 		row := []string{
 			utils.Coalesce(fp.AppIdentifier, ""),
 			utils.Coalesce(fp.AppPath, ""),
-			fmt.Sprintf("%v", utils.Coalesce(fp.PID, 0)),
+			strconv.FormatInt(utils.Coalesce(fp.PID, 0), 10),
 			utils.Coalesce(fp.WindowTitle, ""),
 			fmt.Sprintf("%v", utils.Coalesce(fp.TitleSource, models.TitleSourceUnknown)),
-			fmt.Sprintf("%v", fp.Timestamp.Format(time.RFC3339)),
-			fmt.Sprintf("%v", fp.Idle),
-			fmt.Sprintf("%v", fp.Killed),
+			fp.Timestamp.Format(time.RFC3339),
+			strconv.FormatBool(fp.Idle),
+			strconv.FormatBool(fp.Killed),
 		}
 
 		fmt.Fprintf(&csvBuilder, "%v\n", strings.Join(row, ","))

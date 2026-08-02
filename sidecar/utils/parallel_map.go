@@ -20,7 +20,10 @@ func ParallelMap[T any, U any](fns ...func(context.Context, T) (U, bool)) func(c
 	return ParallelMapWithClone(noop, fns...)
 }
 
-func ParallelMapWithClone[T any, U any](clone func(T) T, fns ...func(context.Context, T) (U, bool)) func(context.Context, T) ([]U, bool) {
+func ParallelMapWithClone[T any, U any](
+	clone func(T) T,
+	fns ...func(context.Context, T) (U, bool),
+) func(context.Context, T) ([]U, bool) {
 	return func(ctx context.Context, item T) ([]U, bool) {
 		results := make(chan parallelMapItem[U], len(fns))
 

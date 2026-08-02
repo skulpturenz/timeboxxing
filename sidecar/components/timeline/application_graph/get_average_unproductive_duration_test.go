@@ -13,7 +13,9 @@ import (
 // Category.IsProductive check.
 
 func TestGetAverageUnproductiveDuration_AveragesUnproductiveStretches(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appProc("notes", 3, enumscategories.CategoryProductivity, at(90)),
@@ -25,7 +27,9 @@ func TestGetAverageUnproductiveDuration_AveragesUnproductiveStretches(t *testing
 }
 
 func TestGetAverageUnproductiveDuration_IsZeroWhenEverythingWasProductive(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("notes", 2, enumscategories.CategoryProductivity, at(60)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(90)),
@@ -35,13 +39,17 @@ func TestGetAverageUnproductiveDuration_IsZeroWhenEverythingWasProductive(t *tes
 }
 
 func TestGetAverageUnproductiveDuration_IsZeroForAnEmptyGraph(t *testing.T) {
-	assert.Zero(t, ApplicationGraphFrom(list.New()).GetAverageUnproductiveDuration())
+	t.Parallel()
+
+	assert.Zero(t, From(list.New()).GetAverageUnproductiveDuration())
 }
 
 // Idle time carries no category, and CategoryUnknown is the zero value, so time away from the
 // keyboard counts against the unproductive average rather than being skipped.
 func TestGetAverageUnproductiveDuration_CountsIdleTime(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		idleProc(at(60)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(180)),

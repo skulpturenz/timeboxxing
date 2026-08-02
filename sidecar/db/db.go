@@ -5,16 +5,12 @@ package db
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"errors"
 	"reflect"
 
 	readqueries "github.com/skulpturenz/timeboxxing/sidecar/db/read_queries"
 	"github.com/skulpturenz/timeboxxing/sidecar/services"
 )
-
-//go:embed sqlite-vector/*/vector.*
-var sqliteVectorExtensionFiles embed.FS
 
 type Options struct {
 	DSN                       DSN

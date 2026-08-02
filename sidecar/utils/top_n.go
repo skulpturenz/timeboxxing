@@ -6,6 +6,8 @@ import (
 	"slices"
 )
 
+const percentMax = 100.0
+
 type resultTopN[T comparable] []T
 
 func TopN[T comparable](cmp func(a T, b T) int, percentile float64) func([]T) resultTopN[T] {
@@ -28,7 +30,7 @@ func TopN[T comparable](cmp func(a T, b T) int, percentile float64) func([]T) re
 			return cmp(b, a) // desc
 		})
 
-		end := int(math.Ceil(float64(len(sorted)) * (percentile / 100.0)))
+		end := int(math.Ceil(float64(len(sorted)) * (percentile / percentMax)))
 		top := sorted[:end]
 		topSet := map[T]struct{}{}
 		for _, t := range top {

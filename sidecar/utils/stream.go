@@ -38,7 +38,7 @@ func Stream[T any](ctx context.Context, pageSize int, fn StreamFn[T]) <-chan T {
 					}
 				}
 
-				page += 1
+				page++
 			}
 		}
 	}()

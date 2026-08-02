@@ -64,7 +64,7 @@ func TestTransitionEventBackfillQueueIndexesEvent(t *testing.T) {
 	})
 
 	inChan := make(chan TransitionEventReported)
-	outChan, err := queue.New[TransitionEventReported](ctx, queue.QueueOptions[TransitionEventReported]{
+	outChan, err := queue.New(ctx, queue.Options[TransitionEventReported]{
 		Manager: manager,
 		Name:    TransitionEventReportedQueueName.String(),
 		InChan:  inChan,

@@ -1,9 +1,9 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -16,15 +16,15 @@ import (
 //go:embed schema/*.sql seeds/*/*.sql
 var migrationFiles embed.FS
 
-func runSchemaMigrations(ctx context.Context, conn *sql.DB) error {
+func runSchemaMigrations(conn *sql.DB) error {
 	if err := runMigrationsFromDir(conn, "schema", migratesqlite.DefaultMigrationsTable); err != nil {
-		return fmt.Errorf("run %s schema migrations", err)
+		return fmt.Errorf("run schema migrations: %w", err)
 	}
 
 	return nil
 }
 
-func runSeedMigrations(ctx context.Context, conn *sql.DB) error {
+func runSeedMigrations(conn *sql.DB) error {
 	getSeedDirs := func() ([]string, error) {
 		dir := "seeds"
 		entries, err := migrationFiles.ReadDir(dir)
@@ -79,6 +79,8 @@ func runMigrationsFromDir(conn *sql.DB, dir string, migrationsTable string) erro
 
 	databaseDriver, err := migratesqlite.WithInstance(conn, &migratesqlite.Config{
 		MigrationsTable: migrationsTable,
+		DatabaseName:    "",
+		NoTxWrap:        false,
 	})
 	if err != nil {
 		return fmt.Errorf("create migration database driver: %w", err)
@@ -89,7 +91,7 @@ func runMigrationsFromDir(conn *sql.DB, dir string, migrationsTable string) erro
 		return fmt.Errorf("create migrator: %w", err)
 	}
 
-	if err := migrator.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 

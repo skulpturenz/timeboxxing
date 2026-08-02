@@ -23,6 +23,7 @@ func FanOutChan[T any](ctx context.Context, inChan <-chan T, outChans ...chan<- 
 					case c <- item:
 					default:
 						dropped[i]++
+						//nolint:sloglint // slog.Default is set custom, is singleton
 						slog.ErrorContext(ctx, "fan out chan dropped", "index", i, "drop_count", dropped[i])
 					}
 				}

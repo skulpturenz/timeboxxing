@@ -35,7 +35,7 @@ func at(seconds int) time.Time {
 }
 
 func ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 // window spans two offsets from base, in seconds.
@@ -45,30 +45,65 @@ func window(fromSeconds int, toSeconds int) utils.TimeSpan {
 
 // appObs builds a non-browser observation. Distinct applications must use distinct identifiers and
 // distinct PIDs, since ForegroundProcess.IsEqual keys on PID. Every observation carries a window
+// Zero values, declared rather than written as literals so the fixtures below stay readable.
+var (
+	browserZero     models.Browser
+	locationZero    models.Location
+	enrichmentsZero models.Enrichments
+)
+
 // title and title source, so the columns that hold them stay covered on the round trip.
-func appObs(name string, identifier string, pid int64, category enumscategories.Category, timestamp time.Time) models.ForegroundProcess {
+func appObs(
+	name string,
+	identifier string,
+	pid int64,
+	category enumscategories.Category,
+	timestamp time.Time,
+) models.ForegroundProcess {
+	meta := models.AppMetadata{
+		FriendlyName: "",
+		Description:  "",
+		Category:     category,
+		IconPath:     "",
+		Source:       "",
+	}
+
 	return models.ForegroundProcess{
-		AppName:       ptr(name),
-		AppIdentifier: ptr(identifier),
-		AppPath:       ptr("/Applications/" + name + ".app"),
-		PID:           ptr(pid),
-		WindowTitle:   ptr(name + " window"),
+		AppName:       new(name),
+		AppIdentifier: new(identifier),
+		AppPath:       new("/Applications/" + name + ".app"),
+		PID:           new(pid),
+		WindowTitle:   new(name + " window"),
 		TitleSource:   ptr(models.TitleSourceAX),
 		Timestamp:     timestamp,
+		Idle:          false,
+		Killed:        false,
 		Enrichments: models.Enrichments{
-			Appmetadata: models.AppMetadata{Category: category},
+			Appmetadata: meta,
+			Browser:     browserZero,
+			Location:    locationZero,
 		},
 	}
 }
 
 // browserObs builds a browser observation. Every tab of one browser resolves to the same
 // application — the event store never records a per-tab identifier.
-func browserObs(name string, identifier string, tab string, cdpURL string, pid int64, timestamp time.Time) models.ForegroundProcess {
+func browserObs(
+	name string,
+	identifier string,
+	tab string,
+	cdpURL string,
+	pid int64,
+	timestamp time.Time,
+) models.ForegroundProcess {
 	foregroundProcess := appObs(name, identifier, pid, enumscategories.CategoryWebBrowsing, timestamp)
 	foregroundProcess.Enrichments.Browser = models.Browser{
-		Vendor: name,
-		Tab:    tab,
-		CdpURL: cdpURL,
+		Vendor:        name,
+		Category:      nil,
+		AppIdentifier: nil,
+		Tab:           tab,
+		CdpURL:        cdpURL,
+		Domain:        "",
 	}
 
 	return foregroundProcess
@@ -77,14 +112,26 @@ func browserObs(name string, identifier string, tab string, cdpURL string, pid i
 // idleObs builds an idle observation. It carries no identity at all — ForegroundProcess.IsIdle
 // asserts exactly that.
 func idleObs(timestamp time.Time) models.ForegroundProcess {
-	return models.ForegroundProcess{Timestamp: timestamp, Idle: true}
+	return models.ForegroundProcess{
+		AppName:       nil,
+		AppIdentifier: nil,
+		AppPath:       nil,
+		PID:           nil,
+		WindowTitle:   nil,
+		TitleSource:   nil,
+		Timestamp:     timestamp,
+		Idle:          true,
+		Killed:        false,
+		Enrichments:   enrichmentsZero,
+	}
 }
 
-func newTestServices(t *testing.T, ctx context.Context) *services.Services[any, any] {
+func newTestServices(ctx context.Context, t *testing.T) *services.Services[any, any] {
 	t.Helper()
 
 	database, err := db.New(ctx, db.Options{
-		DSN: db.NewDSN(filepath.Join(t.TempDir(), "test.db")),
+		SQLiteVectorExtensionPath: nil,
+		DSN:                       db.NewDSN(filepath.Join(t.TempDir(), "test.db")),
 	})
 	require.NoError(t, err, "create test database")
 	t.Cleanup(func() {
@@ -100,7 +147,12 @@ func newTestServices(t *testing.T, ctx context.Context) *services.Services[any, 
 // seedObservations writes observations through the real ingest command, so the entries under test
 // are chained exactly as production writes them: each observation closes the entry the previous one
 // opened. Gaps are therefore not representable — to model "nothing happened here", seed an idleObs.
-func seedObservations(t *testing.T, ctx context.Context, svcs *services.Services[any, any], observations ...models.ForegroundProcess) {
+func seedObservations(
+	ctx context.Context,
+	t *testing.T,
+	svcs *services.Services[any, any],
+	observations ...models.ForegroundProcess,
+) {
 	t.Helper()
 
 	var previous *models.ForegroundProcess

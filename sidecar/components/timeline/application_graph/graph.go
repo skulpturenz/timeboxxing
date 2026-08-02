@@ -13,8 +13,10 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
-type Edge = [2]string // [from, to]
-type ForegroundProcess = models.ForegroundProcess
+type (
+	Edge              = [2]string // [from, to]
+	ForegroundProcess = models.ForegroundProcess
+)
 
 type BaseGraph[V, E any] struct {
 	RWMu          sync.RWMutex
@@ -25,19 +27,19 @@ type BaseGraph[V, E any] struct {
 }
 
 type ApplicationGraph struct {
-	*BaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta]
+	*BaseGraph[*VertexMeta, *EdgeMeta]
 }
 
 type TimeSpan = utils.TimeSpan
 
-type applicationGraphVertexMeta struct {
+type VertexMeta struct {
 	Category  enumscategories.Category
 	Duration  time.Duration // total usage time
 	Intervals []TimeSpan    // span from curr start -> curr end
 	Count     int           // number of times app was used
 }
 
-type applicationGraphEdgeMeta struct {
+type EdgeMeta struct {
 	IncomingDuration time.Duration // time spent on A before switching to B
 	IncomingCount    int           // number of A->B
 	spans            []TimeSpan
@@ -48,12 +50,15 @@ type GraphConnectionStrategy[V, E any] interface {
 	Build(graph *BaseGraph[V, E])
 }
 
-type ApplicationGraphConnectionStrategy struct{}
+type ConnectionStrategy struct{}
 
-var _ GraphConnectionStrategy[*applicationGraphVertexMeta, *applicationGraphEdgeMeta] = ApplicationGraphConnectionStrategy{}
+var _ GraphConnectionStrategy[*VertexMeta, *EdgeMeta] = ConnectionStrategy{}
 
 func NewBaseGraph[V, E any]() *BaseGraph[V, E] {
 	return &BaseGraph[V, E]{
+		RWMu:          sync.RWMutex{},
+		Graph:         nil,
+		activeProcess: nil,
 		vertexMetaMap: map[string]V{},
 		edgeMetaMap:   map[Edge]E{},
 	}
@@ -76,17 +81,17 @@ func GraphFrom[V, E any](strategy GraphConnectionStrategy[V, E], timeline *list.
 	return timelineGraph
 }
 
-func ApplicationGraphFrom(timeline *list.List) *ApplicationGraph {
+func From(timeline *list.List) *ApplicationGraph {
 	return &ApplicationGraph{
-		BaseGraph: GraphFrom(ApplicationGraphConnectionStrategy{}, timeline),
+		BaseGraph: GraphFrom(ConnectionStrategy{}, timeline),
 	}
 }
 
-func ApplicationGraphChan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGraph {
-	strategy := ApplicationGraphConnectionStrategy{}
+func Chan(ctx context.Context, ch <-chan ForegroundProcess) *ApplicationGraph {
+	strategy := ConnectionStrategy{}
 
 	timelineGraph := &ApplicationGraph{
-		BaseGraph: NewBaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta](),
+		BaseGraph: NewBaseGraph[*VertexMeta, *EdgeMeta](),
 	}
 	strategy.Build(timelineGraph.BaseGraph)
 

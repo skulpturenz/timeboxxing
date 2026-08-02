@@ -13,20 +13,26 @@ import (
 )
 
 type QueryGetUnindexedForegroundProcesses struct {
-	lastItemId int64
+	lastItemID int64
 }
 
-func (q *QueryGetUnindexedForegroundProcesses) Stream(ctx context.Context, svcs *services.Services[any, any]) utils.StreamFn[models.ForegroundProcess] {
+func (q *QueryGetUnindexedForegroundProcesses) Stream(
+	ctx context.Context,
+	svcs *services.Services[any, any],
+) utils.StreamFn[models.ForegroundProcess] {
 	database, ok := db.FromServices(svcs)
 	assert.True(ok)
 
 	var converter converters.GetUnindexedForegroundProcessesRowConverter
 
 	return func(ctx context.Context, _ int, pageSize int) ([]models.ForegroundProcess, bool) {
-		rows, err := database.ReadQuerier.GetUnindexedForegroundProcesses(ctx, readqueries.GetUnindexedForegroundProcessesParams{
-			ForegroundProcessId: q.lastItemId,
-			PageSize:            int64(pageSize),
-		})
+		rows, err := database.ReadQuerier.GetUnindexedForegroundProcesses(
+			ctx,
+			readqueries.GetUnindexedForegroundProcessesParams{
+				ForegroundProcessId: q.lastItemID,
+				PageSize:            int64(pageSize),
+			},
+		)
 		assert.NoError(err)
 		if err != nil {
 			return nil, true
@@ -42,7 +48,7 @@ func (q *QueryGetUnindexedForegroundProcesses) Stream(ctx context.Context, svcs 
 			result = append(result, converter.ToForegroundProcess(v))
 		}
 
-		q.lastItemId = rows[len(rows)-1].ID
+		q.lastItemID = rows[len(rows)-1].ID
 
 		return result, false
 	}

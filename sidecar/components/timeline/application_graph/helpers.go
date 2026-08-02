@@ -6,62 +6,73 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
-func (strategy ApplicationGraphConnectionStrategy) AddVertexMeta(graph *BaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta], curr ForegroundProcess) (bool, bool) {
+const idleLabel = "idle"
+
+func vertexLabel(process ForegroundProcess) string {
+	switch {
+	case process.IsIdle():
+		return idleLabel
+	case process.IsBrowser() && !utils.IsZero(process.Enrichments.Browser.AppIdentifier):
+		return *process.Enrichments.Browser.AppIdentifier
+	default:
+		assert.NotNil(process.AppIdentifier)
+		return *process.AppIdentifier
+	}
+}
+
+func (strategy ConnectionStrategy) AddVertexMeta(
+	graph *BaseGraph[*VertexMeta, *EdgeMeta],
+	curr ForegroundProcess,
+) (bool, bool) {
 	prevProcess := graph.activeProcess
 
 	if prevProcess != nil && curr.IsEqual(*prevProcess) {
 		return false, true
 	}
 
-	appIdentifier := ""
-	if curr.IsIdle() {
-		appIdentifier = "idle"
-	} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
-		appIdentifier = *curr.Enrichments.Browser.AppIdentifier
-	} else {
-		assert.NotNil(curr.AppIdentifier)
-		appIdentifier = *curr.AppIdentifier
-	}
+	appIdentifier := vertexLabel(curr)
 	assert.NotZero(appIdentifier)
 
 	vertexMeta, vertexExists := graph.vertexMetaMap[appIdentifier]
 	if vertexMeta == nil {
 		if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.Category) {
-			vertexMeta = &applicationGraphVertexMeta{
-				Category: *curr.Enrichments.Browser.Category,
+			vertexMeta = &VertexMeta{
+				Category:  *curr.Enrichments.Browser.Category,
+				Duration:  0,
+				Intervals: nil,
+				Count:     0,
 			}
 		} else {
-			vertexMeta = &applicationGraphVertexMeta{
-				Category: curr.Enrichments.Appmetadata.Category,
+			vertexMeta = &VertexMeta{
+				Category:  curr.Enrichments.Appmetadata.Category,
+				Duration:  0,
+				Intervals: nil,
+				Count:     0,
 			}
 		}
 		graph.vertexMetaMap[appIdentifier] = vertexMeta
 	}
 	assert.NotNil(graph.vertexMetaMap[appIdentifier])
-	vertexMeta.Count += 1
+	vertexMeta.Count++
 
 	if prevProcess != nil {
-		prevIdentifier := ""
-		if prevProcess.IsIdle() {
-			prevIdentifier = "idle"
-		} else if prevProcess.IsBrowser() && !utils.IsZero(prevProcess.Enrichments.Browser.AppIdentifier) {
-			prevIdentifier = *prevProcess.Enrichments.Browser.AppIdentifier
-		} else {
-			assert.NotNil(prevProcess.AppIdentifier)
-			prevIdentifier = *prevProcess.AppIdentifier
-		}
+		prevIdentifier := vertexLabel(*prevProcess)
 		assert.NotEqual(appIdentifier, prevIdentifier)
 
 		edge := Edge{prevIdentifier, appIdentifier}
 		edgeMeta := graph.edgeMetaMap[edge]
 		if edgeMeta == nil {
-			edgeMeta = &applicationGraphEdgeMeta{}
+			edgeMeta = &EdgeMeta{
+				IncomingDuration: 0,
+				IncomingCount:    0,
+				spans:            nil,
+			}
 			graph.edgeMetaMap[edge] = edgeMeta
 		}
 		assert.NotNil(graph.edgeMetaMap[edge])
 
 		edgeMeta.IncomingDuration += curr.Timestamp.Sub(prevProcess.Timestamp)
-		edgeMeta.IncomingCount += 1
+		edgeMeta.IncomingCount++
 		edgeMeta.spans = append(edgeMeta.spans, TimeSpan{prevProcess.Timestamp, curr.Timestamp})
 
 		prevMeta := graph.vertexMetaMap[prevIdentifier]
@@ -76,7 +87,9 @@ func (strategy ApplicationGraphConnectionStrategy) AddVertexMeta(graph *BaseGrap
 	return true, vertexExists
 }
 
-func (strategy ApplicationGraphConnectionStrategy) Build(graph *BaseGraph[*applicationGraphVertexMeta, *applicationGraphEdgeMeta]) {
+func (strategy ConnectionStrategy) Build(
+	graph *BaseGraph[*VertexMeta, *EdgeMeta],
+) {
 	graph.Graph = gograph.New[string](gograph.Directed())
 
 	for v, m := range graph.vertexMetaMap {
@@ -101,7 +114,7 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 	graph.RWMu.Lock()
 	defer graph.RWMu.Unlock()
 
-	strategy := ApplicationGraphConnectionStrategy{}
+	strategy := ConnectionStrategy{}
 	prevProcess := graph.activeProcess
 
 	ok, _ := strategy.AddVertexMeta(graph.BaseGraph, curr)
@@ -117,33 +130,20 @@ func (graph *ApplicationGraph) upsertForegroundProcess(curr ForegroundProcess) {
 }
 
 func (graph *ApplicationGraph) addVertexAndEdge(prev ForegroundProcess, curr ForegroundProcess) {
-	appIdentifier := ""
-	if curr.IsIdle() {
-		appIdentifier = "idle"
-	} else if curr.IsBrowser() && !utils.IsZero(curr.Enrichments.Browser.AppIdentifier) {
-		appIdentifier = *curr.Enrichments.Browser.AppIdentifier
-	} else {
-		assert.NotNil(curr.AppIdentifier)
-		appIdentifier = *curr.AppIdentifier
-	}
+	appIdentifier := vertexLabel(curr)
 	assert.NotZero(appIdentifier)
 
-	prevIdentifier := ""
-	if prev.IsIdle() {
-		prevIdentifier = "idle"
-	} else if prev.IsBrowser() && !utils.IsZero(prev.Enrichments.Browser.AppIdentifier) {
-		prevIdentifier = *prev.Enrichments.Browser.AppIdentifier
-	} else {
-		assert.NotNil(prev.AppIdentifier)
-		prevIdentifier = *prev.AppIdentifier
-	}
+	prevIdentifier := vertexLabel(prev)
 	assert.NotZero(prevIdentifier)
 
 	if graph.Graph.GetVertexByID(appIdentifier) == nil {
 		currMeta := graph.vertexMetaMap[appIdentifier]
 		assert.NotNil(currMeta)
 
-		currVertex := graph.Graph.AddVertexByLabel(appIdentifier, gograph.WithVertexWeight(float64(currMeta.Duration.Milliseconds())))
+		currVertex := graph.Graph.AddVertexByLabel(
+			appIdentifier,
+			gograph.WithVertexWeight(float64(currMeta.Duration.Milliseconds())),
+		)
 		assert.NotNil(currVertex)
 	} // no else, the duration on a vertex is only updated when the edge is outgoing
 
@@ -157,7 +157,10 @@ func (graph *ApplicationGraph) addVertexAndEdge(prev ForegroundProcess, curr For
 	graph.Graph.RemoveEdges(graph.Graph.EdgesOf(vertex)...)
 	graph.Graph.RemoveVertices(vertex)
 
-	vertex = graph.Graph.AddVertexByLabel(prevIdentifier, gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())))
+	vertex = graph.Graph.AddVertexByLabel(
+		prevIdentifier,
+		gograph.WithVertexWeight(float64(meta.Duration.Milliseconds())),
+	)
 	assert.NotNil(vertex)
 
 	for edge, edgeMeta := range graph.edgeMetaMap {
@@ -172,7 +175,11 @@ func (graph *ApplicationGraph) addVertexAndEdge(prev ForegroundProcess, curr For
 		assert.NotNil(to)
 
 		// pairs well: spends a lot of time on `from` before switching `to`
-		_, err := graph.Graph.AddEdge(from, to, gograph.WithEdgeWeight(float64(edgeMeta.IncomingDuration.Milliseconds())))
+		_, err := graph.Graph.AddEdge(
+			from,
+			to,
+			gograph.WithEdgeWeight(float64(edgeMeta.IncomingDuration.Milliseconds())),
+		)
 		assert.Nil(err)
 	}
 }

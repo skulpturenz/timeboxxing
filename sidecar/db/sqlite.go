@@ -22,36 +22,38 @@ func newSqlite(ctx context.Context, dsn DSN, sqliteVectorExtensionPath *string) 
 		return nil, fmt.Errorf("open sqlite writer database: %w", err)
 	}
 
-	if err := writerConn.PingContext(ctx); err != nil {
-		writerConn.Close()
+	if err = writerConn.PingContext(ctx); err != nil {
+		_ = writerConn.Close()
 
 		return nil, fmt.Errorf("ping sqlite writer database: %w", err)
 	}
 
 	// if the encryption key is wrong, we only know about it when we try to query
 	var count int
-	if err := writerConn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master").Scan(&count); err != nil {
+	if err = writerConn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master").Scan(&count); err != nil {
+		_ = writerConn.Close()
+
 		return nil, fmt.Errorf("read sqlite database: %w", err)
 	}
 
-	if err := runSchemaMigrations(ctx, writerConn); err != nil {
-		writerConn.Close()
+	if err = runSchemaMigrations(writerConn); err != nil {
+		_ = writerConn.Close()
 		return nil, err
 	}
 
-	if err := runSeedMigrations(ctx, writerConn); err != nil {
-		writerConn.Close()
+	if err = runSeedMigrations(writerConn); err != nil {
+		_ = writerConn.Close()
 		return nil, err
 	}
 
 	readerConn, err := sql.Open(driverName, dsn.String())
 	if err != nil {
-		writerConn.Close()
+		_ = writerConn.Close()
 		return nil, fmt.Errorf("open sqlite reader database: %w", err)
 	}
-	if err := readerConn.PingContext(ctx); err != nil {
-		writerConn.Close()
-		readerConn.Close()
+	if err = readerConn.PingContext(ctx); err != nil {
+		_ = writerConn.Close()
+		_ = readerConn.Close()
 		return nil, fmt.Errorf("ping sqlite reader database: %w", err)
 	}
 

@@ -14,7 +14,9 @@ import (
 // everything else — including the zero value CategoryUnknown that idle samples carry — does not.
 
 func TestGetAverageProductiveDuration_AveragesProductiveStretches(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appProc("notes", 3, enumscategories.CategoryProductivity, at(90)),
@@ -27,7 +29,9 @@ func TestGetAverageProductiveDuration_AveragesProductiveStretches(t *testing.T) 
 
 // A real zero rather than a divide by zero over an empty set.
 func TestGetAverageProductiveDuration_IsZeroWhenNothingProductiveWasCaptured(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(0)),
 		appProc("spotify", 2, enumscategories.CategoryMedia, at(60)),
 		appProc("slack", 1, enumscategories.CategoryCommunication, at(90)),
@@ -37,13 +41,17 @@ func TestGetAverageProductiveDuration_IsZeroWhenNothingProductiveWasCaptured(t *
 }
 
 func TestGetAverageProductiveDuration_IsZeroForAnEmptyGraph(t *testing.T) {
-	assert.Zero(t, ApplicationGraphFrom(list.New()).GetAverageProductiveDuration())
+	t.Parallel()
+
+	assert.Zero(t, From(list.New()).GetAverageProductiveDuration())
 }
 
 // A tab is categorised by Enrichments.Browser.Category, not by the browser bundle, so course
 // material is productive time even though the vertex belongs to Chrome.
 func TestGetAverageProductiveDuration_UsesTheBrowserTabCategory(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		browserProc("coursera.org", enumscategories.CategoryEducation, 1, at(0)),
 		appProc("slack", 2, enumscategories.CategoryCommunication, at(60)),
 		browserProc("reddit.com", enumscategories.CategorySocial, 3, at(90)),

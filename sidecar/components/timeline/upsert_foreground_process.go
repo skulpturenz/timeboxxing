@@ -38,12 +38,12 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 		return err
 	}
 
-	err = database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
-		var applicationId int64
+	return database.WriteQuerier.WriteTx(ctx, func(q *writequeries.Queries) error {
+		var applicationID int64
 		if !c.ActiveProcess.IsIdle() {
 			category := c.ActiveProcess.Enrichments.Appmetadata.Category
 
-			applicationCategoryId, err := q.UpsertApplicationCategory(ctx, writequeries.UpsertApplicationCategoryParams{
+			applicationCategoryID, err := q.UpsertApplicationCategory(ctx, writequeries.UpsertApplicationCategoryParams{
 				CategoryID: int64(category),
 				Code:       category.String(),
 				Label:      category.Label(),
@@ -52,7 +52,7 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 				return err
 			}
 
-			applicationId, err = q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
+			applicationID, err = q.UpsertApplication(ctx, writequeries.UpsertApplicationParams{
 				Name:              *c.ActiveProcess.AppName,
 				Identifier:        c.ActiveProcess.AppIdentifier,
 				OperatingSystemID: int64(os),
@@ -63,8 +63,8 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 			}
 
 			err = q.UpsertApplicationCategoryMap(ctx, writequeries.UpsertApplicationCategoryMapParams{
-				ApplicationID:           applicationId,
-				ApplicationCategoriesID: applicationCategoryId,
+				ApplicationID:           applicationID,
+				ApplicationCategoriesID: applicationCategoryID,
 			})
 			if err != nil {
 				return err
@@ -73,11 +73,11 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 
 		var pid int64
 		if !c.ActiveProcess.IsIdle() {
-			pid = int64(*c.ActiveProcess.PID)
+			pid = *c.ActiveProcess.PID
 		}
 
 		id, err := q.UpsertForegroundProcess(ctx, writequeries.UpsertForegroundProcessParams{
-			ApplicationID: utils.ZeroNil(applicationId),
+			ApplicationID: utils.ZeroNil(applicationID),
 			Pid:           utils.ZeroNil(pid),
 			CreatedAtUtc:  c.ActiveProcess.Timestamp.UTC(),
 		})
@@ -105,6 +105,7 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 		if c.PreviousProcess == nil {
 			id, err = q.UpsertTimeline(ctx, writequeries.UpsertTimelineParams{
 				InitialForegroundProcessID: &id,
+				EndForegroundProcessID:     nil,
 			})
 			if err != nil {
 				return err
@@ -121,6 +122,4 @@ func (c CommandUpsertForegroundProcess) Exec(ctx context.Context, svcs *services
 
 		return nil
 	})
-
-	return err
 }

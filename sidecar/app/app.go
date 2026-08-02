@@ -180,7 +180,7 @@ func buildQueues(ctx context.Context, registry *services.Services[any, any]) (fu
 	manager := sqliteq.New(queueDSN)
 
 	inChan := make(chan workers.TransitionEventReported)
-	outChan, err := queue.New[workers.TransitionEventReported](ctx, queue.QueueOptions[workers.TransitionEventReported]{
+	outChan, err := queue.New(ctx, queue.Options[workers.TransitionEventReported]{
 		Manager: manager,
 		Name:    workers.TransitionEventReportedQueueName.String(),
 		InChan:  inChan,
