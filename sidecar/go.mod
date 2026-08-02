@@ -31,6 +31,7 @@ require (
 require (
 	dario.cat/mergo v1.0.2
 	github.com/hmdsefi/gograph v0.7.0
+	github.com/zalando/go-keyring v0.2.8
 	resty.dev/v3 v3.0.0-rc.3
 )
 
