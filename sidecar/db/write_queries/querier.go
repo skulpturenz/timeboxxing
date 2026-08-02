@@ -21,11 +21,13 @@ type Querier interface {
 	DeleteTimelineEmbedding(ctx context.Context, timelineSemanticDocumentsID *int64) error
 	EnsureLedger(ctx context.Context) error
 	InsertForegroundProcessMetadata(ctx context.Context, arg InsertForegroundProcessMetadataParams) (int64, error)
+	InsertMaskedCategory(ctx context.Context, arg InsertMaskedCategoryParams) error
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (int64, error)
 	UpsertApplicationCategory(ctx context.Context, arg UpsertApplicationCategoryParams) (int64, error)
 	UpsertApplicationCategoryMap(ctx context.Context, arg UpsertApplicationCategoryMapParams) error
 	UpsertApplicationSettings(ctx context.Context, arg UpsertApplicationSettingsParams) error
 	UpsertForegroundProcess(ctx context.Context, arg UpsertForegroundProcessParams) (int64, error)
+	UpsertMaskedValue(ctx context.Context, arg UpsertMaskedValueParams) (string, error)
 	UpsertTimeline(ctx context.Context, arg UpsertTimelineParams) (int64, error)
 	UpsertTimelineSemanticDocument(ctx context.Context, arg UpsertTimelineSemanticDocumentParams) (int64, error)
 }
