@@ -150,13 +150,14 @@ func (foregroundProcess ForegroundProcess) Title() string {
 	case foregroundProcess.Idle:
 		return "Idle"
 	case foregroundProcess.IsBrowser():
-		return firstNonEmpty(
+		return utils.Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) },
 			strings.TrimSpace(foregroundProcess.Enrichments.Browser.Tab),
 			foregroundProcess.ApplicationName(),
 			"Browser",
-		)
+		), "")
 	default:
-		return firstNonEmpty(foregroundProcess.ApplicationName(), "Application")
+		return utils.Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) },
+			foregroundProcess.ApplicationName(), "Application"), "")
 	}
 }
 
@@ -167,9 +168,11 @@ func (foregroundProcess ForegroundProcess) SourceName() string {
 	case foregroundProcess.Idle:
 		return "Idle"
 	case foregroundProcess.IsBrowser():
-		return firstNonEmpty(foregroundProcess.ApplicationName(), "Browser")
+		return utils.Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) },
+			foregroundProcess.ApplicationName(), "Browser"), "")
 	default:
-		return firstNonEmpty(foregroundProcess.ApplicationName(), "Application")
+		return utils.Coalesce(utils.Or(func(x string) bool { return !utils.IsEmptyString(x) },
+			foregroundProcess.ApplicationName(), "Application"), "")
 	}
 }
 
@@ -199,14 +202,4 @@ func (seq UsageSeq) Span() utils.TimeSpan {
 	}
 
 	return span
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-
-	return ""
 }
