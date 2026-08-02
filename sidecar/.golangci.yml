@@ -311,10 +311,16 @@ linters:
       min-complexity: 60
 
     gocritic:
+      # ruleguard is opt-in, and carries the house conventions no off-the-shelf linter expresses —
+      # currently just the ban on chaining a call onto a struct literal.
+      enabled-checks:
+        - ruleguard
       # Settings passed to gocritic.
       # The settings key is the name of a supported gocritic checker.
       # The list of supported checkers can be found at https://go-critic.com/overview.
       settings:
+        ruleguard:
+          rules: '${base-path}/.golangci/rules.go'
         captLocal:
           # Whether to restrict checker to params only.
           # Default: true
