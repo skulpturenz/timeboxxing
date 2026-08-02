@@ -6,21 +6,25 @@ constraints enforce natural keys. Deleting a `foreground_processes` row cascades
 directly and indirectly. Referential actions (`delete: cascade`) are defined as standalone `Ref`
 blocks at the end, since DBML does not support relationship settings on inline column refs.
 
-Three caveats when comparing this against a live database:
+Four caveats when comparing this against a live database:
 
-- **Runtime-managed tables are not listed here.** `db/migrations.go` creates `schema_migrations`
-  (golang-migrate's bookkeeping table) plus one `seed_migrations_<name>` table per directory under
-  `db/seeds/` — currently nine: `application_categories`, `application_settings`, `model_providers`,
-  `models`, `operating_systems`, `project_colors`, `project_costing_types`, `release_channels`,
-  `semantic_document_types`. A live DB therefore has ten tables beyond the ones below.
+- **Runtime-managed tables are not listed here.** Beyond the tables below, a live DB also holds
+  bookkeeping tables created at runtime — by golang-migrate (schema and seed versioning), by the
+  durable queue, and by the sqlite-vector extension. They are deliberately not modelled here.
 - **The `unique_*` index names are DDL text, not runtime index names.** SQLite accepts
   `CONSTRAINT unique_x UNIQUE (...)` but discards the name, generating `sqlite_autoindex_<table>_<n>`
   instead. The `name:` values in the `indexes` blocks match `schema/*.sql`; they will not appear in
   `PRAGMA index_list`.
 - **The cascades below only fire when foreign keys are enabled.** SQLite defaults `PRAGMA
-  foreign_keys` to off, per connection. `db/dsn.go` sets `_foreign_keys=on` in the DSN, so the
-  application always has them on; a DB opened by an external tool (`sqlite3` CLI, a GUI browser)
-  will not enforce the `Ref` blocks unless the pragma is set there too.
+  foreign_keys` to off, per connection, and so does `db/dsn.go` — the `_foreign_keys=on` parameter is
+  only emitted once `DSN.EnableFK()` has been called. `app/app.go` calls it when wiring the
+  application DSN, so the running sidecar always has them on; anything that builds a `DSN` without
+  that call (new tooling, a maintenance path, a test that forgets) silently gets no enforcement, and
+  none of the `Ref` blocks below apply. The same goes for a DB opened by an external tool (`sqlite3`
+  CLI, a GUI browser) unless the pragma is set there too.
+- **The live DB file may not be directly openable.** `db/dsn.go` suffixes the configured path with
+  `_<GO_ENV>`, and when a database key is configured `app/app.go` opens it with `_cipher=sqlcipher`.
+  Inspecting such a file externally needs both the key and a SQLCipher-enabled `sqlite3` build.
 
 ```
 // Event store

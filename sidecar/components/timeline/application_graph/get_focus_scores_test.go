@@ -24,7 +24,9 @@ func focusScoreOf(t *testing.T, scores map[string]float64, identifier string) fl
 // Graph.EdgesOf, and the SCC bookkeeping let whichever app a map range visited first claim the
 // shared cycle. Go randomises map iteration, so scores drifted between calls on one graph.
 func TestGetFocusScores_IsDeterministic(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),
@@ -46,7 +48,9 @@ func TestGetFocusScores_IsDeterministic(t *testing.T) {
 // Switching between vscode and a terminal is one piece of work, so the block should count as a
 // single focused session rather than six short distracted ones.
 func TestGetFocusScores_CollapsesMutualCluster(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),
@@ -77,7 +81,9 @@ func TestGetFocusScores_CollapsesMutualCluster(t *testing.T) {
 // Regression guard: the cycle filter used to append a duration inside the loop over an app's cycle
 // blocks, so an app in no cycle at all never ran the body and silently went unscored.
 func TestGetFocusScores_ScoresAppsWithoutCycles(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
 		appProc("C", 3, enumscategories.CategoryMedia, at(20)),
@@ -93,7 +99,9 @@ func TestGetFocusScores_ScoresAppsWithoutCycles(t *testing.T) {
 // A session is only closed by leaving the app, so the app the timeline ends on has nothing to
 // measure.
 func TestGetFocusScores_ScoresEveryAppWithASession(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
 		appProc("C", 3, enumscategories.CategoryMedia, at(20)),
@@ -107,8 +115,10 @@ func TestGetFocusScores_ScoresEveryAppWithASession(t *testing.T) {
 }
 
 func TestGetFocusScores_EmptyAndSingle(t *testing.T) {
-	assert.Empty(t, ApplicationGraphFrom(list.New()).GetFocusScores(2))
+	t.Parallel()
 
-	single := ApplicationGraphFrom(listOf(appProc("A", 1, enumscategories.CategoryDevelopment, base)))
+	assert.Empty(t, From(list.New()).GetFocusScores(2))
+
+	single := From(listOf(appProc("A", 1, enumscategories.CategoryDevelopment, base)))
 	assert.Empty(t, single.GetFocusScores(2), "a lone sample has no session to score")
 }

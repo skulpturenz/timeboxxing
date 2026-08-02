@@ -17,16 +17,18 @@ import (
 // Each observation closes the entry the previous one opened, so three observations report two
 // entries, each running from one observation to the next.
 func TestQueryGetTimelineRange_ReportsOneEntryPerFocusedApplication(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(120)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 200)
+	entries := rangeOf(ctx, t, svcs, 0, 200)
 
 	require.Len(t, entries, 2)
 	assert.Equal(t, []string{"Ghostty", "Slack"}, entryTitles(entries))
@@ -38,15 +40,17 @@ func TestQueryGetTimelineRange_ReportsOneEntryPerFocusedApplication(t *testing.T
 
 // A browser entry keeps the tab, which is what the time was actually spent on.
 func TestQueryGetTimelineRange_KeepsBrowserEnrichments(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		browserObs("Google Chrome", "com.google.Chrome", "Pull requests", "https://example.com/pulls", 3, at(0)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(60)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 200)
+	entries := rangeOf(ctx, t, svcs, 0, 200)
 
 	require.Len(t, entries, 1)
 	assert.True(t, entries[0].Start.IsBrowser())
@@ -62,15 +66,17 @@ func TestQueryGetTimelineRange_KeepsBrowserEnrichments(t *testing.T) {
 // The window title and its source are captured per observation rather than per application, so they
 // are the two columns that must survive the round trip for an entry to report what was on screen.
 func TestQueryGetTimelineRange_KeepsTheWindowTitleAndItsSource(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 200)
+	entries := rangeOf(ctx, t, svcs, 0, 200)
 
 	require.Len(t, entries, 1)
 	assert.Equal(t, "Ghostty window", utils.Coalesce(entries[0].Start.WindowTitle, ""))
@@ -84,15 +90,17 @@ func TestQueryGetTimelineRange_KeepsTheWindowTitleAndItsSource(t *testing.T) {
 // An idle observation has no window, so there is no title source to store. TitleSourceUnknown is not
 // a code the read path can parse, so it must be stored as absent rather than as its name.
 func TestQueryGetTimelineRange_ReportsNoTitleSourceForIdle(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		idleObs(at(0)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(60)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 200)
+	entries := rangeOf(ctx, t, svcs, 0, 200)
 
 	require.Len(t, entries, 1)
 	assert.Nil(t, entries[0].Start.TitleSource)
@@ -106,16 +114,18 @@ func TestQueryGetTimelineRange_ReportsNoTitleSourceForIdle(t *testing.T) {
 // The graph's productive/unproductive split is derived from this field alone, so an entry that
 // reads back as CategoryUnknown is indistinguishable from unproductive time.
 func TestQueryGetTimelineRange_ReportsTheApplicationCategoryOnBothEndpoints(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appObs("Figma", "com.figma", 3, enumscategories.CategoryGraphicsDesign, at(120)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 200)
+	entries := rangeOf(ctx, t, svcs, 0, 200)
 
 	require.Len(t, entries, 2)
 	assert.Equal(t, enumscategories.CategoryDevelopment, entries[0].Start.Enrichments.Appmetadata.Category)
@@ -127,15 +137,17 @@ func TestQueryGetTimelineRange_ReportsTheApplicationCategoryOnBothEndpoints(t *t
 
 // An idle observation has no application, so there is nothing to classify.
 func TestQueryGetTimelineRange_ReportsNoCategoryForIdle(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		idleObs(at(0)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(60)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 200)
+	entries := rangeOf(ctx, t, svcs, 0, 200)
 
 	require.Len(t, entries, 1)
 	assert.Equal(t, enumscategories.CategoryUnknown, entries[0].Start.Enrichments.Appmetadata.Category)
@@ -144,15 +156,17 @@ func TestQueryGetTimelineRange_ReportsNoCategoryForIdle(t *testing.T) {
 
 // An idle stretch is recorded, but carries no application identity.
 func TestQueryGetTimelineRange_ReportsIdleWithoutAnIdentity(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		idleObs(at(0)),
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(60)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 200)
+	entries := rangeOf(ctx, t, svcs, 0, 200)
 
 	require.Len(t, entries, 1)
 	assert.True(t, entries[0].Start.Idle)
@@ -170,6 +184,8 @@ func TestQueryGetTimelineRange_ReportsIdleWithoutAnIdentity(t *testing.T) {
 // wall clocks. On a +12:00 machine every stretch recorded after local noon read as later than the
 // day's closing bound and the timeline came back empty.
 func TestQueryGetTimelineRange_FindsObservationsStoredWithANonUTCOffset(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		offset int
@@ -181,17 +197,19 @@ func TestQueryGetTimelineRange_FindsObservationsStoredWithANonUTCOffset(t *testi
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ctx := context.Background()
-			svcs := newTestServices(t, ctx)
+			t.Parallel()
 
-			seedObservations(t, ctx, svcs,
+			ctx := context.Background()
+			svcs := newTestServices(ctx, t)
+
+			seedObservations(ctx, t, svcs,
 				appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 				appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 				appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(180)),
 			)
 			restoreOffset(t, svcs, test.offset)
 
-			entries := rangeOf(t, ctx, svcs, 0, 400)
+			entries := rangeOf(ctx, t, svcs, 0, 400)
 
 			require.Len(t, entries, 2, "a UTC window must find observations stored at %+03d:00", test.offset)
 			assert.Equal(t, []string{"Ghostty", "Slack"}, entryTitles(entries))
@@ -210,16 +228,18 @@ func TestQueryGetTimelineRange_FindsObservationsStoredWithANonUTCOffset(t *testi
 // TIMESTAMP type — the cast is NUMERIC affinity, so the bound collapsed to the year and no row ever
 // compared below it. Every request came back empty.
 func TestQueryGetTimelineRange_ExcludesEntriesOpeningAfterTheWindowCloses(t *testing.T) {
-	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	t.Parallel()
 
-	seedObservations(t, ctx, svcs,
+	ctx := context.Background()
+	svcs := newTestServices(ctx, t)
+
+	seedObservations(ctx, t, svcs,
 		appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 		appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appObs("Zed", "dev.zed.Zed", 3, enumscategories.CategoryDevelopment, at(600)),
 	)
 
-	entries := rangeOf(t, ctx, svcs, 0, 120)
+	entries := rangeOf(ctx, t, svcs, 0, 120)
 
 	require.Len(t, entries, 2)
 	assert.Equal(t, []string{"Ghostty", "Slack"}, entryTitles(entries))
@@ -230,6 +250,8 @@ func TestQueryGetTimelineRange_ExcludesEntriesOpeningAfterTheWindowCloses(t *tes
 // spent none of its time inside it, and one that opens exactly as the window closes spent none
 // either.
 func TestQueryGetTimelineRange_TreatsBothWindowBoundsAsStrict(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		from   int
@@ -237,23 +259,35 @@ func TestQueryGetTimelineRange_TreatsBothWindowBoundsAsStrict(t *testing.T) {
 		titles []string
 	}{
 		{name: "an entry ending on the opening bound is outside", from: 60, to: 200, titles: []string{"Slack"}},
-		{name: "an entry ending after the opening bound is inside", from: 59, to: 200, titles: []string{"Ghostty", "Slack"}},
+		{
+			name:   "an entry ending after the opening bound is inside",
+			from:   59,
+			to:     200,
+			titles: []string{"Ghostty", "Slack"},
+		},
 		{name: "an entry opening on the closing bound is outside", from: 0, to: 60, titles: []string{"Ghostty"}},
-		{name: "an entry opening before the closing bound is inside", from: 0, to: 61, titles: []string{"Ghostty", "Slack"}},
+		{
+			name:   "an entry opening before the closing bound is inside",
+			from:   0,
+			to:     61,
+			titles: []string{"Ghostty", "Slack"},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ctx := context.Background()
-			svcs := newTestServices(t, ctx)
+			t.Parallel()
 
-			seedObservations(t, ctx, svcs,
+			ctx := context.Background()
+			svcs := newTestServices(ctx, t)
+
+			seedObservations(ctx, t, svcs,
 				appObs("Ghostty", "com.ghostty", 1, enumscategories.CategoryDevelopment, at(0)),
 				appObs("Slack", "com.slack", 2, enumscategories.CategoryCommunication, at(60)),
 				appObs("Zed", "dev.zed.Zed", 3, enumscategories.CategoryDevelopment, at(120)),
 			)
 
-			entries := rangeOf(t, ctx, svcs, test.from, test.to)
+			entries := rangeOf(ctx, t, svcs, test.from, test.to)
 
 			assert.Equal(t, test.titles, entryTitles(entries))
 		})
@@ -264,8 +298,10 @@ func TestQueryGetTimelineRange_TreatsBothWindowBoundsAsStrict(t *testing.T) {
 
 // The window is drained across as many keyset pages as it takes, and each entry is reported once.
 func TestQueryGetTimelineRange_DrainsEveryPage(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
-	svcs := newTestServices(t, ctx)
+	svcs := newTestServices(ctx, t)
 
 	observations := make([]models.ForegroundProcess, 0, timelinePageSize+10)
 	for i := range cap(observations) {
@@ -273,11 +309,14 @@ func TestQueryGetTimelineRange_DrainsEveryPage(t *testing.T) {
 		if i%2 == 1 {
 			name = "Other"
 		}
-		observations = append(observations, appObs(name, "com."+name, int64(i%2), enumscategories.CategoryDevelopment, at(i*60)))
+		observations = append(
+			observations,
+			appObs(name, "com."+name, int64(i%2), enumscategories.CategoryDevelopment, at(i*60)),
+		)
 	}
-	seedObservations(t, ctx, svcs, observations...)
+	seedObservations(ctx, t, svcs, observations...)
 
-	entries := rangeOf(t, ctx, svcs, 0, len(observations)*60)
+	entries := rangeOf(ctx, t, svcs, 0, len(observations)*60)
 
 	require.Len(t, entries, len(observations)-1, "every observation but the last opens an entry")
 
@@ -288,11 +327,22 @@ func TestQueryGetTimelineRange_DrainsEveryPage(t *testing.T) {
 	}
 }
 
-func rangeOf(t *testing.T, ctx context.Context, svcs *services.Services[any, any], fromSeconds int, toSeconds int) []models.UsageSeq {
+func rangeOf(
+	ctx context.Context,
+	t *testing.T,
+	svcs *services.Services[any, any],
+	fromSeconds int,
+	toSeconds int,
+) []models.UsageSeq {
 	t.Helper()
 
 	span := window(fromSeconds, toSeconds)
-	query := &QueryGetTimelineRange{StartedAt: span[0], EndedAt: span[1]}
+	query := &QueryGetTimelineRange{
+		StartedAt:          span[0],
+		EndedAt:            span[1],
+		MinDurationSeconds: 0,
+		lastItemID:         0,
+	}
 
 	return collectEntries(ctx, query.Stream(ctx, svcs))
 }

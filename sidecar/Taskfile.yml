@@ -81,3 +81,82 @@ tasks:
       - generate-models
       - generate-converters
       - generate-env-docs
+
+  lint-gopls:
+    desc: Fail on any gopls diagnostic at hint severity or above (SCOPE=branch|all)
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      # Pinned, and deliberately NOT in go.mod's tool block: gopls v0.23 requires
+      # honnef.co/go/tools v0.8.0-rc.1, and that release candidate panics inside golangci-lint
+      # v2.12.2's nilness analyzer. The two cannot share one module graph, so gopls runs out of
+      # band via `go run pkg@version`.
+      GOPLS: golang.org/x/tools/gopls@v0.23.0
+      SCOPE: '{{.SCOPE | default "all"}}'
+      # Generated output is committed and must never be hand-edited, so its hints are unactionable:
+      # protobuf under gen/, sqlc under db/*_queries/, goverter as *.gen.go, and the vendored fork.
+      GENERATED: '^(third_party|gen)/|/(read_queries|write_queries)/|\.gen\.go$'
+      # Diagnostics that cannot be resolved in source. Keep this list short and justified — anything
+      # here is a hint nobody will ever see again. converters/ declares goverter-annotated
+      # interfaces that only codegen consumes, so every static analyser calls them unused
+      # (`.golangci.yml` excludes `unused` there for the same reason).
+      IGNORE: 'components/timeline/converters/.*type ".*" is unused'
+    cmds:
+      # `gopls check` takes filenames only — no ./... patterns — and exits 0 even when it finds
+      # something, so the findings have to be captured and turned into an exit code by hand.
+      #
+      # It also opportunistically re-analyses files under non-native GOOS/GOARCH, tagging those
+      # findings with a [linux,amd64]-style suffix — and *which* extra configs it gets to varies
+      # between identical runs (measured: 84, 64, then 61 findings on an unchanged tree). Those
+      # runs also analyse with cgo off, which makes cgo-defined methods look undefined. Keeping
+      # only untagged native-config findings makes this a deterministic gate; the trade-off is that
+      # platform-specific files are checked on the config you run, so darwin locally and linux in
+      # CI between them still cover it.
+      - cmd: |
+          set -eu
+          if [ '{{.SCOPE}}' = branch ]; then
+            files=$(git diff --relative --name-only --diff-filter=ACMR \
+              "$(git merge-base origin/dev HEAD)" -- '*.go')
+          else
+            files=$(git ls-files '*.go')
+          fi
+          files=$(printf '%s\n' "$files" | grep -vE '{{.GENERATED}}' || true)
+          [ -n "$files" ] || exit 0
+
+          findings=$(printf '%s\n' "$files" \
+            | xargs -n 40 go run {{.GOPLS}} check -severity=hint 2>/dev/null \
+            | grep -v '\[[a-z0-9]*,[a-z0-9]*\]$' \
+            | sed "s|^$PWD/||" \
+            | grep -vE '{{.IGNORE}}' \
+            | sort -u || true)
+          if [ -n "$findings" ]; then
+            printf '%s\n' "$findings" >&2
+            printf '\ngopls: %s diagnostic(s) at hint severity or above\n' \
+              "$(printf '%s\n' "$findings" | wc -l | tr -d ' ')" >&2
+            exit 1
+          fi
+
+  lint:
+      desc: Lint code changed on this branch
+      dir: '{{.TASKFILE_DIR}}'
+      deps:
+        - task: lint-gopls
+          vars:
+            SCOPE: branch
+      cmds:
+        - go tool golangci-lint run --new-from-merge-base=origin/dev
+
+  lint-all:
+    desc: Lint the whole module (does not pass yet)
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - task: lint-gopls
+        vars:
+          SCOPE: all
+    cmds:
+      - go tool golangci-lint run
+
+  lint-fix:
+    desc: Apply formatter fixes (goimports grouping, golines wrapping)
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - go tool golangci-lint fmt

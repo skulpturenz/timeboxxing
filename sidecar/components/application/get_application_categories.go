@@ -13,7 +13,10 @@ type QueryGetApplicationCategories struct {
 	ApplicationIDs []int64
 }
 
-func (q QueryGetApplicationCategories) Exec(ctx context.Context, svcs *services.Services[any, any]) (map[int64][]enumscategories.Category, error) {
+func (q QueryGetApplicationCategories) Exec(
+	ctx context.Context,
+	svcs *services.Services[any, any],
+) (map[int64][]enumscategories.Category, error) {
 	appCategories := map[int64][]enumscategories.Category{}
 
 	if len(q.ApplicationIDs) == 0 {

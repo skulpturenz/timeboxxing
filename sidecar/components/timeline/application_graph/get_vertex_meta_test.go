@@ -11,7 +11,9 @@ import (
 )
 
 func TestGetVertexMeta_ReturnsMetaForAKnownLabel(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("slack", 2, enumscategories.CategoryCommunication, at(60)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(90)),
@@ -28,7 +30,9 @@ func TestGetVertexMeta_ReturnsMetaForAKnownLabel(t *testing.T) {
 }
 
 func TestGetVertexMeta_ReportsAMissForAnUnknownLabel(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("slack", 2, enumscategories.CategoryCommunication, at(60)),
 	))
@@ -38,14 +42,16 @@ func TestGetVertexMeta_ReportsAMissForAnUnknownLabel(t *testing.T) {
 	assert.False(t, ok)
 	assert.Nil(t, meta, "a miss must be nil so a caller cannot dereference it by accident")
 
-	empty, ok := ApplicationGraphFrom(list.New()).GetVertexMeta("vscode")
+	empty, ok := From(list.New()).GetVertexMeta("vscode")
 	assert.False(t, ok)
 	assert.Nil(t, empty)
 }
 
 // The key is the graph label, not the raw process identifier.
 func TestGetVertexMeta_IsKeyedByGraphLabel(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		idleProc(at(60)),
 		browserProc("github.com", enumscategories.CategoryWebBrowsing, 2, at(90)),

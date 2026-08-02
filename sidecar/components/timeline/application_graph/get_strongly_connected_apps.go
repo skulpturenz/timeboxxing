@@ -15,7 +15,11 @@ type StronglyConnectedEdgesMeta struct {
 	EdgeCounts     map[Edge]int
 }
 
-func (graph *ApplicationGraph) GetStronglyConnectedApps(numMutualConnections int) map[string][]StronglyConnectedEdgesMeta {
+const minCycleVertices = 2
+
+func (graph *ApplicationGraph) GetStronglyConnectedApps(
+	numMutualConnections int,
+) map[string][]StronglyConnectedEdgesMeta {
 	stronglyConnectedApps := map[string][]StronglyConnectedEdgesMeta{}
 
 	scss := connectivity.Tarjan(graph.Graph) // stongly connected nodes
@@ -24,7 +28,7 @@ func (graph *ApplicationGraph) GetStronglyConnectedApps(numMutualConnections int
 	// in one session they switch between these 3 apps multiple times
 	// want to find these blocks of time
 	for _, vertices := range scss {
-		if len(vertices) < 2 {
+		if len(vertices) < minCycleVertices {
 			continue
 		}
 
@@ -108,7 +112,7 @@ func (graph *ApplicationGraph) GetStronglyConnectedApps(numMutualConnections int
 			for _, s := range meta.spans {
 				for _, c := range consecutive {
 					if s.Between(c) {
-						edgeCounts[edge] += 1
+						edgeCounts[edge]++
 					}
 				}
 			}

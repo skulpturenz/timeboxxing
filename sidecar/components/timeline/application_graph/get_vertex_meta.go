@@ -1,6 +1,6 @@
 package applicationgraph
 
-func (graph *ApplicationGraph) GetVertexMeta(label string) (*applicationGraphVertexMeta, bool) {
+func (graph *ApplicationGraph) GetVertexMeta(label string) (*VertexMeta, bool) {
 	graph.RWMu.RLock()
 	defer graph.RWMu.RUnlock()
 

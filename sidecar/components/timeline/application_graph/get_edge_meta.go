@@ -1,6 +1,6 @@
 package applicationgraph
 
-func (graph *ApplicationGraph) GetEdgeMeta(fromLabel string, toLabel string) (*applicationGraphEdgeMeta, bool) {
+func (graph *ApplicationGraph) GetEdgeMeta(fromLabel string, toLabel string) (*EdgeMeta, bool) {
 	graph.RWMu.RLock()
 	defer graph.RWMu.RUnlock()
 

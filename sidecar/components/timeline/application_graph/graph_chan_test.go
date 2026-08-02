@@ -16,12 +16,14 @@ import (
 // a quiesce send.
 
 func TestGraphChan_BuildsGraphAndMeta(t *testing.T) {
+	t.Parallel()
+
 	if raceEnabled {
 		t.Skip("GraphChan writes the graph from an unsynchronized goroutine; unsafe until it exposes a done signal")
 	}
 
 	ch := make(chan ForegroundProcess)
-	g := ApplicationGraphChan(t.Context(), ch)
+	g := Chan(t.Context(), ch)
 
 	ch <- appProc("A", 1, enumscategories.CategoryDevelopment, at(0))
 	ch <- appProc("B", 2, enumscategories.CategoryCommunication, at(10))
@@ -54,8 +56,10 @@ func TestGraphChan_BuildsGraphAndMeta(t *testing.T) {
 
 // GetEntrySuggestions is mutex-protected, so this and the tests below need no -race guard.
 func TestGraphChan_FindsMutualCluster(t *testing.T) {
+	t.Parallel()
+
 	ch := make(chan ForegroundProcess)
-	g := ApplicationGraphChan(t.Context(), ch)
+	g := Chan(t.Context(), ch)
 
 	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0))
 	ch <- appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10))
@@ -73,8 +77,10 @@ func TestGraphChan_FindsMutualCluster(t *testing.T) {
 }
 
 func TestGraphChan_FindsMultipleMutualClusters(t *testing.T) {
+	t.Parallel()
+
 	ch := make(chan ForegroundProcess)
-	g := ApplicationGraphChan(t.Context(), ch)
+	g := Chan(t.Context(), ch)
 
 	// cluster A: vscode <-> terminal
 	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0))
@@ -125,8 +131,10 @@ func TestGraphChan_FindsMultipleMutualClusters(t *testing.T) {
 }
 
 func TestGraphChan_SameAppsAcrossSessions(t *testing.T) {
+	t.Parallel()
+
 	ch := make(chan ForegroundProcess)
-	g := ApplicationGraphChan(t.Context(), ch)
+	g := Chan(t.Context(), ch)
 
 	// morning session
 	ch <- appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0))
@@ -158,8 +166,10 @@ func TestGraphChan_SameAppsAcrossSessions(t *testing.T) {
 }
 
 func TestGraphChan_ThreeAppCycleRepeated(t *testing.T) {
+	t.Parallel()
+
 	ch := make(chan ForegroundProcess)
-	g := ApplicationGraphChan(t.Context(), ch)
+	g := Chan(t.Context(), ch)
 
 	second := 0
 	send := func(id string, pid int64) {

@@ -12,6 +12,8 @@ import (
 // Regression guard: boundary-adjacent intervals (curr[0] == prev[1]) must merge rather than be
 // emitted as one suggestion per interval.
 func TestGetEntrySuggestions_MutualClusterProducesOneBlock(t *testing.T) {
+	t.Parallel()
+
 	g := mutualCluster(t)
 
 	suggestions := g.GetEntrySuggestions(at(-1), 2)
@@ -23,7 +25,9 @@ func TestGetEntrySuggestions_MutualClusterProducesOneBlock(t *testing.T) {
 }
 
 func TestGetEntrySuggestions_MergesAcrossSubMinuteGap(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(20)),
@@ -50,7 +54,9 @@ func TestGetEntrySuggestions_MergesAcrossSubMinuteGap(t *testing.T) {
 }
 
 func TestGetEntrySuggestions_NoCycleReturnsEmpty(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
 		appProc("C", 3, enumscategories.CategoryMedia, at(20)),
@@ -64,8 +70,12 @@ func TestGetEntrySuggestions_NoCycleReturnsEmpty(t *testing.T) {
 // Regression guard for the empty-flattened bug: an SCC that survives with nothing to suggest must
 // return an empty slice, not panic with an index-out-of-range.
 func TestGetEntrySuggestions_WeakClusterReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
 	t.Run("threshold excludes the only cluster", func(t *testing.T) {
-		g := ApplicationGraphFrom(listOf(
+		t.Parallel()
+
+		g := From(listOf(
 			appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 			appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
 			appProc("A", 1, enumscategories.CategoryDevelopment, at(20)),
@@ -77,6 +87,8 @@ func TestGetEntrySuggestions_WeakClusterReturnsEmpty(t *testing.T) {
 	})
 
 	t.Run("start post-dates all intervals", func(t *testing.T) {
+		t.Parallel()
+
 		g := mutualCluster(t)
 
 		require.NotPanics(t, func() {
@@ -88,7 +100,9 @@ func TestGetEntrySuggestions_WeakClusterReturnsEmpty(t *testing.T) {
 // The clusters stay separate SCCs because the timeline never switches back from the second to the
 // first.
 func TestGetEntrySuggestions_MultipleClustersExcludeNonClusters(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		// cluster A: vscode <-> terminal
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
@@ -140,7 +154,9 @@ func TestGetEntrySuggestions_MultipleClustersExcludeNonClusters(t *testing.T) {
 // The idle sample joins the SCC via the vscode<->idle cycle but is excluded from the labels by the
 // mutual-connection threshold.
 func TestGetEntrySuggestions_SameAppsAcrossSessions(t *testing.T) {
-	g := ApplicationGraphFrom(listOf(
+	t.Parallel()
+
+	g := From(listOf(
 		// morning session
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
@@ -175,6 +191,8 @@ func TestGetEntrySuggestions_SameAppsAcrossSessions(t *testing.T) {
 // and all three land in one SCC. A pure round-robin vscode->terminal->chrome->vscode would have
 // only one-way edges and yield no suggestion.
 func TestGetEntrySuggestions_ThreeAppCycleRepeated(t *testing.T) {
+	t.Parallel()
+
 	procs := []ForegroundProcess{}
 	second := 0
 	push := func(id string, pid int64) {
@@ -189,7 +207,7 @@ func TestGetEntrySuggestions_ThreeAppCycleRepeated(t *testing.T) {
 	}
 	push("vscode", 1) // closes the last chrome interval
 
-	g := ApplicationGraphFrom(listOf(procs...))
+	g := From(listOf(procs...))
 
 	suggestions := g.GetEntrySuggestions(at(-1), 2)
 

@@ -11,6 +11,8 @@ import (
 )
 
 func TestGraphFrom_BuildsVerticesEdgesAndCounts(t *testing.T) {
+	t.Parallel()
+
 	tl := listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(10)),
@@ -18,7 +20,7 @@ func TestGraphFrom_BuildsVerticesEdgesAndCounts(t *testing.T) {
 		appProc("B", 2, enumscategories.CategoryCommunication, at(30)),
 	)
 
-	g := ApplicationGraphFrom(tl)
+	g := From(tl)
 
 	metaA, ok := g.GetVertexMeta("A")
 	require.True(t, ok)
@@ -52,20 +54,22 @@ func TestGraphFrom_BuildsVerticesEdgesAndCounts(t *testing.T) {
 	vB := g.Graph.GetVertexByID("B")
 	require.NotNil(t, vA)
 	require.NotNil(t, vB)
-	assert.Equal(t, float64((20 * time.Second).Milliseconds()), vA.Weight())
+	assert.InDelta(t, float64((20 * time.Second).Milliseconds()), vA.Weight(), 0)
 	edge := g.Graph.GetEdge(vA, vB)
 	require.NotNil(t, edge)
-	assert.Equal(t, float64((20 * time.Second).Milliseconds()), edge.Weight())
+	assert.InDelta(t, float64((20 * time.Second).Milliseconds()), edge.Weight(), 0)
 }
 
 func TestGraphFrom_IdleVertexAndEdges(t *testing.T) {
+	t.Parallel()
+
 	tl := listOf(
 		appProc("A", 1, enumscategories.CategoryDevelopment, at(0)),
 		idleProc(at(10)),
 		appProc("B", 2, enumscategories.CategoryCommunication, at(20)),
 	)
 
-	g := ApplicationGraphFrom(tl)
+	g := From(tl)
 
 	_, ok := g.GetVertexMeta("idle")
 	assert.True(t, ok, "idle should be its own vertex")
@@ -83,13 +87,15 @@ func TestGraphFrom_IdleVertexAndEdges(t *testing.T) {
 }
 
 func TestGraphFrom_BrowserVertexUsesTabIdentifier(t *testing.T) {
+	t.Parallel()
+
 	tl := listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		appProc("terminal", 2, enumscategories.CategoryDevelopment, at(10)),
 		browserProc("github.com", enumscategories.CategoryWebBrowsing, 3, at(20)),
 	)
 
-	g := ApplicationGraphFrom(tl)
+	g := From(tl)
 
 	meta, ok := g.GetVertexMeta("github.com")
 	require.True(t, ok)
@@ -106,6 +112,8 @@ func TestGraphFrom_BrowserVertexUsesTabIdentifier(t *testing.T) {
 // non-browser following a browser mislabeled the edge source "com.google.Chrome" — a vertex never
 // added.
 func TestGraphFrom_BrowserAsPrevLabelsEdgeSource(t *testing.T) {
+	t.Parallel()
+
 	tl := listOf(
 		appProc("vscode", 1, enumscategories.CategoryDevelopment, at(0)),
 		browserProc("github.com", enumscategories.CategoryWebBrowsing, 2, at(10)),
@@ -113,7 +121,7 @@ func TestGraphFrom_BrowserAsPrevLabelsEdgeSource(t *testing.T) {
 	)
 
 	var g *ApplicationGraph
-	require.NotPanics(t, func() { g = ApplicationGraphFrom(tl) })
+	require.NotPanics(t, func() { g = From(tl) })
 
 	_, hasCorrect := g.GetEdgeMeta("github.com", "terminal")
 	assert.True(t, hasCorrect, "edge source should be the browser tab id")
@@ -123,12 +131,14 @@ func TestGraphFrom_BrowserAsPrevLabelsEdgeSource(t *testing.T) {
 }
 
 func TestGraphFrom_EmptyAndSingle(t *testing.T) {
-	empty := ApplicationGraphFrom(list.New())
+	t.Parallel()
+
+	empty := From(list.New())
 	assert.Equal(t, uint32(0), empty.Graph.Order())
 	_, ok := empty.GetVertexMeta("A")
 	assert.False(t, ok)
 
-	single := ApplicationGraphFrom(listOf(appProc("A", 1, enumscategories.CategoryDevelopment, base)))
+	single := From(listOf(appProc("A", 1, enumscategories.CategoryDevelopment, base)))
 	meta, ok := single.GetVertexMeta("A")
 	require.True(t, ok)
 	assert.Equal(t, 1, meta.Count)

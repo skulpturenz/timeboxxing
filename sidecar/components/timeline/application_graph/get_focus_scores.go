@@ -8,6 +8,8 @@ import (
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
+const longestStintsPercentile = 10
+
 func (graph *ApplicationGraph) GetFocusScores(numMutualConnections int) map[string]float64 {
 	graph.RWMu.RLock()
 	defer graph.RWMu.RUnlock()
@@ -69,7 +71,7 @@ func (graph *ApplicationGraph) GetFocusScores(numMutualConnections int) map[stri
 		}
 	}
 
-	topN := utils.TopN(cmp.Compare[time.Duration], 10)
+	topN := utils.TopN(cmp.Compare[time.Duration], longestStintsPercentile)
 
 	for label, d := range durations {
 		incoming := incomingCounts[label] - appCycleIncomingCounts[label] + len(appCycleSpanMap[label])

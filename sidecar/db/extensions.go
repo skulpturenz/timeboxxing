@@ -9,8 +9,12 @@ import (
 	"github.com/mattn/go-sqlite3"
 )
 
-type ExtensionLoader = func() (path *string, entrypoint string, error error)
+type ExtensionLoader = func() (path *string, entrypoint string, err error)
 
+// [sql.Register] panics on a duplicate driver name and there is no way to unregister, so the dedupe
+// bookkeeping has to be process-global too — the same scope as the registry it guards.
+//
+//nolint:gochecknoglobals // mirrors database/sql's own process-global driver registry
 var (
 	mu                sync.Mutex
 	registeredDrivers []string
@@ -26,6 +30,7 @@ func registerExtensions(driverName string, loaders ...ExtensionLoader) {
 	registeredDrivers = append(registeredDrivers, driverName)
 
 	sql.Register(driverName, &sqlite3.SQLiteDriver{
+		Extensions: nil,
 		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
 			for _, fn := range loaders {
 				path, entrypoint, err := fn()

@@ -21,7 +21,7 @@ type SerialWriteQuerier struct {
 }
 
 func newSerialWriteQuerier(conn *sql.DB) *SerialWriteQuerier {
-	return &SerialWriteQuerier{querier: writequeries.New(conn), conn: conn}
+	return &SerialWriteQuerier{querier: writequeries.New(conn), conn: conn, mu: sync.Mutex{}}
 }
 
 var _ writequeries.Querier = (*SerialWriteQuerier)(nil)
@@ -37,9 +37,10 @@ func (s *SerialWriteQuerier) WriteTx(ctx context.Context, fn func(*writequeries.
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	// on the happy path this runs after Commit and returns sql.ErrTxDone, which is not a failure
+	defer func() { _ = tx.Rollback() }()
 
-	if err := fn(writequeries.New(tx)); err != nil {
+	if err = fn(writequeries.New(tx)); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -54,13 +55,19 @@ func (s *SerialWriteQuerier) WithWriteConn(fn func(*sql.DB) error) error {
 	return fn(s.conn)
 }
 
-func (s *SerialWriteQuerier) CreateLedgerItem(ctx context.Context, arg writequeries.CreateLedgerItemParams) (writequeries.LedgerItem, error) {
+func (s *SerialWriteQuerier) CreateLedgerItem(
+	ctx context.Context,
+	arg writequeries.CreateLedgerItemParams,
+) (writequeries.LedgerItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.CreateLedgerItem(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateLedgerItemTimelineEntry(ctx context.Context, arg writequeries.CreateLedgerItemTimelineEntryParams) error {
+func (s *SerialWriteQuerier) CreateLedgerItemTimelineEntry(
+	ctx context.Context,
+	arg writequeries.CreateLedgerItemTimelineEntryParams,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.CreateLedgerItemTimelineEntry(ctx, arg)
@@ -78,13 +85,19 @@ func (s *SerialWriteQuerier) CreateProjectCost(ctx context.Context, arg writeque
 	return s.querier.CreateProjectCost(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateProjectDetails(ctx context.Context, arg writequeries.CreateProjectDetailsParams) error {
+func (s *SerialWriteQuerier) CreateProjectDetails(
+	ctx context.Context,
+	arg writequeries.CreateProjectDetailsParams,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.CreateProjectDetails(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) CreateTimelineEmbedding(ctx context.Context, arg writequeries.CreateTimelineEmbeddingParams) error {
+func (s *SerialWriteQuerier) CreateTimelineEmbedding(
+	ctx context.Context,
+	arg writequeries.CreateTimelineEmbeddingParams,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.CreateTimelineEmbedding(ctx, arg)
@@ -126,43 +139,64 @@ func (s *SerialWriteQuerier) EnsureLedger(ctx context.Context) error {
 	return s.querier.EnsureLedger(ctx)
 }
 
-func (s *SerialWriteQuerier) UpsertApplication(ctx context.Context, arg writequeries.UpsertApplicationParams) (int64, error) {
+func (s *SerialWriteQuerier) UpsertApplication(
+	ctx context.Context,
+	arg writequeries.UpsertApplicationParams,
+) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.UpsertApplication(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) UpsertApplicationCategory(ctx context.Context, arg writequeries.UpsertApplicationCategoryParams) (int64, error) {
+func (s *SerialWriteQuerier) UpsertApplicationCategory(
+	ctx context.Context,
+	arg writequeries.UpsertApplicationCategoryParams,
+) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.UpsertApplicationCategory(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) UpsertApplicationCategoryMap(ctx context.Context, arg writequeries.UpsertApplicationCategoryMapParams) error {
+func (s *SerialWriteQuerier) UpsertApplicationCategoryMap(
+	ctx context.Context,
+	arg writequeries.UpsertApplicationCategoryMapParams,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.UpsertApplicationCategoryMap(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) UpsertApplicationSettings(ctx context.Context, arg writequeries.UpsertApplicationSettingsParams) error {
+func (s *SerialWriteQuerier) UpsertApplicationSettings(
+	ctx context.Context,
+	arg writequeries.UpsertApplicationSettingsParams,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.UpsertApplicationSettings(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) UpsertForegroundProcess(ctx context.Context, arg writequeries.UpsertForegroundProcessParams) (int64, error) {
+func (s *SerialWriteQuerier) UpsertForegroundProcess(
+	ctx context.Context,
+	arg writequeries.UpsertForegroundProcessParams,
+) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.UpsertForegroundProcess(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) InsertForegroundProcessMetadata(ctx context.Context, arg writequeries.InsertForegroundProcessMetadataParams) (int64, error) {
+func (s *SerialWriteQuerier) InsertForegroundProcessMetadata(
+	ctx context.Context,
+	arg writequeries.InsertForegroundProcessMetadataParams,
+) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.InsertForegroundProcessMetadata(ctx, arg)
 }
 
-func (s *SerialWriteQuerier) UpsertTimelineSemanticDocument(ctx context.Context, arg writequeries.UpsertTimelineSemanticDocumentParams) (int64, error) {
+func (s *SerialWriteQuerier) UpsertTimelineSemanticDocument(
+	ctx context.Context,
+	arg writequeries.UpsertTimelineSemanticDocumentParams,
+) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.querier.UpsertTimelineSemanticDocument(ctx, arg)

@@ -8,13 +8,13 @@ import (
 	"github.com/negrel/assert"
 )
 
-type QueueOptions[T any] struct {
+type Options[T any] struct {
 	Manager sqliteq.Queues
 	Name    string
 	InChan  <-chan T
 }
 
-func New[T any](ctx context.Context, opts QueueOptions[T]) (<-chan T, error) {
+func New[T any](ctx context.Context, opts Options[T]) (<-chan T, error) {
 	assert.NotZero(opts.Name)
 	assert.NotNil(opts.Manager)
 	assert.NotNil(opts.InChan)
@@ -42,8 +42,8 @@ func New[T any](ctx context.Context, opts QueueOptions[T]) (<-chan T, error) {
 	cleanup := func() {
 		cancel()
 
-		err := w.StopAndWait()
-		assert.NoError(err)
+		stopErr := w.StopAndWait()
+		assert.NoError(stopErr)
 
 		close(resultChan)
 	}

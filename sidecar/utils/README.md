@@ -6,12 +6,11 @@ stateless** — no package-level state, no `init`, nothing that owns a resource 
 shutting down — and depends on nothing beyond the standard library and
 [`negrel/assert`](https://github.com/negrel/assert).
 
-Because it sits underneath everything, its contracts leak into the packages above it. Two
-sibling READMEs already lean on helpers documented here: `utils.Stream`'s `done` contract
-shapes every read path in [`timeline`](../components/timeline/README.md), and
-`utils.ParallelMapWithClone` is what makes concurrent enrichment safe in
-[`monitor`](../monitor/README.md). This file is the reference for the helpers themselves;
-those READMEs remain the reference for how they are used in anger.
+Because it sits underneath everything, its contracts leak into the packages above it.
+`Stream`'s `done` contract shapes every read path in
+[`timeline`](../components/timeline/README.md), and `ParallelMapWithClone` is what lets
+[`monitor`](../monitor/README.md) run its enrichers concurrently. This file is the reference for
+the helpers themselves; those READMEs remain the reference for how they are used in anger.
 
 One helper family per file, and the file name is the concept.
 
@@ -28,10 +27,14 @@ One helper family per file, and the file name is the concept.
 | `StreamFn` | [`stream.go`](stream.go) | The paged-fetcher contract |
 | `Stream` | [`stream.go`](stream.go) | Drive a `StreamFn` into a back-pressured channel of items |
 | `SeqChan` | [`seq_chan.go`](seq_chan.go) | Adapt a receive channel to an `iter.Seq` |
-| `ParallelMap` | [`parallel_map.go`](parallel_map.go) | Run N functions concurrently over one input, in declaration order |
-| `ParallelMapWithClone` | [`parallel_map.go`](parallel_map.go) | As above, giving each branch its own copy of the input |
-| `FanOutChan` | [`fan_out_chan.go`](fan_out_chan.go) | Lossy broadcast of one channel to many |
+| `ParallelMapWithClone` | [`parallel_map.go`](parallel_map.go) | Run N functions concurrently over one input, each on its own copy |
 | `TopN` | [`top_n.go`](top_n.go) | Filter a slice down to its top percentile |
+| `ParallelMap` | [`parallel_map.go`](parallel_map.go) | `ParallelMapWithClone` with a no-op clone |
+| `FanOutChan` | [`fan_out_chan.go`](fan_out_chan.go) | Lossy broadcast of one channel to many |
+| `resultTopN.Distinct` | [`top_n.go`](top_n.go) | The top set with duplicates removed |
+
+The three marked *no call sites* compile and are exercised by nothing — treat them as
+unverified rather than merely spare.
 
 ## Nil & zero values (`coalesce.go`, `zero_nil.go`, `or.go`)
 
@@ -44,23 +47,16 @@ func Or[T any](predicate func(x T) bool, items ...T) *T
 ```
 
 These five are the vocabulary behind the sidecar's *nil means absent, zero means empty*
-convention. `Coalesce` ([coalesce.go:3-9](coalesce.go#L3-L9)) reads an optional field with a
-default; `ZeroNil` ([zero_nil.go:3-9](zero_nil.go#L3-L9)) goes the other way, turning a
-value back into an optional one on the way to storage or the wire.
+convention. `Coalesce` reads an optional field with a default; `ZeroNil` goes the other way,
+turning a value back into an optional one on the way to storage or the wire. `IsEmptyString`
+accepts a `string` or a `*string` and answers one question for both — a `nil` pointer, an empty
+string and `"   "` are all **empty**, since it trims before testing. `Or` returns a **pointer to
+a copy** of the matched item, not into the argument slice.
 
 > **Note:** `ZeroNil` is not a strict inverse of `Coalesce`. It cannot distinguish "absent"
 > from "legitimately zero" — both become `nil`. That collapse is deliberate and load-bearing:
 > it is how the timeline maps an idle observation's `application_id`/`pid` back to `NULL`
-> columns (see [Ingest](../components/timeline/README.md#ingest-subscribe_reportergo-upsert_foreground_processgo)).
-
-`IsEmptyString` ([or.go:15-25](or.go#L15-L25)) accepts either a `string` or a `*string` and
-answers one question for both: is there any non-whitespace content here? A `nil` pointer, an
-empty string and `"   "` are all **empty** — it trims before testing, so blank-but-present
-input never counts as content.
-
-`Or` ([or.go:5-13](or.go#L5-L13)) returns the first item satisfying `predicate`, or `nil` if
-none do. It returns a **pointer to a copy** of the matched item, not into the argument slice,
-so mutating through it does not write back to the caller's data.
+> columns.
 
 ## Time spans (`time.go`)
 
@@ -74,21 +70,16 @@ func (s TimeSpan) Duration() time.Duration
 func (s TimeSpan) ClippedDuration(r TimeSpan) time.Duration
 ```
 
-`TimeSpan` is an **array, not a slice** — assigning or passing one copies it, so `Clip`
-narrows its own copy and can never alias the caller's span.
+`TimeSpan` is an **array, not a slice** — assigning or passing one copies it, so `Clip` narrows
+its own copy and can never alias the caller's span. `Clip` reports `false` when nothing falls
+inside, and both it and `Duration` clamp an empty or inverted result to zero rather than
+returning a negative one. `ClippedDuration` composes the two, and is the one you want for "how
+much of this span landed in that window".
 
-> **Note the bound asymmetry.** `Between` ([time.go:7-9](time.go#L7-L9)) is inclusive on both
-> ends, while `Overlaps` ([time.go:13-15](time.go#L13-L15)) is half-open and strict. A span
-> that merely touches a bound is `Between` its container but does **not** `Overlap` it, and a
-> zero-length span is `Between` itself while overlapping nothing at all. Pick by intent:
-> `Between` for containment, `Overlaps` for intersection.
-
-`Clip` ([time.go:18-31](time.go#L18-L31)) narrows `s` to the part of it falling inside `r`,
-reporting `false` when nothing does — an empty or inverted result yields the zero `TimeSpan`,
-never a negative one. `Duration` ([time.go:33-39](time.go#L33-L39)) applies the same clamp:
-an inverted span is `0`, not a negative duration. `ClippedDuration`
-([time.go:42-49](time.go#L42-L49)) is the composition of the two, and is the one you want for
-"how much of this span landed in that window".
+> **Note the bound asymmetry.** `Between` is inclusive on both ends, while `Overlaps` is
+> half-open and strict. A span that merely touches a bound is `Between` its container but does
+> **not** `Overlap` it, and a zero-length span is `Between` itself while overlapping nothing at
+> all. Pick by intent: `Between` for containment, `Overlaps` for intersection.
 
 ## Paged streaming (`stream.go`, `seq_chan.go`)
 
@@ -101,10 +92,8 @@ func SeqChan[T any](ch <-chan T) iter.Seq[T]
 
 `StreamFn` is a type **alias**, not a defined type, so any function of that shape satisfies it
 without conversion — which is why query types across the sidecar can simply declare
-`Stream(ctx, svcs) utils.StreamFn[T]` and return a closure.
-
-`Stream` ([stream.go:11-47](stream.go#L11-L47)) turns such a fetcher into a channel of
-individual items, pulling one page at a time:
+`Stream(ctx, svcs) utils.StreamFn[T]` and return a closure. `Stream` drives such a fetcher into
+a channel of individual items, one page at a time:
 
 ```mermaid
 flowchart LR
@@ -120,21 +109,16 @@ flowchart LR
 - **`done`, not `ok`.** The second return value stops the stream when `true` — the opposite
   polarity to the `ok` convention used elsewhere in this package. Items handed back
   *alongside* `done == true` are **discarded**, so a terminating fetcher must return its last
-  partial page with `done == false` and report exhaustion on the next, empty call. The
-  timeline README spells out how its queries satisfy this in
-  [Timeline entry streams](../components/timeline/README.md#timeline-entry-streams-get_timelinego-get_timeline_rangego).
-- **Unbuffered by design.** The channel has no buffer, so the next page is fetched only once
-  the current one has been fully consumed. Paging is driven by the consumer, and a slow reader
-  throttles the fetcher rather than filling memory with pages nobody has asked for.
-- **Cancellation-aware on both arms.** Both the fetch loop and the per-item send select on
-  `ctx.Done()`, and the channel is always closed on return. That means **a short result means
-  cancellation, not an empty window** — check `ctx.Err()` after draining.
-- `pageSize` must be positive, enforced with `assert.Positive` rather than an error return.
-  Like the rest of the sidecar's assertions, it is build-tag gated: active in dev and test,
-  compiled out in release.
+  partial page with `done == false` and report exhaustion on the next, empty call.
+- **Unbuffered by design.** The next page is fetched only once the current one has been fully
+  consumed, so paging is driven by the consumer and a slow reader throttles the fetcher rather
+  than filling memory with pages nobody asked for.
+- **A short result means cancellation, not an empty window.** Both the fetch loop and the
+  per-item send select on `ctx.Done()`, and the channel is always closed on return — so check
+  `ctx.Err()` after draining.
 
-`SeqChan` ([seq_chan.go:7-15](seq_chan.go#L7-L15)) bridges a channel into a range-over-func
-iterator, which is what makes the collect idiom read normally:
+`SeqChan` bridges a channel into a range-over-func iterator, which is what makes the collect
+idiom read normally:
 
 ```go
 entries := slices.Collect(utils.SeqChan(utils.Stream(ctx, pageSize, query.Stream(ctx, svcs))))
@@ -143,58 +127,33 @@ if err := ctx.Err(); err != nil {
 }
 ```
 
-It neither closes nor drains the channel it is given — breaking out of the loop (a `yield`
-returning `false`) simply abandons the remainder, so cancel the producer's context if you
-stop early.
+It neither closes nor drains the channel it is given — breaking out of the loop simply abandons
+the remainder, so cancel the producer's context if you stop early.
 
-## Parallel fan-in (`parallel_map.go`)
+## Concurrency combinators (`parallel_map.go`, `fan_out_chan.go`)
 
 ```go
-func ParallelMap[T any, U any](
-	fns ...func(context.Context, T) (U, bool),
-) func(context.Context, T) ([]U, bool)
-
 func ParallelMapWithClone[T any, U any](
 	clone func(T) T,
 	fns ...func(context.Context, T) (U, bool),
 ) func(context.Context, T) ([]U, bool)
-```
 
-Both build a reusable function that runs **every** `fn` concurrently against the same input
-(one `wg.Go` goroutine each) and folds the successes into a slice. `ParallelMap`
-([parallel_map.go:15-21](parallel_map.go#L15-L21)) is the thin case: it delegates to
-`ParallelMapWithClone` with a no-op clone.
-
-- **Results come back in declaration order.** Each branch tags its result with the index of
-  its `fn`, and the collector sorts on that tag before unwrapping — so the concurrency never
-  leaks into the output. Callers can rely on position.
-- **Failures are dropped, not propagated.** A branch returning `ok == false` contributes
-  nothing; the result slice is shorter and the indices of later successes shift down. The
-  returned bool is true when **at least one** branch succeeded.
-- **No early exit.** The same `ctx` goes to every branch and all of them run to completion,
-  even once one has failed. Cancellation is the caller's lever, via that context.
-- **`clone` buys isolation.** `ParallelMapWithClone` hands each branch its own copy of the
-  input, which is what lets branches write to a value containing a map without racing. This is
-  exactly what `enrichment.Merge` relies on to run its enrichers concurrently over an
-  `Enrichments` map — see [Enrichment](../monitor/README.md#enrichment-enrichment).
-
-## Channel fan-out (`fan_out_chan.go`)
-
-```go
 func FanOutChan[T any](ctx context.Context, inChan <-chan T, outChans ...chan<- T)
 ```
 
-Spawns a goroutine ([fan_out_chan.go:8-32](fan_out_chan.go#L8-L32)) that copies each item
-from `inChan` to every output, returning immediately.
+`ParallelMapWithClone` builds a reusable function that runs **every** `fn` concurrently against
+the same input and folds the successes into a slice, tagged by index and re-sorted so results
+come back in declaration order. Failures are dropped rather than propagated — the returned bool
+is true when *at least one* branch succeeded — and there is no early exit, so cancellation is
+the caller's lever via the shared `ctx`. `clone` buys isolation: it hands each branch its own
+copy of the input, which is what lets `enrichment.Merge` run enrichers concurrently over a value
+containing a map — see [Enrichment](../monitor/README.md#enrichment-enrichment).
 
-> **Lossy by design.** Sends are non-blocking: an output that is not ready to receive is
-> **skipped**, its per-index drop count incremented, and the drop logged via
-> `slog.ErrorContext` with the output index and running count. One stalled consumer therefore
-> slows nobody down — it just misses items. Buffer the outputs, or drain them promptly, or
-> accept the gaps.
-
-It returns when `ctx` is cancelled or `inChan` closes, and **does not close the output
-channels**: ownership of those stays with the caller, who may well have other writers.
+> **`FanOutChan` is lossy by design.** Sends are non-blocking: an output not ready to receive is
+> **skipped**, its per-index drop count incremented, and the drop logged via `slog.ErrorContext`.
+> One stalled consumer therefore slows nobody down — it just misses items. It returns when `ctx`
+> is cancelled or `inChan` closes, and does **not** close the output channels; ownership of those
+> stays with the caller.
 
 ## Top-N filter (`top_n.go`)
 
@@ -203,20 +162,19 @@ func TopN[T comparable](cmp func(a T, b T) int, percentile float64) func([]T) re
 func (t resultTopN[T]) Distinct() []T
 ```
 
-`TopN` ([top_n.go:11-49](top_n.go#L11-L49)) returns a reusable filter configured once with a
-comparison and a cut-off. Applied to a slice it: dedupes, sorts the distinct values
-**descending** by `cmp`, takes the first `ceil(len × percentile/100)` of them, then walks the
-**original** slice keeping only members of that set. Order and multiplicity of the input are
-preserved — it is a filter, not a ranking.
+`TopN` returns a reusable filter configured once with a comparison and a cut-off. Applied to a
+slice it dedupes, sorts the distinct values **descending** by `cmp`, takes the first
+`ceil(len × percentile/100)` of them, then walks the **original** slice keeping only members of
+that set. Order and multiplicity of the input are preserved — it is a filter, not a ranking.
 
 - **`percentile` is on a 0–100 scale**, not 0–1: pass `10` for the top decile. The cut-off is
-  computed over the count of *distinct* values, not the length of the input, and a value
-  outside `0..100` slices out of range and panics — it is not clamped.
+  computed over the count of *distinct* values, and a value outside `0..100` slices out of range
+  and **panics** — it is not clamped.
 - The returned type `resultTopN[T]` is **unexported**, so callers bind it with `:=` and cannot
   name it in a signature. Treat it as a `[]T` you can call `Distinct` on.
-- `Distinct` ([top_n.go:51-58](top_n.go#L51-L58)) gives the top set with duplicates removed,
-  in **map iteration order — which is not deterministic**. Sort it yourself if the order is
-  going to be shown to anyone or compared in a test.
+- `Distinct` gives the top set with duplicates removed, in **map iteration order — which is not
+  deterministic**. Sort it yourself if the order is going to be shown to anyone or compared in a
+  test.
 
 ## Cross-cutting design themes
 
@@ -229,9 +187,6 @@ preserved — it is a filter, not a ranking.
 - **Backpressure over buffering.** `Stream`'s channel is deliberately unbuffered so the
   consumer's pace drives the fetcher. The same instinct as [`queue`](../queue/README.md)
   keeping its backlog in SQLite: hold work where it is cheap, not in RAM.
-- **Assertions for programmer error, returns for runtime error.** A non-positive `pageSize` is
-  a bug at the call site, so it trips a build-tag-gated assertion instead of being threaded
-  back as an error nobody can act on.
 - **Deterministic output from concurrent work.** `ParallelMap*` re-sorts into declaration
   order before returning, so callers get parallelism without inheriting its nondeterminism.
 - **Lossiness is stated, never silent.** Where a helper drops data — `FanOutChan`'s skipped
