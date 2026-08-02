@@ -10,7 +10,10 @@ import (
 
 type Querier interface {
 	GetApplicationCategories(ctx context.Context, applicationids []int64) ([]GetApplicationCategoriesRow, error)
+	GetApplicationCategoryCodes(ctx context.Context) ([]GetApplicationCategoryCodesRow, error)
 	GetApplicationSettings(ctx context.Context) (GetApplicationSettingsRow, error)
+	GetMaskedCategories(ctx context.Context) ([]GetMaskedCategoriesRow, error)
+	GetMaskedValues(ctx context.Context) ([]GetMaskedValuesRow, error)
 	GetProjectColorIDByColor(ctx context.Context, color int64) (int64, error)
 	GetSemanticEventDocumentSource(ctx context.Context, id int64) (GetSemanticEventDocumentSourceRow, error)
 	GetSemanticIndexCounts(ctx context.Context, embeddingModelID *int64) (GetSemanticIndexCountsRow, error)

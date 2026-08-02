@@ -19,13 +19,16 @@ live here — it stays beside its domain type and takes a `Parse<Thing>` name in
 | [`enums_categories`](enums_categories/category.go) | `enumscategories` | `Category` | `CategoryUnknown` — sentinel | kebab-case (`web-browsing`) |
 | [`enums_env`](enums_env/env.go) | `enumsenv` | `Environment` | `Production` — meaningful | lowercase (`production`) |
 | [`enums_journal_mode`](enums_journal_mode/journal_mode.go) | `enumsjournalmode` | `JournalMode` | `Delete` — meaningful | SQLite pragma tokens (`WAL`) |
+| [`enums_masking_category`](enums_masking_category/masking_category.go) | `enumsmaskingcategory` | `MaskingCategory` | `Unknown` — sentinel | snake_case (`browser_domain`) |
 | [`enums_operating_system`](enums_operating_system/operating_system.go) | `enumsoperatingsystem` | `OperatingSystem` | `Unknown` — sentinel | lowercase (`macos`) |
 | [`enums_release_channel`](enums_release_channel/release_channel.go) | `enumsreleasechannel` | `ReleaseChannel` | `Unknown` — sentinel | lowercase (`stable`) |
 | [`enums_semantic_document_type`](enums_semantic_document_type/semantic_document_type.go) | `enumssemanticdocumenttype` | `SemanticDocumentType` | `Unknown` — sentinel | snake_case (`day_summary`) |
 
 `enums_categories` is by far the largest — it carries `Label()`, `IsProductive()` and a set of
-foreign-taxonomy adapters. The other five are the bare shape below. `enums_release_channel` has
+foreign-taxonomy adapters. The other six are the bare shape below. `enums_release_channel` has
 no Go importers today; it exists for the seeded `release_channels` table the desktop app reads.
+`enums_masking_category` is the only one that persists its code rather than its integer — see
+[the persistence contract](#the-persistence-contract).
 
 ## The shape
 
@@ -64,8 +67,8 @@ func Parse(s string) (SemanticDocumentType, error) {
 ```
 
 - **`type X int`, always.** Never a string type, never a struct. The integer is the value that
-  crosses into SQLite as a row id and into gRPC as an `int32`; the string is a rendering of it,
-  not the thing itself.
+  crosses into SQLite — as a row id wherever the enum is seeded — and into gRPC as an `int32`; the
+  string is a rendering of it, not the thing itself.
 - **One `const` block, first member `= iota`, the rest bare.** No explicit values, no gaps, no
   bit flags.
 - **`String()` is an index into a slice literal ordered to match the iota block** — never a
@@ -101,9 +104,9 @@ A value that arrives zeroed must land somewhere harmless, so position zero is a 
 whichever constant happened to be written first.
 
 Which of the two an enum picks depends on whether "unset" is a real state. `Category`,
-`OperatingSystem`, `ReleaseChannel` and `SemanticDocumentType` all need to represent
-*not classified yet*, so they open with `Unknown`. `Environment` and `JournalMode` never have
-an absent value — every process runs in some environment and every database opens in some
+`MaskingCategory`, `OperatingSystem`, `ReleaseChannel` and `SemanticDocumentType` all need to
+represent *not classified yet*, so they open with `Unknown`. `Environment` and `JournalMode` never
+have an absent value — every process runs in some environment and every database opens in some
 journal mode — so their index zero is a real member.
 
 **`Parse` returns the safe default on failure, which is not always the zero value.** Where a
@@ -118,8 +121,8 @@ convention documented in [`utils`](../utils/README.md).
 
 ## The persistence contract
 
-This is the invariant that makes the rest of the convention load-bearing. Enums under `enums/`
-back seeded reference tables:
+This is the invariant that makes the rest of the convention load-bearing. Most enums under
+`enums/` back seeded reference tables:
 
 ```mermaid
 flowchart LR
@@ -138,10 +141,15 @@ flowchart LR
   `int64(documentType)` cast and no lookup. For
   [`application_categories`](../db/seeds/application_categories/000001_initial_application_categories.up.sql)
   it is the unique `category_id` natural key.
-- **The integer is always a column; the code and label are columns where the table has them.**
-  Only `application_categories` carries all three. `semantic_document_types` is `(id, code)`,
-  `release_channels` is `(id, label)`, and `operating_systems` is `(id, code, label)` — but its
-  `code` holds a `GOOS` token rather than `String()`'s output.
+- **One enum persists its code instead.** `enums_masking_category` has no seeded table:
+  `masked_values.masking_category` stores `String()` and the read parses it back, the way
+  `foreground_process_metadata.title_source` does for a package-owned enum. Its iota positions
+  never reach a column, but the const block stays append-only like the rest — the codes are what
+  is frozen.
+- **In a seeded table the integer is always a column; the code and label are columns where the
+  table has them.** Only `application_categories` carries all three. `semantic_document_types` is
+  `(id, code)`, `release_channels` is `(id, label)`, and `operating_systems` is `(id, code, label)`
+  — but its `code` holds a `GOOS` token rather than `String()`'s output.
 - **The order is frozen: append only.** Never reorder, delete or renumber a member. Every
   existing row is keyed on the position a constant holds today, and the seeds re-assert those ids
   on every startup. Where the sentinel is a real classification it is seeded and where it means
@@ -150,7 +158,9 @@ flowchart LR
 - **`Parse` must be a total inverse of `String()` for any enum read back out of the database.**
   `enums_categories` carries the only doc comment in the tree, and it says exactly this. The
   consequence is that its `Parse` accepts `"unknown"` — a sentinel that could not round-trip
-  would make every read of an unclassified row an error.
+  would make every read of an unclassified row an error. `enums_masking_category` is read back too
+  but never stores its sentinel, so its `Parse` rejects `"unknown"`: the same choice `title_source`
+  makes by storing `NULL` rather than the code.
 - **`Parse` accepts the vocabulary of whatever supplies the value**, which is not always the
   vocabulary `String()` emits. `enums_operating_system.Parse` takes `runtime.GOOS` tokens
   because that is its only input; `enums_journal_mode.Parse` takes SQLite pragma names.
@@ -207,24 +217,27 @@ list.
    with the sentinel or the safe default in position zero.
 2. Write `String()` as a slice-literal index in iota order, and `Parse` with no `default:`
    clause, closing on the safe default and `fmt.Errorf("unrecognized <thing>: %s", s)`.
-3. If the enum is persisted, add its schema table and a seed under [`db/seeds/`](../db/seeds)
-   whose ids match the const block. Make `Parse` total over the seeded codes if anything reads
-   them back.
+3. If the enum is persisted as a row id, add its schema table and a seed under
+   [`db/seeds/`](../db/seeds) whose ids match the const block. If it is persisted as a code in an
+   ordinary column there is no table — just make `Parse` total over every code that column can
+   hold.
 4. Alias the import at every call site.
 
 ## Cross-cutting design themes
 
 - **The integer is the identity; the string is a rendering.** The value that persists, joins
-  and crosses the wire is the iota index. `String()` and `Label()` describe it for a column or
-  a human — neither is the enum's identity, which is why the type is always `int`.
-- **Ordering is schema, not style.** The const block is mirrored by the `String()` slice and by
-  a seeded table of ids. Reordering it is a data migration, so members are only ever appended.
+  and crosses the wire is the iota index — `enums_masking_category` is the one that stores its code
+  instead. `String()` and `Label()` describe it for a column or a human — neither is the enum's
+  identity, which is why the type is always `int`.
+- **Ordering is schema, not style.** The const block is mirrored by the `String()` slice and,
+  where the enum is seeded, by a table of ids. Reordering it is a data migration, so members are
+  only ever appended.
 - **`Parse` is the single door in.** Every external string — an env var, a `GOOS` token, a
   column read back from SQLite, a third-party taxonomy — becomes an enum through a `Parse*`
   function that trims, lowercases and validates. Nothing else constructs one from text.
 - **The safe default is a per-enum decision.** What `Parse` hands back on failure is chosen for
   the domain, not inherited from Go's zero value, and the error always comes back with it.
-- **Hand-written and dependency-free.** Six files, two imports between them, no generator step
+- **Hand-written and dependency-free.** Seven files, two imports between them, no generator step
   and nothing to regenerate — the cost of an enum staying this small is that every conversion
   is written out where it happens.
 - **Narrow on purpose.** One interface, and domain predicates only where the rule is genuinely

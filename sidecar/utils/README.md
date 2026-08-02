@@ -20,6 +20,7 @@ One helper family per file, and the file name is the concept.
 | --- | --- | --- |
 | `Coalesce` | [`coalesce.go`](coalesce.go) | Dereference a pointer, or fall back to a value |
 | `ZeroNil` | [`zero_nil.go`](zero_nil.go) | Inverse of `Coalesce` — collapse a zero value to `nil` |
+| `Blank` | [`blank.go`](blank.go) | Inverse of `ZeroNil` — erase an optional's value, keep its presence |
 | `IsZero` | [`or.go`](or.go) | Equality against the zero value of `T` |
 | `IsEmptyString` | [`or.go`](or.go) | Blank-or-absent test over `string` and `*string` alike |
 | `Or` | [`or.go`](or.go) | First item matching a predicate, as a pointer |
@@ -36,22 +37,28 @@ One helper family per file, and the file name is the concept.
 The three marked *no call sites* compile and are exercised by nothing — treat them as
 unverified rather than merely spare.
 
-## Nil & zero values (`coalesce.go`, `zero_nil.go`, `or.go`)
+## Nil & zero values (`coalesce.go`, `zero_nil.go`, `blank.go`, `or.go`)
 
 ```go
 func Coalesce[T any](x *T, fallback T) T          // *x, or fallback when x is nil
 func ZeroNil[T comparable](v T) *T                // &v, or nil when v is the zero value
+func Blank[T any](x *T) *T                        // nil when x is nil, else a pointer to the zero value
 func IsZero[T comparable](x T) bool
 func IsEmptyString[T string | *string](s T) bool
 func Or[T any](predicate func(x T) bool, items ...T) *T
 ```
 
-These five are the vocabulary behind the sidecar's *nil means absent, zero means empty*
+These six are the vocabulary behind the sidecar's *nil means absent, zero means empty*
 convention. `Coalesce` reads an optional field with a default; `ZeroNil` goes the other way,
 turning a value back into an optional one on the way to storage or the wire. `IsEmptyString`
 accepts a `string` or a `*string` and answers one question for both — a `nil` pointer, an empty
 string and `"   "` are all **empty**, since it trims before testing. `Or` returns a **pointer to
 a copy** of the matched item, not into the argument slice.
+
+`Blank` splits the two axes `ZeroNil` collapses: it discards *what* an optional held while
+preserving *whether* it held anything. That is what
+[`ForegroundProcess.Mask`](../components/timeline/README.md) needs to redact a field without
+turning a recorded-but-redacted value into an absent one.
 
 > **Note:** `ZeroNil` is not a strict inverse of `Coalesce`. It cannot distinguish "absent"
 > from "legitimately zero" — both become `nil`. That collapse is deliberate and load-bearing:

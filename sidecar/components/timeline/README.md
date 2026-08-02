@@ -15,7 +15,7 @@ Everything is expressed over one domain type —
 | Package | Path | Role |
 | --- | --- | --- |
 | `timeline` | this dir | Command/query surface over the event store (ingest, streams, export, in-memory shaping) |
-| `models` | [`models/`](models/) | Domain types (`ForegroundProcess`, `Enrichments`, `UsageSeq`, `TitleSource`, `Reason`) and the projection accessors (`Title`, `SourceName`, `ApplicationKey`, `Span`, `ReasonFor`) |
+| `models` | [`models/`](models/) | Domain types (`ForegroundProcess`, `Enrichments`, `UsageSeq`, `TitleSource`, `Reason`) and the projection accessors (`Title`, `SourceName`, `ApplicationKey`, `Span`, `ReasonFor`, `Mask`) |
 | `converters` | [`converters/`](converters/) | [goverter](https://github.com/jmattheis/goverter)-generated adapters: DB row → model, and `monitor.ForegroundProcess` → model |
 | `application_graph` | [`application_graph/`](application_graph/) | Directed app-switch graph → focus scores, entry suggestions, productivity metrics |
 
@@ -161,6 +161,13 @@ re-enrichment, so exporting it would bake mutable derived state into the file.
 carry the semantics: `IsIdle()`, `IsBrowser()` (non-zero browser enrichment), `IsEqual()` (the
 change key `CollectTimeline` folds on), `Span()`, and `ReasonFor()`. `TitleSource` and `Reason`
 are package-owned enums and stay here rather than under [`enums/`](../../enums/README.md).
+
+`Mask()` is the egress transform: it swaps the identifying fields for stable tokens and blanks the
+rest, against a `MaskingTables` the [`masking`](../masking/README.md) component fills and reads. It
+stays here — pure, with no database of its own — because the field map belongs beside the type it
+describes, while the enum scoping those tokens is cross-cutting and lives in
+[`enums_masking_category`](../../enums/README.md). Note that `Mask` zeroes exactly the two fields
+`IsEqual` compares, so a masked process must never reach `CollectTimeline`.
 
 Boundary mapping is generated (`//go:generate go tool goverter gen .`) across six converters —
 the monitor type, both timeline row endpoints, both backlog rows, and the category merge. Two
