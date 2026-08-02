@@ -18,7 +18,8 @@ func TestQueryGetApplicationCategories_ReportsTheLinkedCategory(t *testing.T) {
 
 	applicationID := seedApplication(ctx, t, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
 
-	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: []int64{applicationID}}.Exec(ctx, svcs)
+	query := QueryGetApplicationCategories{ApplicationIDs: []int64{applicationID}}
+	byApplication, err := query.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[int64][]enumscategories.Category{
@@ -38,9 +39,8 @@ func TestQueryGetApplicationCategories_ReportsEveryApplicationInOneRead(t *testi
 	slack := seedApplication(ctx, t, svcs, "com.slack", enumscategories.CategoryCommunication)
 	figma := seedApplication(ctx, t, svcs, "com.figma", enumscategories.CategoryGraphicsDesign)
 
-	byApplication, err := QueryGetApplicationCategories{
-		ApplicationIDs: []int64{ghostty, slack, figma},
-	}.Exec(ctx, svcs)
+	query := QueryGetApplicationCategories{ApplicationIDs: []int64{ghostty, slack, figma}}
+	byApplication, err := query.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Equal(t, map[int64][]enumscategories.Category{
@@ -62,9 +62,8 @@ func TestQueryGetApplicationCategories_OmitsAnUnclassifiedApplication(t *testing
 	classified := seedApplication(ctx, t, svcs, "com.ghostty", enumscategories.CategoryDevelopment)
 	unclassified := seedApplication(ctx, t, svcs, "com.unclassified")
 
-	byApplication, err := QueryGetApplicationCategories{
-		ApplicationIDs: []int64{classified, unclassified},
-	}.Exec(ctx, svcs)
+	query := QueryGetApplicationCategories{ApplicationIDs: []int64{classified, unclassified}}
+	byApplication, err := query.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.NotContains(t, byApplication, unclassified)
@@ -78,7 +77,8 @@ func TestQueryGetApplicationCategories_OmitsAnUnknownApplication(t *testing.T) {
 	ctx := context.Background()
 	svcs := newTestServices(ctx, t)
 
-	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: []int64{404}}.Exec(ctx, svcs)
+	query := QueryGetApplicationCategories{ApplicationIDs: []int64{404}}
+	byApplication, err := query.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Empty(t, byApplication)
@@ -91,7 +91,8 @@ func TestQueryGetApplicationCategories_ReadsNothingForAnEmptySet(t *testing.T) {
 	ctx := context.Background()
 	svcs := newTestServices(ctx, t)
 
-	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: nil}.Exec(ctx, svcs)
+	query := QueryGetApplicationCategories{ApplicationIDs: nil}
+	byApplication, err := query.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Empty(t, byApplication)
@@ -114,7 +115,8 @@ func TestQueryGetApplicationCategories_ResolvesEveryCategoryInTheTaxonomy(t *tes
 		applicationIDs = append(applicationIDs, applicationID)
 	}
 
-	byApplication, err := QueryGetApplicationCategories{ApplicationIDs: applicationIDs}.Exec(ctx, svcs)
+	query := QueryGetApplicationCategories{ApplicationIDs: applicationIDs}
+	byApplication, err := query.Exec(ctx, svcs)
 	require.NoError(t, err)
 
 	assert.Equal(t, expected, byApplication)

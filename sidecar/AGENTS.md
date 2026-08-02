@@ -70,6 +70,14 @@ and unexported cursor state.
 
 - `Command*` writes and returns `error`; `Query*` reads and returns a value from `Exec` or a
   `utils.StreamFn` from `Stream`.
+- **Never chain the call onto the literal** — a method hung off the closing brace buries the call
+  among the fields. Bind the struct, then invoke on the next line. Enforced by ruleguard.
+
+  ```go
+  query := QueryGetSecret{Namespace: namespace, Key: key}
+  secret, err := query.Exec(ctx, svcs)
+  ```
+
 - Dependencies come from `*services.Services[any, any]` inside the method, never through a
   constructor. Infrastructure packages expose a `Register*` + `*FromServices` pair.
 - `context.Context` is the first parameter and is threaded through; long-running loops exit on
@@ -174,6 +182,7 @@ carries a comment saying why, and so must any you add. The ones that change how 
 | `ireturn` | Accept interfaces, return concrete types; returning a type parameter is allowed. |
 | `funcorder` | A constructor sits directly after its type. |
 | `reassign` | Package variables are never reassigned. |
+| `gocritic` ruleguard | House rules an off-the-shelf linter cannot express, in [`.golangci/rules.go`](.golangci/rules.go) — currently the ban on chaining a call onto a struct literal. |
 
 `ctx` is exempt from unused-parameter checks — it stays first and threaded through even where a body
 does not read it. Test files are exempt from the globals, error-check and length linters.
@@ -194,12 +203,16 @@ group, no license headers.
 - `<operation>_test.go` holds that operation's tests; `<package>_test.go` holds shared fixtures and
   **zero test functions**. Build-tag pairs use `_on`/`_off` suffixes.
 - Names read as sentences: `TestQueryGetTimeline_HasNoClosingBound`. Mostly one scenario per test.
+- **The name is the documentation** — a test needing a paragraph above it to say what it covers is
+  usually named wrong, or testing two things.
 
 ## Comments and READMEs
 
-- **Comments are for important things only.** Do not restate a signature, and do not add ceremonial
-  package comments. Write one for non-obvious rationale, a load-bearing invariant, an edge case, or
-  regression provenance worth preserving.
+- **Comments are for important things only, and most declarations have none — that is the target,
+  not a gap to fill.** Do not restate a signature, narrate a test its name already describes, or add
+  ceremonial package comments. Write one for non-obvious rationale, a load-bearing invariant, an edge
+  case, or regression provenance worth preserving. Where a declaration seems to need explaining,
+  check first whether a better name removes the need.
 - **Leave existing comments alone unless they are inaccurate.** If your change makes one wrong, fix
   it in the same edit — but do not reword a comment that is merely phrased differently from how you
   would have phrased it.

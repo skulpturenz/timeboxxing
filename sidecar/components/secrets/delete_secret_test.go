@@ -9,36 +9,32 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// The base case: after a delete the key reads back absent.
 func TestCommandDeleteSecret_RemovesTheStoredSecret(t *testing.T) {
 	t.Parallel()
 
 	useMockKeyring(t)
 	seedSecret(t, "com.timeboxxing.remove", "api-token", "s3cret")
 
-	err := CommandDeleteSecret{Namespace: "com.timeboxxing.remove", Key: "api-token"}.Exec(t.Context(), services.New())
-	require.NoError(t, err)
+	command := CommandDeleteSecret{Namespace: "com.timeboxxing.remove", Key: "api-token"}
+	require.NoError(t, command.Exec(t.Context(), services.New()))
 
-	_, err = storedSecret(t, "com.timeboxxing.remove", "api-token")
-	assert.ErrorIs(t, err, keyring.ErrNotFound, "the secret is gone from the keyring itself")
+	_, err := storedSecret(t, "com.timeboxxing.remove", "api-token")
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
 }
 
-// Delete states a postcondition — the key is not set — which a key that was never set already
-// satisfies, so a retried or duplicated delete succeeds. The original asserted on the ErrNotFound
-// the keyring answers here, which panicked under -tags assert.
+// Delete states a postcondition a key that was never set already satisfies. The original asserted on
+// the ErrNotFound the keyring answers here, which panicked under -tags assert.
 func TestCommandDeleteSecret_IsIdempotentForAMissingKey(t *testing.T) {
 	t.Parallel()
 
 	useMockKeyring(t)
 
-	err := CommandDeleteSecret{Namespace: "com.timeboxxing.idem", Key: "never-set"}.Exec(t.Context(), services.New())
-	require.NoError(t, err, "deleting an absent key is not a failure")
+	command := CommandDeleteSecret{Namespace: "com.timeboxxing.idem", Key: "never-set"}
+	require.NoError(t, command.Exec(t.Context(), services.New()))
 
-	err = CommandDeleteSecret{Namespace: "com.timeboxxing.idem", Key: "never-set"}.Exec(t.Context(), services.New())
-	assert.NoError(t, err, "and neither is deleting it twice")
+	assert.NoError(t, command.Exec(t.Context(), services.New()), "deleting twice is not a failure either")
 }
 
-// Delete is scoped to one namespace/key pair, not to the namespace.
 func TestCommandDeleteSecret_LeavesOtherKeysAlone(t *testing.T) {
 	t.Parallel()
 
@@ -46,8 +42,8 @@ func TestCommandDeleteSecret_LeavesOtherKeysAlone(t *testing.T) {
 	seedSecret(t, "com.timeboxxing.scope", "api-token", "s3cret")
 	seedSecret(t, "com.timeboxxing.scope", "refresh-token", "keep-me")
 
-	err := CommandDeleteSecret{Namespace: "com.timeboxxing.scope", Key: "api-token"}.Exec(t.Context(), services.New())
-	require.NoError(t, err)
+	command := CommandDeleteSecret{Namespace: "com.timeboxxing.scope", Key: "api-token"}
+	require.NoError(t, command.Exec(t.Context(), services.New()))
 
 	stored, err := storedSecret(t, "com.timeboxxing.scope", "refresh-token")
 	require.NoError(t, err)
@@ -55,14 +51,13 @@ func TestCommandDeleteSecret_LeavesOtherKeysAlone(t *testing.T) {
 	assert.Equal(t, "keep-me", stored)
 }
 
-// A keyring that refuses the call is a real error, distinct from a key that is simply not there.
 func TestCommandDeleteSecret_SurfacesABackendFailure(t *testing.T) {
 	t.Parallel()
 
 	useFailingKeyring(t, errKeyringUnavailable)
 
-	err := CommandDeleteSecret{Namespace: "com.timeboxxing.fail", Key: "api-token"}.Exec(t.Context(), services.New())
-	require.Error(t, err)
+	command := CommandDeleteSecret{Namespace: "com.timeboxxing.fail", Key: "api-token"}
+	err := command.Exec(t.Context(), services.New())
 
 	assert.ErrorIs(t, err, errKeyringUnavailable)
 }
