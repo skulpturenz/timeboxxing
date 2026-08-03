@@ -14,6 +14,10 @@ var (
 		WithMembers(enumsenv.Production.String(), enumsenv.Development.String(), enumsenv.Test.String(), enumsenv.Local.String()).
 		WithDefault(enumsenv.Development.String()).
 		Required()
+	LAUNCH_TOKEN = ferrite.String("SIDECAR_LAUNCH_SECRET", "Launch secret").
+			WithSensitiveContent().
+			WithDefault("").
+			Required()
 	SENTRY_DSN = ferrite.String("SIDECAR_SENTRY_DSN", "the Sentry DSN used for sidecar error, trace, and log telemetry").
 			WithDefault(PlaceholderSidecarSentryDSN).
 			Required()
