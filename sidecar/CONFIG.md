@@ -4,11 +4,11 @@ This document describes the environment variables used by `sidecar`.
 
 | Name                                     | Usage                                      | Description                                                                      |
 | ---------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------- |
-| [`GO_ENV`]                               | defaults to `production`                   | the runtime environment used for telemetry                                       |
+| [`GO_ENV`]                               | defaults to `development`                  | Golang environment                                                               |
 | [`SIDECAR_DATABASE_DSN`]                 | defaults to `test.db`                      | the database data source name                                                    |
-| [`SIDECAR_DATABASE_ENGINE`]              | defaults to `sqlite`                       | the database engine used by the sidecar                                          |
 | [`SIDECAR_DATABASE_KEY`]                 | optional                                   | the hex-encoded SQLCipher key used to encrypt the sqlite database at rest        |
 | [`SIDECAR_GRPC_LISTEN_ADDRESS`]          | defaults to `0.0.0.0:50051`                | the host and port that the gRPC server listens on                                |
+| [`SIDECAR_LAUNCH_SECRET`]                | defaults to `''`                           | Launch secret                                                                    |
 | [`SIDECAR_OLLAMA_API_KEY`]               | optional                                   | the hosted Ollama bearer token used for semantic search and RAG                  |
 | [`SIDECAR_OPENROUTER_API_KEY`]           | optional                                   | the OpenRouter API key used for semantic search and RAG                          |
 | [`SIDECAR_SENTRY_DSN`]                   | defaults to `https://public@example.com/2` | the Sentry DSN used for sidecar error, trace, and log telemetry                  |
@@ -20,14 +20,17 @@ This document describes the environment variables used by `sidecar`.
 
 ## `GO_ENV`
 
-> the runtime environment used for telemetry
+> Golang environment
 
 The `GO_ENV` variable **MAY** be left undefined, in which case the default value
-of `production` is used. Otherwise, the value must be production, development,
-test, or local.
+of `development` is used. Otherwise, the value **MUST** be one of the values
+shown in the examples below.
 
 ```bash
-export GO_ENV=production # (default)
+export GO_ENV=production
+export GO_ENV=development # (default)
+export GO_ENV=test
+export GO_ENV=local
 ```
 
 ## `SIDECAR_DATABASE_DSN`
@@ -39,17 +42,6 @@ default value of `test.db` is used.
 
 ```bash
 export SIDECAR_DATABASE_DSN=test.db # (default)
-```
-
-## `SIDECAR_DATABASE_ENGINE`
-
-> the database engine used by the sidecar
-
-The `SIDECAR_DATABASE_ENGINE` variable **MAY** be left undefined, in which case
-the default value of `sqlite` is used. Otherwise, the value must be sqlite.
-
-```bash
-export SIDECAR_DATABASE_ENGINE=sqlite # (default)
 ```
 
 ## `SIDECAR_DATABASE_KEY`
@@ -83,6 +75,15 @@ IP address and `<port>` is a numeric port number or an IANA service name. IPv6
 addresses must be enclosed in square brackets, e.g. `[::1]:8080`.
 
 </details>
+
+## `SIDECAR_LAUNCH_SECRET`
+
+> Launch secret
+
+The `SIDECAR_LAUNCH_SECRET` variable **MAY** be left undefined, in which case a
+default value is used.
+
+⚠️ This variable is **sensitive**; its value may contain private information.
 
 ## `SIDECAR_OLLAMA_API_KEY`
 
@@ -137,9 +138,9 @@ export SIDECAR_SQLITE_VECTOR_EXTENSION_PATH=foo # (non-normative)
 [ferrite]: https://github.com/dogmatiq/ferrite
 [`go_env`]: #go_env
 [`sidecar_database_dsn`]: #sidecar_database_dsn
-[`sidecar_database_engine`]: #sidecar_database_engine
 [`sidecar_database_key`]: #sidecar_database_key
 [`sidecar_grpc_listen_address`]: #sidecar_grpc_listen_address
+[`sidecar_launch_secret`]: #sidecar_launch_secret
 [`sidecar_ollama_api_key`]: #sidecar_ollama_api_key
 [`sidecar_openrouter_api_key`]: #sidecar_openrouter_api_key
 [`sidecar_sentry_dsn`]: #sidecar_sentry_dsn
