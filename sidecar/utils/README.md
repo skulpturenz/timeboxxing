@@ -31,6 +31,7 @@ One helper family per file, and the file name is the concept.
 | `TopN` | [`top_n.go`](top_n.go) | Filter a slice down to its top percentile |
 | `ParallelMap` | [`parallel_map.go`](parallel_map.go) | `ParallelMapWithClone` with a no-op clone |
 | `FanOutChan` | [`fan_out_chan.go`](fan_out_chan.go) | Lossy broadcast of one channel to many |
+| `DurationChan` | [`duration_chan.go`](duration_chan.go) | Trailing debounce — emit an item only once it has survived `duration` unsuperseded |
 | `resultTopN.Distinct` | [`top_n.go`](top_n.go) | The top set with duplicates removed |
 
 The three marked *no call sites* compile and are exercised by nothing — treat them as
@@ -130,7 +131,7 @@ if err := ctx.Err(); err != nil {
 It neither closes nor drains the channel it is given — breaking out of the loop simply abandons
 the remainder, so cancel the producer's context if you stop early.
 
-## Concurrency combinators (`parallel_map.go`, `fan_out_chan.go`)
+## Concurrency combinators (`parallel_map.go`, `fan_out_chan.go`, `duration_chan.go`)
 
 ```go
 func ParallelMapWithClone[T any, U any](
@@ -139,6 +140,13 @@ func ParallelMapWithClone[T any, U any](
 ) func(context.Context, T) ([]U, bool)
 
 func FanOutChan[T any](ctx context.Context, inChan <-chan T, outChans ...chan<- T)
+
+func DurationChan[T any](
+	ctx context.Context,
+	ticker <-chan time.Time,
+	duration time.Duration,
+	inChan <-chan T,
+) <-chan T
 ```
 
 `ParallelMapWithClone` builds a reusable function that runs **every** `fn` concurrently against
@@ -154,6 +162,41 @@ containing a map — see [Enrichment](../monitor/README.md#enrichment-enrichment
 > One stalled consumer therefore slows nobody down — it just misses items. It returns when `ctx`
 > is cancelled or `inChan` closes, and does **not** close the output channels; ownership of those
 > stays with the caller.
+
+`DurationChan` is a **trailing-edge debounce**: it holds at most one item and forwards it only
+once `duration` has passed without a replacement arriving. Anything superseded inside that window
+never reaches the output. It exists for the usage timeline, which draws sessions at one-minute
+granularity next to a live *Now* marker — a sub-minute session still claims a full minute of block
+height, with *Now* sitting inside it, and it cannot simply be removed because it is a now-it's-here
+now-it's-not affair. Debouncing the feed means such a session is never published in the first place.
+
+```mermaid
+flowchart LR
+    I[inChan] -->|item| P[(pending: latest only)]
+    I -.->|new item supersedes| D((dropped))
+    T[ticker] -->|tick t| G{t - received >= duration?}
+    P --> G
+    G -->|yes| O[blocking send to result]
+    G -->|no| P
+```
+
+- **The ticker is the clock, and the caller owns it.** Nothing is ever emitted between ticks, so
+  the real hold time is `duration` rounded up to the next tick; a ticker that never fires means an
+  output that never produces. `DurationChan` neither creates nor stops it.
+- **Age is measured against the tick's own timestamp**, not the moment the tick was received —
+  `t.Sub(received)`, where `received` is `time.Now()` at arrival. Real `time.Ticker` values behave;
+  a hand-fed channel in a test must send plausible times or the comparison is meaningless.
+- **One slot, latest wins.** Memory is flat no matter how fast the producer runs, and the output
+  send is **blocking** — a slow consumer stalls the loop rather than growing a backlog, but no
+  item is dropped for slowness alone, only for being superseded.
+- **Draining close.** When `inChan` closes it is set to `nil` so the closed case stops spinning in
+  the `select`; a still-pending item is then flushed on the tick where it comes of age, and the
+  goroutine returns on that same tick. Termination therefore needs **at least one tick after the
+  close** — an idle ticker leaves it alive until `ctx` is cancelled. The output channel is always
+  closed on return.
+
+> **No call sites yet.** `DurationChan` compiles and is exercised by nothing — treat its contract
+> as unverified rather than merely spare.
 
 ## Top-N filter (`top_n.go`)
 
@@ -190,5 +233,8 @@ that set. Order and multiplicity of the input are preserved — it is a filter, 
 - **Deterministic output from concurrent work.** `ParallelMap*` re-sorts into declaration
   order before returning, so callers get parallelism without inheriting its nondeterminism.
 - **Lossiness is stated, never silent.** Where a helper drops data — `FanOutChan`'s skipped
-  sends, `Stream`'s discarded final page — it is a documented contract, and in `FanOutChan`'s
-  case a logged one.
+  sends, `Stream`'s discarded final page, `DurationChan`'s superseded items — it is a documented
+  contract, and in `FanOutChan`'s case a logged one.
+- **The clock is injected, never taken.** `DurationChan` receives a tick channel rather than
+  starting a `time.Ticker` of its own, keeping the package free of anything with a lifecycle to
+  shut down — and leaving the caller free to drive it from a fake clock.
