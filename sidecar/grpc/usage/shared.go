@@ -2,6 +2,7 @@ package usage
 
 import (
 	"strings"
+	"time"
 
 	timelinemodels "github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
 	usagev1 "github.com/skulpturenz/timeboxxing/sidecar/gen/usage/v1"
@@ -13,6 +14,12 @@ import (
 
 // timelinePageSize is how many entries each keyset page of a timeline read carries.
 const timelinePageSize = 256
+
+// minEntryDuration is the shortest stretch either usage surface reports. A shorter one still claims a
+// full minute of block height on the timeline, with the live Now marker sitting inside it. Both
+// surfaces spell the floor through this constant — the watch in Go, the range read in SQL — so a
+// refresh cannot resurrect what the live stream suppressed.
+const minEntryDuration = time.Minute
 
 func windowFromRequest(req *usagev1.GetUsageEventsRequest) (utils.TimeSpan, error) {
 	window := utils.TimeSpan{}

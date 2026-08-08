@@ -16,11 +16,14 @@ func (s *Server) GetUsageEvents(ctx context.Context, req *usagev1.GetUsageEvents
 		return nil, err
 	}
 
-	// the minimum-duration floor stays 0: a reported stretch runs from one observation to the next, so
-	// a filtered-out entry would silently hand its time to its neighbour
+	// the floor matches the one WatchUsageEvents publishes through: a reported stretch runs from one
+	// observation to the next, so dropping a sub-minute entry does hand its time to its neighbour —
+	// but the two surfaces feed the same timeline, and leaving this at 0 would have a refresh
+	// resurrect every stretch the live stream suppressed
 	query := &componentTimeline.QueryGetTimelineRange{
-		StartedAt: window[0],
-		EndedAt:   window[1],
+		StartedAt:          window[0],
+		EndedAt:            window[1],
+		MinDurationSeconds: int64(minEntryDuration.Seconds()),
 	}
 	// the stream ends of its own accord once the window is drained, so the only way this comes back
 	// short is a cancelled ctx — which is an error, not an empty window

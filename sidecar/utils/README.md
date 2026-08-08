@@ -1,7 +1,8 @@
 # `utils` — generic helpers shared across the sidecar
 
 The `utils` package is the sidecar's shared vocabulary of small generic helpers: nil/zero
-handling, time spans, paged streaming, and a few concurrency combinators. It is **flat and
+handling, time spans, paged streaming, and a few concurrency combinators and channel
+pipeline pieces. It is **flat and
 stateless** — no package-level state, no `init`, nothing that owns a resource or needs
 shutting down — and depends on nothing beyond the standard library and
 [`negrel/assert`](https://github.com/negrel/assert).
@@ -31,10 +32,22 @@ One helper family per file, and the file name is the concept.
 | `TopN` | [`top_n.go`](top_n.go) | Filter a slice down to its top percentile |
 | `ParallelMap` | [`parallel_map.go`](parallel_map.go) | `ParallelMapWithClone` with a no-op clone |
 | `FanOutChan` | [`fan_out_chan.go`](fan_out_chan.go) | Lossy broadcast of one channel to many |
+| `TrailingDebounceChan` | [`trailing_debounce_chan.go`](trailing_debounce_chan.go) | Hold the latest item and release it on the next tick |
+| `DebouncedItem` | [`trailing_debounce_chan.go`](trailing_debounce_chan.go) | What a debounced channel carries — the value and when it arrived |
+| `Stage` | [`pipeline_chan.go`](pipeline_chan.go) | The channel-transform contract `PipelineChan` composes |
+| `PipelineChan` | [`pipeline_chan.go`](pipeline_chan.go) | Chain channel stages and re-type the tail |
+| `FilterChan` | [`filter_chan.go`](filter_chan.go) | Stage that drops items failing a predicate |
+| `MapChan` | [`map_chan.go`](map_chan.go) | Stage that transforms each item |
 | `resultTopN.Distinct` | [`top_n.go`](top_n.go) | The top set with duplicates removed |
 
-The three marked *no call sites* compile and are exercised by nothing — treat them as
-unverified rather than merely spare.
+Three of those entries have **no call site anywhere in the sidecar**: `ParallelMap`, `FanOutChan` and
+`resultTopN.Distinct`. The six channel-pipeline rows from `TrailingDebounceChan` to `MapChan` have
+exactly one between them — [`WatchUsageEvents`](../grpc/usage/watch_usage_events.go), which debounces
+the timeline feed onto a one-minute ticker and publishes only the stretches that ran for at least that
+long. Every contract described below is pinned by this package's
+own tests, one `<helper>_test.go` per file, so the rules here are enforced rather than merely asserted.
+Those tests cover behaviour under a satisfied contract only — breaking a precondition (a non-positive
+`pageSize`, a pipeline with no stages, a percentile outside 0–100) stays deliberately untested.
 
 ## Nil & zero values (`coalesce.go`, `zero_nil.go`, `or.go`)
 
@@ -155,6 +168,139 @@ containing a map — see [Enrichment](../monitor/README.md#enrichment-enrichment
 > is cancelled or `inChan` closes, and does **not** close the output channels; ownership of those
 > stays with the caller.
 
+## Channel pipelines (`trailing_debounce_chan.go`, `pipeline_chan.go`, `filter_chan.go`, `map_chan.go`)
+
+```go
+type DebouncedItem[T any] struct {
+	Value     T
+	Timestamp time.Time
+}
+
+func TrailingDebounceChan[T any](
+	ctx context.Context,
+	ticker <-chan time.Time,
+	inChan <-chan T,
+) <-chan any
+
+type Stage = func(inChan <-chan any) <-chan any
+
+func PipelineChan[T any](source <-chan any, pipeline ...Stage) <-chan T
+func FilterChan[T any](filter func(T) bool) func(inChan <-chan any) <-chan any
+func MapChan[T any, U any](mapper func(T) U) func(inChan <-chan any) <-chan any
+```
+
+A source, a way to chain transforms onto it, and two transforms. Every one of them speaks `any` on
+the wire — that is what lets them compose without an adapter — while the closure you hand the two
+transforms is typed normally; see *Composing stages* below. `TrailingDebounceChan` is the only one of
+the four that takes a `ctx`, and that is the whole cancellation story for the family — see
+*Cancellation enters at the source* below.
+
+### Trailing debounce
+
+`TrailingDebounceChan` holds at most one item and releases it on the **next tick**. Anything that
+arrives before that tick supersedes what is waiting and the superseded item never reaches the output.
+There is no separate duration to configure: the ticker's period *is* the debounce window.
+
+It exists for the usage timeline, which draws sessions at one-minute granularity next to a live *Now*
+marker — a sub-minute session still claims a full minute of block height, with *Now* sitting inside
+it, and it cannot simply be removed because it is a now-it's-here now-it's-not affair. Debouncing the
+feed on a one-minute ticker means such a session is never published in the first place.
+
+```mermaid
+flowchart LR
+    I[inChan] -->|item| P[(pending: latest only)]
+    I -.->|new item supersedes| D((dropped))
+    T[ticker] -->|tick| G{anything pending?}
+    P --> G
+    G -->|yes| O["blocking send of DebouncedItem, erased to any"]
+    G -->|no| W[wait for the next tick]
+```
+
+- **The ticker is the clock, and the caller owns it.** Nothing is emitted between ticks, so the hold
+  time is anywhere from zero to one full tick depending on where in the period the item landed. A
+  ticker that never fires is an output that never produces. `TrailingDebounceChan` neither creates
+  nor stops it.
+- **The tick's value is ignored — it is a trigger, not a timestamp.** Nothing compares tick times, so
+  a test may hand-feed the channel whatever it likes, zero times included.
+- **The output is a `Stage` source, not a typed channel.** Every value sent is a `DebouncedItem[T]`,
+  but the channel is `<-chan any` so it drops straight into `PipelineChan` as its source. The first
+  stage asserts it back — `FilterChan(func(item DebouncedItem[T]) bool { … })` is the usual opener.
+- **`Timestamp` is arrival, not emission.** `DebouncedItem.Timestamp` is `time.Now()` from the moment
+  the surviving value came off `inChan`. That is the point of carrying it: by the time you read the
+  item, up to a full tick has passed, and the age you usually care about is the value's, not the
+  send's.
+- **One slot, latest wins.** Memory is flat no matter how fast the producer runs, and the output send
+  is **blocking** — a slow consumer stalls the loop rather than growing a backlog, but no item is
+  dropped for slowness alone, only for being superseded.
+- **Draining close.** When `inChan` closes it is set to `nil` so the closed case stops spinning in the
+  `select`; a still-pending item is flushed on the next tick and the goroutine returns on that same
+  tick. Termination therefore needs **at least one tick after the close** — an idle ticker leaves it
+  alive until `ctx` is cancelled. The output channel is always closed on return.
+
+### Composing stages
+
+`PipelineChan` wires a source through a chain of stages and hands back a channel typed at the far end:
+
+```mermaid
+flowchart LR
+    S["source: chan any"] --> A[stage 1]
+    A --> B[stage 2]
+    B --> N[stage n]
+    N --> X{{"v.(T)"}}
+    X --> R["result: chan T"]
+```
+
+```go
+ticker := time.NewTicker(time.Minute)
+defer ticker.Stop()
+
+published := utils.PipelineChan[models.UsageSeq](
+	utils.TrailingDebounceChan(ctx, ticker.C, live),
+	utils.FilterChan(func(item utils.DebouncedItem[models.UsageSeq]) bool {
+		return time.Since(item.Timestamp) >= time.Minute
+	}),
+	utils.MapChan(func(item utils.DebouncedItem[models.UsageSeq]) models.UsageSeq {
+		return item.Value
+	}),
+)
+```
+
+- **The middle of a pipeline is `any`, and that is the price of variadic stages.** Go cannot type a
+  heterogeneous variadic chain, so `Stage` is fixed at `<-chan any`, and `TrailingDebounceChan`,
+  `FilterChan` and `MapChan` all land on that shape — which is what lets the debounce feed the chain
+  directly rather than through an adapter goroutine. `PipelineChan[T]` restores the static type at
+  the tail and nowhere else.
+- **The assertion lives in the helper, not in your closure.** `FilterChan`/`MapChan` take a predicate
+  and a mapper over a real `T` and do the `item.(T)` themselves, so a stage body is ordinary typed
+  code — the erasure never reaches it. The cost is that the two are pipeline pieces and nothing else:
+  neither will accept a `<-chan int`, however typed the closure handed to it is.
+- **`Stage` is an alias, like `StreamFn`.** Not a defined type — so anything of that shape is already a
+  `Stage`, and `FilterChan`/`MapChan` drop into the variadic list without a conversion.
+- **At least one stage is required.** `assert.Positive` is the development tripwire; with assertions
+  compiled out an empty pipeline indexes past the end of an empty slice and **panics**. Pass a stage,
+  or do not reach for `PipelineChan` at all.
+- **Never write the type argument.** `T` and `U` are inferred from the predicate and mapper, so
+  `FilterChan[DebouncedItem[X]](…)` is not just noise — `infertypeargs` rejects it, and `task lint`
+  with it. Type the closure's parameter and let the type argument follow. Only `PipelineChan[T]` needs
+  an explicit argument, since nothing in its inputs mentions `T`.
+- **A wrong type panics, deliberately.** None of the assertions are checked — neither the tail's
+  `v.(T)` nor the `item.(T)` at the top of each stage. A stage fed anything but what its closure
+  declares is a programming error, and the panic is the contract rather than an oversight; the
+  `errcheck` suppression in [`pipeline_chan.go`](pipeline_chan.go) says as much. It also means a
+  mistyped stage fails at the item that reaches it, not where the chain was wired.
+- **Wired eagerly, run lazily.** `PipelineChan` builds the entire chain before it returns, so every
+  stage goroutine is live from the call. Each channel is unbuffered, so the slowest consumer sets the
+  pace for the whole chain — the same instinct as `Stream`.
+- **Cancellation enters at the source.** No stage takes a `ctx`. Every stage instead closes its output
+  when its input closes, so one close at the head cascades to the tail and unwinds every goroutine.
+  With `TrailingDebounceChan` at the head that makes `ctx` the off switch for the whole pipeline; with
+  a hand-rolled source, closing it is the caller's job and **nothing else will terminate the chain**.
+- **Abandoning the output leaks the chain.** The corollary: walk away from the result channel mid-flight
+  and every stage blocks forever on its send. Same caveat as `SeqChan` — close or cancel the source
+  rather than dropping the consumer.
+- **A stage constructor is reusable; the stage it returns is not.** `FilterChan(pred)` can be built once
+  and used in several pipelines, but each call of the returned function spawns its own goroutine.
+
 ## Top-N filter (`top_n.go`)
 
 ```go
@@ -185,10 +331,17 @@ that set. Order and multiplicity of the input are preserved — it is a filter, 
   "nil means absent, zero means empty" — the convention the persisted domain types are built
   on, kept in one place rather than re-derived at each boundary.
 - **Backpressure over buffering.** `Stream`'s channel is deliberately unbuffered so the
-  consumer's pace drives the fetcher. The same instinct as [`queue`](../queue/README.md)
-  keeping its backlog in SQLite: hold work where it is cheap, not in RAM.
+  consumer's pace drives the fetcher, and every pipeline stage is unbuffered for the same reason.
+  The same instinct as [`queue`](../queue/README.md) keeping its backlog in SQLite: hold work where
+  it is cheap, not in RAM.
 - **Deterministic output from concurrent work.** `ParallelMap*` re-sorts into declaration
   order before returning, so callers get parallelism without inheriting its nondeterminism.
 - **Lossiness is stated, never silent.** Where a helper drops data — `FanOutChan`'s skipped
-  sends, `Stream`'s discarded final page — it is a documented contract, and in `FanOutChan`'s
-  case a logged one.
+  sends, `Stream`'s discarded final page, `TrailingDebounceChan`'s superseded items — it is a
+  documented contract, and in `FanOutChan`'s case a logged one.
+- **The clock is injected, never taken.** `TrailingDebounceChan` receives a tick channel rather than
+  starting a `time.Ticker` of its own, keeping the package free of anything with a lifecycle to
+  shut down — and leaving the caller free to drive it from a fake clock.
+- **Type erasure is confined to the pipeline seam.** `any` appears only where Go cannot type a
+  variadic chain of stages, and every helper on that seam re-types immediately — each stage at its
+  head, `PipelineChan` at the tail. Everywhere else the package is generic to the edges.
