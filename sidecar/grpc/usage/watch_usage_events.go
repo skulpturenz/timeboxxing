@@ -2,6 +2,8 @@ package usage
 
 import (
 	"context"
+	"log/slog"
+	"time"
 
 	componentTimeline "github.com/skulpturenz/timeboxxing/sidecar/components/timeline"
 	timelinemodels "github.com/skulpturenz/timeboxxing/sidecar/components/timeline/models"
@@ -28,7 +30,20 @@ func (s *Server) WatchUsageEvents(req *usagev1.GetUsageEventsRequest, stream grp
 	query := &componentTimeline.QueryGetTimeline{StartedAt: &window[0]}
 
 	var previous *timelinemodels.UsageSeq
-	for entry := range utils.Stream(ctx, timelinePageSize, query.Stream(ctx, s.registry)) {
+	live := utils.Stream(ctx, timelinePageSize, query.Stream(ctx, s.registry))
+	ticker := time.NewTicker(time.Minute)
+	result := utils.PipelineChan[timelinemodels.UsageSeq](utils.TrailingDebounceChan(ctx, ticker.C, live),
+		utils.FilterChan(func(item utils.DebouncedItem[timelinemodels.UsageSeq]) bool {
+			slog.Info("filter", "timestamp", item.Timestamp) // TODO
+			return time.Since(item.Timestamp) >= time.Minute
+		}),
+		utils.MapChan(func(item utils.DebouncedItem[timelinemodels.UsageSeq]) timelinemodels.UsageSeq {
+			slog.Info("map", "timestamp", item.Timestamp) // TODO
+			return item.Value
+		}),
+	)
+
+	for entry := range result {
 		event, ok := usageSeqToProto(entry, previous, window)
 
 		previous = &entry

@@ -13,18 +13,18 @@ func isEven(v int) bool {
 func TestFilterChan_DropsItemsFailingThePredicateAndKeepsOrder(t *testing.T) {
 	t.Parallel()
 
-	in := make(chan int)
+	in := make(chan any)
 	out := FilterChan(isEven)(in)
 
 	feed(in, 1, 2, 3, 4, 5, 6)
 
-	assert.Equal(t, []int{2, 4, 6}, collect(t, out))
+	assert.Equal(t, []int{2, 4, 6}, typedAll[int](t, collect(t, out)))
 }
 
 func TestFilterChan_ClosesTheOutputWhenEveryItemIsDropped(t *testing.T) {
 	t.Parallel()
 
-	in := make(chan int)
+	in := make(chan any)
 	out := FilterChan(isEven)(in)
 
 	feed(in, 1, 3, 5)
@@ -37,8 +37,8 @@ func TestFilterChan_ConstructorDrivesIndependentStages(t *testing.T) {
 
 	even := FilterChan(isEven)
 
-	first := make(chan int)
-	second := make(chan int)
+	first := make(chan any)
+	second := make(chan any)
 
 	firstOut := even(first)
 	secondOut := even(second)
@@ -46,6 +46,7 @@ func TestFilterChan_ConstructorDrivesIndependentStages(t *testing.T) {
 	feed(first, 1, 2)
 	feed(second, 3, 4)
 
-	assert.Equal(t, []int{2}, collect(t, firstOut))
-	assert.Equal(t, []int{4}, collect(t, secondOut), "each call of the constructor owns its own goroutine")
+	assert.Equal(t, []int{2}, typedAll[int](t, collect(t, firstOut)))
+	assert.Equal(t, []int{4}, typedAll[int](t, collect(t, secondOut)),
+		"each call of the constructor owns its own goroutine")
 }

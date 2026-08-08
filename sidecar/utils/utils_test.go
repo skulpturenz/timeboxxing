@@ -106,6 +106,30 @@ func recvN[T any](t *testing.T, ch <-chan T, n int) []T {
 	return items
 }
 
+// typed re-types a value a stage erased to any, failing the test instead of panicking like the
+// pipeline tail does.
+func typed[T any](t *testing.T, v any) T {
+	t.Helper()
+
+	item, ok := v.(T)
+	require.Truef(t, ok, "the stage emitted a %T, not the expected type", v)
+
+	return item
+}
+
+// typedAll re-types every value a stage erased to any, so a test asserts on []T and not []any.
+func typedAll[T any](t *testing.T, values []any) []T {
+	t.Helper()
+
+	items := make([]T, 0, len(values))
+
+	for _, v := range values {
+		items = append(items, typed[T](t, v))
+	}
+
+	return items
+}
+
 // requireQuiet asserts ch produces neither a value nor a close for settleWait.
 func requireQuiet[T any](t *testing.T, ch <-chan T, msg string) {
 	t.Helper()

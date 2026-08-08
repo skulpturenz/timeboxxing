@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"log/slog"
 	"time"
 )
 
@@ -14,12 +15,12 @@ func TrailingDebounceChan[T any](
 	ctx context.Context,
 	ticker <-chan time.Time,
 	inChan <-chan T,
-) <-chan DebouncedItem[T] {
+) <-chan any {
 	// problem: usage timeline shows sessions in 1m granularity. we also have a "Now" indicator
 	// if we show a session which is less than 1m, it takes up the 1m block height
 	// but now will be within the session block
 	// we can't remove the block because it's a now it's here now it's not kind of situation
-	result := make(chan DebouncedItem[T])
+	result := make(chan any)
 
 	go func() {
 		defer close(result)
@@ -40,6 +41,7 @@ func TrailingDebounceChan[T any](
 					continue
 				}
 
+				slog.InfoContext(ctx, "trailing debounce", "item", time.Now()) // TODO
 				pending = v
 				timestamp = time.Now()
 				isPending = true

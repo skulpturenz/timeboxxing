@@ -27,7 +27,8 @@ func TestTrailingDebounceChan_ATickEmitsOnlyTheLatestValue(t *testing.T) {
 
 	item, ok := recvWithin(t, out, testTimeout)
 	require.True(t, ok)
-	assert.Equal(t, 3, item.Value, "the slot holds one value, so an arrival supersedes the one waiting")
+	assert.Equal(t, 3, typed[DebouncedItem[int]](t, item).Value,
+		"the slot holds one value, so an arrival supersedes the one waiting")
 
 	requireQuiet(t, out, "the superseded values are dropped, never emitted later")
 }
@@ -50,8 +51,11 @@ func TestTrailingDebounceChan_TimestampIsWhenTheValueArrived(t *testing.T) {
 	item, ok := recvWithin(t, out, testTimeout)
 	require.True(t, ok)
 
-	assert.WithinDuration(t, arrival, item.Timestamp, settleWait, "the timestamp is taken as the value arrives")
-	assert.GreaterOrEqual(t, time.Since(item.Timestamp), 2*settleWait, "it is not refreshed when the tick emits it")
+	debounced := typed[DebouncedItem[int]](t, item)
+
+	assert.WithinDuration(t, arrival, debounced.Timestamp, settleWait, "the timestamp is taken as the value arrives")
+	assert.GreaterOrEqual(t, time.Since(debounced.Timestamp), 2*settleWait,
+		"it is not refreshed when the tick emits it")
 }
 
 func TestTrailingDebounceChan_ATickWithNothingPendingEmitsNothing(t *testing.T) {
@@ -96,7 +100,8 @@ func TestTrailingDebounceChan_FlushesThePendingValueAndClosesAfterTheInputCloses
 	items := collect(t, out)
 
 	require.Len(t, items, 1)
-	assert.Equal(t, 1, items[0].Value, "the pending value is flushed before the goroutine returns")
+	assert.Equal(t, 1, typed[DebouncedItem[int]](t, items[0]).Value,
+		"the pending value is flushed before the goroutine returns")
 }
 
 func TestTrailingDebounceChan_CancellationClosesTheOutput(t *testing.T) {
