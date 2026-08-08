@@ -41,7 +41,8 @@ func TrailingDebounceChan[T any](
 					continue
 				}
 
-				slog.InfoContext(ctx, "trailing debounce", "item", time.Now()) // TODO
+				slog.DebugContext(ctx, "trailing debounce: arrived", "item", v, "superseded", isPending) // TODO
+
 				pending = v
 				timestamp = time.Now()
 				isPending = true
@@ -49,6 +50,8 @@ func TrailingDebounceChan[T any](
 				if isPending {
 					// build before clearing the slot: Timestamp is when the value arrived, not when it is emitted
 					emit := DebouncedItem[T]{Value: pending, Timestamp: timestamp}
+
+					slog.DebugContext(ctx, "trailing debounce: emitting", "item", pending, "held", time.Since(timestamp)) // TODO
 
 					var zero T
 					pending = zero

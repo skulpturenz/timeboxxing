@@ -115,8 +115,13 @@ identically; they differ only in the bounds they pass:
   reliable open/closed discriminator, and the whole final side is absent while it holds.
 - **`MinDurationSeconds` filters out switch noise, and defaults to off.** It is a parameter
   rather than a constant because entries chain: dropping one punches a hole that hands its time
-  to a neighbour. Consumers that derive durations from that adjacency — the reporting surfaces
-  in `grpc/` — must pass `0`.
+  to a neighbour. Pass `0` unless that cost has been weighed — the default is off precisely
+  because the hole is invisible in the output.
+  [`grpc/usage`](../../grpc/usage) is the one caller that pays it deliberately: both usage
+  surfaces floor at one minute, because a shorter stretch still claims a full minute of block
+  height on the timeline with the live *Now* marker inside it. `GetUsageEvents` passes the floor
+  here; `WatchUsageEvents` applies the same one downstream of its debounce, so a refresh cannot
+  resurrect what the live stream suppressed.
 - **Bounds are strict on both sides** and compare instants, not text: `created_at_utc` carries
   whatever offset the observation was recorded in, so both sides go through
   `unixepoch(…, 'subsec')`. An open entry always passes the lower bound.
