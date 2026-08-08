@@ -42,8 +42,10 @@ One helper family per file, and the file name is the concept.
 
 Nine of those entries have **no call site anywhere in the sidecar**: `ParallelMap`, `FanOutChan` and
 `resultTopN.Distinct`, plus the six channel-pipeline rows from `TrailingDebounceChan` to `MapChan`.
-They compile and are exercised by nothing — treat their contracts as unverified rather than merely
-spare.
+Nothing in production exercises them; every contract described below is pinned by this package's own
+tests, one `<helper>_test.go` per file, so the rules here are enforced rather than merely asserted.
+Those tests cover behaviour under a satisfied contract only — breaking a precondition (a non-positive
+`pageSize`, a pipeline with no stages, a percentile outside 0–100) stays deliberately untested.
 
 ## Nil & zero values (`coalesce.go`, `zero_nil.go`, `or.go`)
 
