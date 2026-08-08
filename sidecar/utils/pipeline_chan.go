@@ -2,12 +2,14 @@ package utils
 
 import "github.com/negrel/assert"
 
+type Stage = func(inChan <-chan any) <-chan any
+
 type stage struct {
 	in  <-chan any
 	out <-chan any
 }
 
-func PipelineChan[T any](source <-chan any, pipeline ...func(<-chan any) <-chan any) <-chan T {
+func PipelineChan[T any](source <-chan any, pipeline ...Stage) <-chan T {
 	assert.Positive(len(pipeline))
 
 	result := make(chan T)
@@ -30,7 +32,7 @@ func PipelineChan[T any](source <-chan any, pipeline ...func(<-chan any) <-chan 
 		defer close(result)
 
 		for v := range stages[len(stages)-1].out {
-			result <- v.(T) // panics. intended
+			result <- v.(T) //nolint:errcheck // panics. intended
 		}
 	}()
 
