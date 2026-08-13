@@ -27,6 +27,10 @@ func BatchChan[T any](ctx context.Context, batchSize int, inChan <-chan T, outCh
 
 				mu.Unlock()
 			}
+
+			if len(batch) != 0 {
+				result <- batch
+			}
 		}()
 
 		return result
