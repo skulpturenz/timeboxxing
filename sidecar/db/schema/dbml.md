@@ -194,6 +194,31 @@ Table application_application_categories_map {
   }
 }
 
+// Masking
+Table masked_values {
+  id BIGINT [pk] // auto increment
+  masking_category TEXT [NOT NULL] // models.MaskingCategory code — the scope of a token, unrelated to application_categories
+  value TEXT [NOT NULL]
+  masked_value TEXT [NOT NULL]
+
+  indexes {
+    (masking_category, value) [unique, name: 'unique_masked_value_source']
+    (masking_category, masked_value) [unique, name: 'unique_masked_value_token'] // makes unmasking a function
+  }
+}
+
+// A per-install permutation of the taxonomy: the pair of uniques is what keeps it a bijection.
+Table masked_categories {
+  id BIGINT [pk] // auto increment
+  application_categories_id BIGINT [NOT NULL]
+  masked_application_categories_id BIGINT [NOT NULL]
+
+  indexes {
+    application_categories_id [unique, name: 'unique_masked_category_source']
+    masked_application_categories_id [unique, name: 'unique_masked_category_target']
+  }
+}
+
 Table operating_systems {
   id SMALLINT [pk] // auto increment
   code TEXT [NOT NULL]
@@ -270,4 +295,6 @@ Ref: project_costs.projects_id > projects.id [delete: cascade]
 Ref: project_details.projects_id - projects.id [delete: cascade]
 Ref: application_application_categories_map.application_id > applications.id [delete: cascade]
 Ref: application_application_categories_map.application_categories_id > application_categories.id [delete: cascade]
+Ref: masked_categories.application_categories_id - application_categories.id [delete: cascade]
+Ref: masked_categories.masked_application_categories_id - application_categories.id [delete: cascade]
 ```

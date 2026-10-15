@@ -90,18 +90,24 @@ and unexported cursor state.
 
 [`enums/README.md`](enums/README.md) is the reference. The invariants that bind other packages:
 
-- **`type X int`.** The integer is the identity and, for enums under `enums/`, the row id of a
-  seeded table — so the const block is **append-only**. Reordering is a data migration.
+- **`type X int`.** The integer is the identity. A *persisted* enum under `enums/` either backs a
+  seeded table, where the integer *is* the row id, or stores its `String()` code in an ordinary
+  column; some are not persisted at all. The const block is **append-only** in every case —
+  reordering is a data migration.
 - One `const` block from `iota`, index 0 a sentinel or the safe default. `String()` is an index into
   a slice literal ordered to match the block, never a `switch`.
 - `Parse(s string) (X, error)` at package level, normalising with
   `strings.ToLower(strings.TrimSpace(s))`, no `default:`, closing on the safe default plus
-  `fmt.Errorf("unrecognized <thing>: %s", s)`. It must be a **total inverse of `String()`** for any
-  enum read back out of a column.
+  `fmt.Errorf("unrecognized <thing>: %s", s)`. It must be **total over every code its column can
+  hold**, which is not always every code `String()` emits — where the sentinel is stored as `NULL`
+  rather than written out, `Parse` rejecting it is correct.
 - `fmt.Stringer` is the only interface implemented — no `driver.Valuer`, `sql.Scanner`, JSON hooks
   or codegen. Plain domain methods are fine where the rule belongs to the enum.
-- Cross-cutting enums live under `enums/`; one owned by a single package stays beside its domain
-  type and takes a `Parse<Thing>` name.
+- Cross-cutting enums live under `enums/`, with bare member names by default and a package-level
+  `Parse` (`enumsreleasechannel.Stable`, `enumsmaskingcategory.Parse`) — the alias carries the noun.
+  One owned by a single package stays beside its domain type and takes type-prefixed members and a
+  `Parse<Thing>` name (`models.TitleSourceAX`, `models.ParseTitleSource`). Moving an enum between
+  the two renames both.
 
 ## Reads and writes are separate
 
@@ -212,7 +218,11 @@ group, no license headers.
   not a gap to fill.** Do not restate a signature, narrate a test its name already describes, or add
   ceremonial package comments. Write one for non-obvious rationale, a load-bearing invariant, an edge
   case, or regression provenance worth preserving. Where a declaration seems to need explaining,
-  check first whether a better name removes the need.
+  check first whether a better name removes the need. **The test is whether deleting it would let
+  someone make a wrong change** — if not, delete it yourself.
+- **A comment under the `-- name:` line of a `.sql` file becomes a Go doc comment.** sqlc copies it
+  onto the generated `Querier` method, so it is held to the same bar as any other — and editing one
+  means regenerating.
 - **Leave existing comments alone unless they are inaccurate.** If your change makes one wrong, fix
   it in the same edit — but do not reword a comment that is merely phrased differently from how you
   would have phrased it.

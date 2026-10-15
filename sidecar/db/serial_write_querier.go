@@ -157,6 +157,24 @@ func (s *SerialWriteQuerier) UpsertApplicationCategory(
 	return s.querier.UpsertApplicationCategory(ctx, arg)
 }
 
+func (s *SerialWriteQuerier) UpsertMaskedValue(
+	ctx context.Context,
+	arg writequeries.UpsertMaskedValueParams,
+) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.UpsertMaskedValue(ctx, arg)
+}
+
+func (s *SerialWriteQuerier) InsertMaskedCategory(
+	ctx context.Context,
+	arg writequeries.InsertMaskedCategoryParams,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.querier.InsertMaskedCategory(ctx, arg)
+}
+
 func (s *SerialWriteQuerier) UpsertApplicationCategoryMap(
 	ctx context.Context,
 	arg writequeries.UpsertApplicationCategoryMapParams,
