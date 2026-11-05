@@ -9,6 +9,9 @@ import (
 
 type Message = map[any]any
 
+type MiddlewareHandlerFunc = func(domain string, msg Message, filtered bool)
+type Middleware = func(next MiddlewareHandlerFunc) MiddlewareHandlerFunc
+
 type sink struct {
 	outChan chan<- Message
 	filters []func(Message) bool
@@ -24,6 +27,13 @@ type Hermes struct {
 	domains     map[string]chan Message
 	once        sync.Once
 	initialized bool
+	middleware  []Middleware
+}
+
+func (h *Hermes) Use(middleware Middleware) *Hermes {
+	h.middleware = append(h.middleware, middleware)
+
+	return h
 }
 
 func (h *Hermes) AddSource(domain string, src <-chan Message) {
@@ -37,12 +47,31 @@ func (h *Hermes) AddSource(domain string, src <-chan Message) {
 	}
 
 	srcs = append(srcs, source{sourceChan: src})
+	h.sources[domain] = srcs
 }
 
 func (h *Hermes) AddSink(domain string, sink chan<- Message, filters ...func(Message) bool) {}
 
 func (h *Hermes) Plumb(ctx context.Context, domain string) {
 	h.once.Do(func() {
+		createMiddlewareStack := func() MiddlewareHandlerFunc {
+			noop := func(domain string, msg Message, filtered bool) {}
+
+			if len(h.middleware) == 0 {
+				return noop
+			}
+
+			combined := noop
+
+			for _, m := range h.middleware {
+				combined = m(combined)
+			}
+
+			return combined
+		}
+
+		middleware := createMiddlewareStack()
+
 		var outChan chan Message
 		if h.domains[domain] != nil {
 			outChan = h.domains[domain]
@@ -89,6 +118,7 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 								break
 							}
 						}
+						middleware(domain, item, filtered)
 						if filtered {
 							continue
 						}
