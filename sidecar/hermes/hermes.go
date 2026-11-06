@@ -10,7 +10,7 @@ import (
 type Message = map[any]any
 
 type MiddlewareHandlerFunc = func(sink string, domain string, msg Message, filtered bool)
-type Middleware = func(next MiddlewareHandlerFunc) MiddlewareHandlerFunc
+type Middleware = func(next func()) MiddlewareHandlerFunc
 
 type sink struct {
 	key     string
@@ -61,7 +61,7 @@ func (h *Hermes) AddSink(domain string, key string, outChan chan<- Message, filt
 	}
 
 	sinks := []sink{}
-	if h.sources[domain] != nil {
+	if h.sinks[domain] != nil {
 		sinks = append(sinks, h.sinks[domain]...)
 	}
 
@@ -72,19 +72,24 @@ func (h *Hermes) AddSink(domain string, key string, outChan chan<- Message, filt
 func (h *Hermes) Plumb(ctx context.Context, domain string) {
 	h.once.Do(func() {
 		createMiddlewareStack := func() MiddlewareHandlerFunc {
-			noop := func(sink string, domain string, msg Message, filtered bool) {}
+			stack := func(sink string, domain string, msg Message, filtered bool) {
+				noop := func(sink string, domain string, msg Message, filtered bool) {}
 
-			if len(h.middleware) == 0 {
-				return noop
+				if len(h.middleware) == 0 {
+					return
+				}
+
+				combined := noop
+
+				for _, m := range h.middleware {
+					ptr := combined
+					combined = m(func() { ptr(sink, domain, msg, filtered) })
+				}
+
+				combined(sink, domain, msg, filtered)
 			}
 
-			combined := noop
-
-			for _, m := range h.middleware {
-				combined = m(combined)
-			}
-
-			return combined
+			return stack
 		}
 
 		middleware := createMiddlewareStack()
