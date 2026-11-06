@@ -2,6 +2,7 @@ package hermes
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
@@ -119,6 +120,8 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 			go func() {
 				defer close(inChan)
 
+				seenItems := map[string]int{}
+
 				for {
 					select {
 					case <-ctx.Done():
@@ -142,7 +145,11 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 
 						select {
 						case sink.outChan <- item:
+							delete(seenItems, fmt.Sprintf("%v", item))
 						default:
+							seenItems[fmt.Sprintf("%v", item)] += 1
+							// will apply backpressure. goroutine blocks until outChan frees up
+							inChan <- item
 						}
 					}
 				}
