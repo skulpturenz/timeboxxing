@@ -9,10 +9,11 @@ import (
 
 type Message = map[any]any
 
-type MiddlewareHandlerFunc = func(domain string, msg Message, filtered bool)
+type MiddlewareHandlerFunc = func(sink string, domain string, msg Message, filtered bool)
 type Middleware = func(next MiddlewareHandlerFunc) MiddlewareHandlerFunc
 
 type sink struct {
+	key     string
 	outChan chan<- Message
 	filters []func(Message) bool
 }
@@ -31,6 +32,10 @@ type Hermes struct {
 }
 
 func (h *Hermes) Use(middleware Middleware) *Hermes {
+	if h.initialized {
+		panic("already initialized")
+	}
+
 	h.middleware = append(h.middleware, middleware)
 
 	return h
@@ -50,12 +55,24 @@ func (h *Hermes) AddSource(domain string, src <-chan Message) {
 	h.sources[domain] = srcs
 }
 
-func (h *Hermes) AddSink(domain string, sink chan<- Message, filters ...func(Message) bool) {}
+func (h *Hermes) AddSink(domain string, key string, outChan chan<- Message, filters ...func(Message) bool) {
+	if h.initialized {
+		panic("already initialized")
+	}
+
+	sinks := []sink{}
+	if h.sources[domain] != nil {
+		sinks = append(sinks, h.sinks[domain]...)
+	}
+
+	sinks = append(sinks, sink{key: key, outChan: outChan, filters: filters})
+	h.sinks[domain] = sinks
+}
 
 func (h *Hermes) Plumb(ctx context.Context, domain string) {
 	h.once.Do(func() {
 		createMiddlewareStack := func() MiddlewareHandlerFunc {
-			noop := func(domain string, msg Message, filtered bool) {}
+			noop := func(sink string, domain string, msg Message, filtered bool) {}
 
 			if len(h.middleware) == 0 {
 				return noop
@@ -118,7 +135,7 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 								break
 							}
 						}
-						middleware(domain, item, filtered)
+						middleware(sink.key, domain, item, filtered)
 						if filtered {
 							continue
 						}
