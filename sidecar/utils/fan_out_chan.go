@@ -6,6 +6,14 @@ import (
 )
 
 func FanOutChan[T any](ctx context.Context, inChan <-chan T, outChans ...chan<- T) {
+	fanOutChan(ctx, inChan, false, outChans...)
+}
+
+func FanOutChanWithBackpressure[T any](ctx context.Context, inChan <-chan T, outChans ...chan<- T) {
+	fanOutChan(ctx, inChan, true, outChans...)
+}
+
+func fanOutChan[T any](ctx context.Context, inChan <-chan T, block bool, outChans ...chan<- T) {
 	go func() {
 		dropped := map[int]int{}
 
@@ -19,12 +27,16 @@ func FanOutChan[T any](ctx context.Context, inChan <-chan T, outChans ...chan<- 
 				}
 
 				for i, c := range outChans {
-					select {
-					case c <- item:
-					default:
-						dropped[i]++
-						//nolint:sloglint // slog.Default is set custom, is singleton
-						slog.ErrorContext(ctx, "fan out chan dropped", "index", i, "drop_count", dropped[i])
+					if block {
+						c <- item
+					} else {
+						select {
+						case c <- item:
+						default:
+							dropped[i]++
+							//nolint:sloglint // slog.Default is set custom, is singleton
+							slog.ErrorContext(ctx, "fan out chan dropped", "index", i, "drop_count", dropped[i])
+						}
 					}
 				}
 			}

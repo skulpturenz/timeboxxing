@@ -89,14 +89,6 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 
 		middleware := createMiddlewareStack()
 
-		var outChan chan Message
-		if h.domains[domain] != nil {
-			outChan = h.domains[domain]
-		} else {
-			outChan = make(chan Message)
-		}
-		h.domains[domain] = outChan
-
 		srcs := []source{}
 		if h.sources[domain] != nil {
 			srcs = append(srcs, h.sources[domain]...)
@@ -106,6 +98,15 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 		for _, src := range srcs {
 			inChans = append(inChans, src.sourceChan)
 		}
+
+		var outChan chan Message
+		if h.domains[domain] != nil {
+			outChan = h.domains[domain]
+		} else {
+			// size: sources are fanned in, so want to be able to accept at least 1 item from each source
+			outChan = make(chan Message, len(inChans))
+		}
+		h.domains[domain] = outChan
 
 		sinks := []sink{}
 		if h.sinks[domain] != nil {
@@ -149,7 +150,7 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 		}
 
 		utils.FanInChan(ctx, outChan, inChans...)
-		utils.FanOutChan(ctx, outChan, outChans...)
+		utils.FanOutChanWithBackpressure(ctx, outChan, outChans...)
 
 		h.initialized = true
 	})
