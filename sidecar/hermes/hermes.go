@@ -2,15 +2,19 @@ package hermes
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"time"
 
 	"github.com/skulpturenz/timeboxxing/sidecar/utils"
 )
 
 type Message = map[any]any
 
-type MiddlewareHandlerFunc = func(sink string, domain string, msg Message, filtered bool)
+type MiddlewareHandlerFunc = func(ctx context.Context, sink string, domain string, msg Message, filtered bool)
 type Middleware = func(next func()) MiddlewareHandlerFunc
+
+var ErrMiddlewareTimeout = errors.New("middleware timeout")
 
 type sink struct {
 	key     string
@@ -72,8 +76,8 @@ func (h *Hermes) AddSink(domain string, key string, outChan chan<- Message, filt
 func (h *Hermes) Plumb(ctx context.Context, domain string) {
 	h.once.Do(func() {
 		createMiddlewareStack := func() MiddlewareHandlerFunc {
-			stack := func(sink string, domain string, msg Message, filtered bool) {
-				noop := func(sink string, domain string, msg Message, filtered bool) {}
+			stack := func(ctx context.Context, sink string, domain string, msg Message, filtered bool) {
+				noop := func(ctx context.Context, sink string, domain string, msg Message, filtered bool) {}
 
 				if len(h.middleware) == 0 {
 					return
@@ -83,10 +87,10 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 
 				for _, m := range h.middleware {
 					ptr := combined
-					combined = m(func() { ptr(sink, domain, msg, filtered) })
+					combined = m(func() { ptr(ctx, sink, domain, msg, filtered) })
 				}
 
-				combined(sink, domain, msg, filtered)
+				combined(ctx, sink, domain, msg, filtered)
 			}
 
 			return stack
@@ -126,11 +130,15 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 				defer close(inChan)
 
 				for {
+					middlewareCtx, cancel := context.WithTimeoutCause(ctx, 1*time.Minute, ErrMiddlewareTimeout)
+
 					select {
 					case <-ctx.Done():
+						cancel()
 						return
 					case item, ok := <-inChan:
 						if !ok {
+							cancel()
 							return
 						}
 
@@ -141,12 +149,13 @@ func (h *Hermes) Plumb(ctx context.Context, domain string) {
 								break
 							}
 						}
-						middleware(sink.key, domain, item, filtered)
+						middleware(middlewareCtx, sink.key, domain, item, filtered)
 						if filtered {
 							continue
 						}
 
 						sink.outChan <- item
+						cancel()
 					}
 				}
 			}()
